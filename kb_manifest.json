@@ -1,0 +1,37 @@
+{
+    "tier_a_canonical": {
+        "description": "Syntax, API correctness, strict compilation rules. High Confidence.",
+        "files": [
+            "Knowledge-Base-V2/CORE_REFERENCE.md",
+            "language/language-reference.md",
+            "sdk/contracts/contract-instantiation.md",
+            "sdk/transactions/transaction-building.md",
+            "reference/quick-reference.md",
+            "cashtokens/overview.md"
+        ]
+    },
+    "tier_b_patterns_security": {
+        "description": "Architecture, patterns, security auditing. Medium Confidence.",
+        "files": [
+            "concepts/cashscript-mental-model.md",
+            "concepts/multi-contract-architecture.md",
+            "concepts/utxo-vs-account-model.md",
+            "examples/real-world/parityusd-analysis.md",
+            "examples/real-world/production-patterns.md",
+            "best-practices/security/smart-contract-security.md",
+            "Knowledge-Base-V2/SECURITY_ARCHITECTURE.md"
+        ]
+    },
+    "tier_c_faq": {
+        "description": "Common mistakes, debugging. Low Confidence.",
+        "files": [
+            "faq/telegram/bch_compilers_faq_2025.json",
+            "faq/telegram/bch_devs_faq_2025.json",
+            "faq/telegram/bchn_faq_2025.json",
+            "faq/telegram/cashscript_faq_2025.json",
+            "faq/telegram/cashtoken_devs_faq_2025.json",
+            "faq/telegram/electron_cash_faq_2025.json",
+            "Knowledge-Base-V2/FAQ_DISTILLED.md"
+        ]
+    }
+}
