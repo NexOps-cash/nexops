@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { Card, Button, Badge, CodeBlock } from '../components/UI';
 import { Project, ChainType } from '../types';
 import { compileCashScript, verifyDeterminism, ContractArtifact } from '../services/compilerService';
-import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat } from 'lucide-react';
+import { fixSmartContract } from '../services/groqService';
+import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
     walletConnected: boolean;
+    onConnectWallet: () => void;
+    onUpdateProject: (p: Project) => void;
 }
 
-export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected }) => {
+export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0); // 0: Idle, 1: Compiling, 2: Signing, 3: Broadcasting, 4: Success
@@ -19,6 +22,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [artifact, setArtifact] = useState<ContractArtifact | null>(null);
     const [isCompiling, setIsCompiling] = useState(false);
     const [compilationError, setCompilationError] = useState<string | null>(null);
+    const [isFixing, setIsFixing] = useState(false);
     const [isDeterminismVerified, setIsDeterminismVerified] = useState(false);
 
     if (!project) return <div className="p-8 text-center text-gray-500">No project selected.</div>;
@@ -62,6 +66,29 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         }
     };
 
+    const handleAutoFix = async () => {
+        if (!compilationError) return;
+        setIsFixing(true);
+        try {
+            const prompt = `Fix the following CashScript compiler error in the contract.\nError: ${compilationError}`;
+            const result = await fixSmartContract(project.contractCode, prompt);
+
+            // Update the project with fixed code
+            onUpdateProject({
+                ...project,
+                contractCode: result.code,
+                lastModified: Date.now()
+            });
+
+            setCompilationError(null);
+            // Optionally notify user or clear error
+        } catch (e) {
+            console.error("Auto-Fix failed", e);
+        } finally {
+            setIsFixing(false);
+        }
+    };
+
     const handleDeploy = () => {
         if (!walletConnected || !isAuditPassed || !artifact) return;
         setIsDeploying(true);
@@ -81,15 +108,15 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const formatAddressPreview = (sh: string) => `bchtest:p${sh.substring(0, 36)}...`;
 
     return (
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
-            {/* Left Column: Config & Artifacts */}
-            <div className="lg:col-span-7 space-y-6">
+        <div className="flex flex-col gap-6 pb-20">
+            {/* Config & Artifacts */}
+            <div className="space-y-6">
                 <Card>
                     <h3 className="text-lg font-medium text-white mb-4 flex items-center">
                         <Server className="w-5 h-5 mr-2 text-nexus-purple" />
                         Network & Compiler
                     </h3>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                         <div>
                             <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Target Network</label>
                             <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
@@ -105,14 +132,37 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     </div>
 
                     {!artifact ? (
-                        <div className="text-center py-8 bg-nexus-900/30 rounded border border-dashed border-nexus-700">
-                            <Button onClick={handlePrepare} isLoading={isCompiling} icon={<FileCode className="w-4 h-4" />}>
-                                Prepare Deployment Artifacts
-                            </Button>
-                            {compilationError && (
-                                <div className="mt-4 p-3 bg-red-900/20 text-red-400 text-sm border border-red-800 rounded text-left whitespace-pre-wrap">
-                                    {compilationError}
+                        <div className="text-center py-8 bg-nexus-900/30 rounded border border-dashed border-nexus-700 transition-all">
+                            {compilationError ? (
+                                <div className="space-y-4">
+                                    <div className="mx-auto w-12 h-12 bg-red-900/30 rounded-full flex items-center justify-center border border-red-500/30">
+                                        <AlertCircle className="w-6 h-6 text-red-500" />
+                                    </div>
+                                    <h4 className="text-red-400 font-bold">Compilation Failed</h4>
+                                    <div className="p-3 bg-red-900/20 text-red-300 text-xs border border-red-800 rounded text-left font-mono whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                                        {compilationError}
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row justify-center gap-3">
+                                        <Button variant="secondary" onClick={handlePrepare} size="sm">Retry Compilation</Button>
+                                        <Button
+                                            variant="secondary"
+                                            className="border-nexus-cyan text-nexus-cyan hover:bg-nexus-cyan/10"
+                                            icon={<Wand2 className="w-4 h-4" />}
+                                            onClick={handleAutoFix}
+                                            isLoading={isFixing}
+                                            size="sm"
+                                        >
+                                            Auto-Fix Error
+                                        </Button>
+                                    </div>
                                 </div>
+                            ) : (
+                                <>
+                                    <Button onClick={handlePrepare} isLoading={isCompiling} icon={<FileCode className="w-4 h-4" />}>
+                                        Prepare Deployment Artifacts
+                                    </Button>
+                                    <p className="mt-2 text-xs text-gray-500">Compiles code and verifies deterministic bytecode.</p>
+                                </>
                             )}
                         </div>
                     ) : (
@@ -142,7 +192,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
                                     <FileCode className="w-3 h-3 mr-1" /> Locking Bytecode
                                 </label>
-                                <div className="font-mono text-[10px] bg-black p-2 rounded text-gray-500 break-all border border-nexus-800 max-h-24 overflow-y-auto">
+                                <div className="font-mono text-[10px] bg-black p-2 rounded text-gray-500 break-all border border-nexus-800 max-h-24 overflow-y-auto custom-scrollbar">
                                     {artifact.bytecode}
                                 </div>
                             </div>
@@ -182,8 +232,8 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                 </Card>
             </div>
 
-            {/* Right Column: Actions */}
-            <div className="lg:col-span-5 space-y-6">
+            {/* Actions */}
+            <div className="space-y-6">
                 <Card>
                     <h3 className="text-lg font-medium text-white mb-4 flex items-center">
                         <Rocket className="w-5 h-5 mr-2 text-nexus-cyan" />
@@ -211,10 +261,13 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 </p>
                             </div>
                         ) : !walletConnected ? (
-                            <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded">
-                                <AlertCircle className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                                <p className="text-sm text-gray-300 mb-2">Wallet not connected</p>
-                                <Button variant="secondary" className="w-full">Connect Wallet</Button>
+                            <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded transition-all hover:bg-nexus-900/80">
+                                <Wallet className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm text-gray-300 mb-4">No Wallet Detected</p>
+                                <Button onClick={onConnectWallet} className="w-full bg-nexus-blue hover:bg-nexus-blue/80">
+                                    Connect Wallet Provider
+                                </Button>
+                                <p className="text-[10px] text-gray-500 mt-2">Supports Cashonize, Badger, or WalletConnect</p>
                             </div>
                         ) : !artifact ? (
                             <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded">
@@ -244,9 +297,10 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                 {/* Console */}
                 <Card className="font-mono text-sm bg-black border-nexus-700 min-h-[200px] flex flex-col">
                     <div className="border-b border-nexus-800 pb-2 mb-2 text-gray-500 uppercase text-xs">Deployment Log</div>
-                    <div className="space-y-2 flex-1 overflow-y-auto">
+                    <div className="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                         <p className="text-gray-500">Waiting for command...</p>
                         {isCompiling && <p className="text-nexus-cyan">&gt; Compiling contract...</p>}
+                        {isFixing && <p className="text-nexus-purple animate-pulse">&gt; Analyzing compiler error with NexusAI...</p>}
                         {artifact && <p className="text-green-500">&gt; Artifacts generated. Bytecode size: {artifact.bytecode.length / 2} bytes.</p>}
                         {deploymentStep >= 1 && <p className="text-nexus-cyan">&gt; Initiating deployment...</p>}
                         {deploymentStep >= 2 && <p className="text-nexus-cyan">&gt; Requesting wallet signature (WalletConnect)...</p>}
