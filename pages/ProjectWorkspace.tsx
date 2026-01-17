@@ -10,6 +10,7 @@ import {
     FileCode
 } from 'lucide-react';
 import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../services/groqService';
+import { Deployment } from './Deployment';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -22,9 +23,11 @@ interface ProjectWorkspaceProps {
     project: Project;
     onUpdateProject: (p: Project) => void;
     onNavigate: (view: PageView) => void;
+    walletConnected: boolean;
+    onConnectWallet: () => void;
 }
 
-export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, onNavigate }) => {
+export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, onNavigate, walletConnected, onConnectWallet }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
     const [activeTab, setActiveTab] = useState('ASSISTANT');
@@ -579,50 +582,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     )}
 
                     {activeTab === 'DEPLOY' && (
-                        <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                            <div className="p-6 bg-nexus-900/80 rounded-3xl border border-slate-800 shadow-2xl">
-                                <div className="text-[10px] font-black text-slate-500 uppercase mb-3 tracking-[0.2em]">Target Protocol</div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-nexus-success animate-pulse mr-3 shadow-[0_0_12px_rgba(16,185,129,0.4)]"></div>
-                                        <span className="text-white font-black tracking-tight">{project.chain}</span>
-                                    </div>
-                                    <Badge variant="success">Synced</Badge>
-                                </div>
-                            </div>
-
-                            <div className="space-y-4 px-2">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500 font-bold uppercase tracking-wider">Module Status</span>
-                                    <span className="text-nexus-success font-black">Verified OK</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-500 font-bold uppercase tracking-wider">Audit Pass Gate</span>
-                                    <span className={project.auditReport?.score && project.auditReport.score > 80 ? 'text-nexus-success font-black' : 'text-nexus-danger font-black'}>
-                                        {project.auditReport?.score && project.auditReport.score > 80 ? 'PASSED' : 'REQUIRED'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <Button
-                                className="w-full h-14 rounded-2xl text-sm font-black uppercase tracking-[0.2em] shadow-2xl shadow-nexus-cyan/20"
-                                onClick={handleDeploy}
-                                disabled={isDeploying || !project.auditReport || project.auditReport.score < 80}
-                                isLoading={isDeploying}
-                                icon={<Rocket size={20} />}
-                            >
-                                Initiate Broadcast
-                            </Button>
-
-                            <div className="bg-[#020408] p-5 rounded-2xl text-[10px] font-mono h-48 overflow-y-auto text-nexus-cyan border border-slate-800/80 shadow-inner no-scrollbar">
-                                {deploymentLog.map((l, i) => (
-                                    <div key={i} className="mb-2 flex items-start">
-                                        <span className="opacity-30 mr-3 text-[8px] mt-1">[{new Date().toLocaleTimeString()}]</span>
-                                        <span className="leading-relaxed">{l}</span>
-                                    </div>
-                                ))}
-                                {deploymentLog.length === 0 && <span className="text-slate-800 italic uppercase font-black tracking-widest text-[9px] text-center block mt-10">Broadcast Engine Offline</span>}
-                            </div>
+                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-black/20">
+                            <Deployment
+                                project={project}
+                                walletConnected={walletConnected}
+                                onConnectWallet={onConnectWallet}
+                                onUpdateProject={onUpdateProject}
+                            />
                         </div>
                     )}
                 </div>

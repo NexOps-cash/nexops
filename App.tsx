@@ -15,7 +15,7 @@ const STORAGE_KEY = 'nexops_protocol_v2';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<PageView>(PageView.DASHBOARD);
-  
+
   // Persistence state
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -26,7 +26,7 @@ const App: React.FC = () => {
       return [];
     }
   });
-  
+
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [walletConnected, setWalletConnected] = useState(false);
 
@@ -60,18 +60,18 @@ const App: React.FC = () => {
   };
 
   const handleRequestFix = (project: Project, report: AuditReport) => {
-      const instructions = report.vulnerabilities
-        .map(v => `- [${v.severity}] ${v.title}: ${v.fixSuggestion}`)
-        .join('\n');
-      
-      const fixingProject = {
-          ...project,
-          isFixing: true,
-          fixInstructions: instructions
-      };
-      
-      handleUpdateProject(fixingProject);
-      setCurrentView(PageView.GENERATOR);
+    const instructions = report.vulnerabilities
+      .map(v => `- [${v.severity}] ${v.title}: ${v.fixSuggestion}`)
+      .join('\n');
+
+    const fixingProject = {
+      ...project,
+      isFixing: true,
+      fixInstructions: instructions
+    };
+
+    handleUpdateProject(fixingProject);
+    setCurrentView(PageView.GENERATOR);
   };
 
   const renderContent = () => {
@@ -80,25 +80,32 @@ const App: React.FC = () => {
         return <Dashboard onNavigate={setCurrentView} projects={projects} onSelectProject={handleSelectProject} />;
       case PageView.GENERATOR:
         return (
-            <Generator 
-                activeProject={activeProject}
-                onProjectCreate={handleCreateProject} 
-                onProjectUpdate={handleUpdateProject}
-                onNavigate={setCurrentView} 
-            />
+          <Generator
+            activeProject={activeProject}
+            onProjectCreate={handleCreateProject}
+            onProjectUpdate={handleUpdateProject}
+            onNavigate={setCurrentView}
+          />
         );
       case PageView.AUDITOR:
         return (
-            <Auditor 
-                project={activeProject} 
-                onUpdateProject={handleUpdateProject} 
-                onNavigate={setCurrentView} 
-                onRequestFix={handleRequestFix}
-                onCreateProject={handleCreateProject}
-            />
+          <Auditor
+            project={activeProject}
+            onUpdateProject={handleUpdateProject}
+            onNavigate={setCurrentView}
+            onRequestFix={handleRequestFix}
+            onCreateProject={handleCreateProject}
+          />
         );
       case PageView.DEPLOYMENT:
-        return <Deployment project={activeProject} walletConnected={walletConnected} />;
+        return (
+          <Deployment
+            project={activeProject}
+            walletConnected={walletConnected}
+            onConnectWallet={() => setWalletConnected(!walletConnected)}
+            onUpdateProject={handleUpdateProject}
+          />
+        );
       case PageView.DOCS:
         return <Documentation />;
       case PageView.CREATE_PROJECT:
@@ -106,11 +113,11 @@ const App: React.FC = () => {
       case PageView.PROJECT_WORKSPACE:
         if (!activeProject) return <Dashboard onNavigate={setCurrentView} projects={projects} onSelectProject={handleSelectProject} />;
         return (
-            <ProjectWorkspace 
-                project={activeProject}
-                onUpdateProject={handleUpdateProject}
-                onNavigate={setCurrentView}
-            />
+          <ProjectWorkspace
+            project={activeProject}
+            onUpdateProject={handleUpdateProject}
+            onNavigate={setCurrentView}
+          />
         );
       case PageView.SETTINGS:
         return (
@@ -127,19 +134,19 @@ const App: React.FC = () => {
                   <p className="text-white font-bold">Gemini-3-Pro-Nexus</p>
                 </div>
               </div>
-              <Button 
-                  variant="danger" 
-                  className="mt-8 w-full h-11 rounded-xl text-xs font-black uppercase tracking-widest" 
-                  onClick={() => {
-                      if(confirm("Factory Reset NexOps? This will permanently delete all local projects and history.")) {
-                          setProjects([]);
-                          setActiveProjectId(null);
-                          localStorage.removeItem(STORAGE_KEY);
-                          setCurrentView(PageView.DASHBOARD);
-                      }
-                  }}
+              <Button
+                variant="danger"
+                className="mt-8 w-full h-11 rounded-xl text-xs font-black uppercase tracking-widest"
+                onClick={() => {
+                  if (confirm("Factory Reset NexOps? This will permanently delete all local projects and history.")) {
+                    setProjects([]);
+                    setActiveProjectId(null);
+                    localStorage.removeItem(STORAGE_KEY);
+                    setCurrentView(PageView.DASHBOARD);
+                  }
+                }}
               >
-                  Factory Reset Protocol Data
+                Factory Reset Protocol Data
               </Button>
             </Card>
           </div>
@@ -150,8 +157,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout 
-      currentView={currentView} 
+    <Layout
+      currentView={currentView}
       onNavigate={setCurrentView}
       walletConnected={walletConnected}
       onConnectWallet={() => setWalletConnected(!walletConnected)}
