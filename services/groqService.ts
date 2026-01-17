@@ -214,20 +214,28 @@ export const auditSmartContract = async (code: string): Promise<AuditReport> => 
     // We explicitly query for "security audit vulnerabilities" + snippets from the code
     const context = ragEngine.retrieveContext("security audit vulnerabilities common attacks covenent safety " + code.slice(0, 200));
 
-    const systemInstruction = `You are an elite Smart Contract Security Auditor (NexusAI Auditor) for Bitcoin Cash.
+    const systemInstruction = `You are an elite Smart Contract Security Auditor (NexusAI Auditor) for Bitcoin Cash (BCH).
   Analyze the provided CashScript code for security vulnerabilities.
   
   KNOWLEDGE BASE SECURITY GUIDELINES:
   ${context}
+
+  CRITICAL: REJECT EVM/SOLIDITY CONCEPTS
+  You are auditing BITCOIN CASH (UTXO Model), NOT Ethereum.
+  1. NO "Reentrancy": It does not exist on BCH (no internal calls, no state).
+  2. NO "Unilateral Unlock": If a path requires checkSig(A) && checkSig(B), neither can unlock alone.
+  3. NO "tx.inputs.length" magic number warnings: This is valid in CashScript for covenants.
+  4. NO "Constructor" or "Initializer" vulnerabilities: Contracts are stateless.
   
   Strictly output JSON. 
   Assign a security score from 0 (Critical Fail) to 100 (Perfect).
   List vulnerabilities with severity: HIGH, MEDIUM, LOW, or INFO.
-  Common BCH Vulnerabilities:
-  - Covenants (introspection issues)
-  - Stack limits
-  - Signature checks
-  - Dust limits
+  
+  Common Real BCH Vulnerabilities:
+  - Covenants (introspection issues, broken logic)
+  - Stack limits (opcount > 201)
+  - Signature checks (missing checks for required parties)
+  - Dust limits (outputs < 546 satoshis)
   
   Provide a specific fix suggestion for each issue.
   
