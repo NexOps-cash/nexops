@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "cashc": "^0.12.1",
     "diff": "5.2.0",
     "groq-sdk": "^0.37.0",
     "lucide-react": "^0.560.0",

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, CodeBlock, Badge, DiffViewer } from '../components/UI';
 import { auditSmartContract, fixSmartContract } from '../services/groqService';
+import { compileCashScript } from '../services/compilerService';
 import { Project, PageView, AuditReport, ChainType } from '../types';
 import { ShieldCheck, CheckCircle, ArrowRight, Play, RefreshCcw, GitCompare, FileCode, History } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
@@ -45,6 +46,8 @@ export const Auditor: React.FC<AuditorProps> = ({ project, onUpdateProject, onNa
         }
     }, [project]);
 
+
+
     const handleAudit = async () => {
         if (!localCode.trim()) {
             setError("Please enter some CashScript code.");
@@ -53,7 +56,33 @@ export const Auditor: React.FC<AuditorProps> = ({ project, onUpdateProject, onNa
 
         setIsAuditing(true);
         setError(null);
+        setReport(null); // Clear previous report
+
         try {
+            // STEP 1: COMPILATION GATE
+            // We compile LOCALLY before sending to AI.
+            const compilation = compileCashScript(localCode);
+
+            if (!compilation.success) {
+                // Compilation failed!
+                const compilerReport: AuditReport = {
+                    score: 0,
+                    summary: "❌ COMPILATION FAILED: The code is invalid and cannot be compiled. Please fix syntax errors before security auditing.",
+                    vulnerabilities: compilation.errors.map((err, i) => ({
+                        severity: "HIGH",
+                        title: "Compiler Error [CRITICAL]",
+                        description: err,
+                        fixSuggestion: "Fix the syntax error reported by the compiler.",
+                        line: 0
+                    })),
+                    timestamp: Date.now()
+                };
+                setReport(compilerReport);
+                setIsAuditing(false);
+                return;
+            }
+
+            // STEP 2: AI AUDIT (Only if compiled)
             const result = await auditSmartContract(localCode);
             setReport(result);
 
