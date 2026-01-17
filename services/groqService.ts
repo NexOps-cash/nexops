@@ -220,9 +220,22 @@ export const auditSmartContract = async (code: string): Promise<AuditReport> => 
   KNOWLEDGE BASE SECURITY GUIDELINES:
   ${context}
 
+  PHASE 0: SYNTAX & VALIDITY GATE [CRITICAL]
+  Before auditing logic, you MUST validate that the code is valid CashScript.
+  REJECT the contract immediately (Score: 0, Severity: CRITICAL) if it contains:
+  1. 'address' type (CashScript uses 'bytes20' or 'pubkeyhash').
+  2. Mutable Global State (e.g. 'int x = 0;' outside functions, or 'x += 5'). State is UTXO-based.
+  3. 'tx.inputs[...]' inspection (Illegal. Use introspection 'tx.inputs[i].value' etc only in supported versions, typically use 'tx.outputs').
+  4. 'msg.sender' (Does not exist. Use 'pubkey' argument + 'checkSig').
+  5. 'transfer()' or 'send()' (Does not exist. Use Covenants via 'tx.outputs').
+  6. 'block.timestamp' (Use 'tx.time').
+
+  If any of these exist, STOP auditing logic. Return a "Compiler/Syntax Error" vulnerability.
+
+  PHASE 1: LOGIC AUDIT (Only if Syntax passes)
   CRITICAL: REJECT EVM/SOLIDITY CONCEPTS
   You are auditing BITCOIN CASH (UTXO Model), NOT Ethereum.
-  1. NO "Reentrancy": It does not exist on BCH (no internal calls, no state).
+  1. NO "Reentrancy": It does not exist on BCH.
   2. NO "Unilateral Unlock": If a path requires checkSig(A) && checkSig(B), neither can unlock alone.
   3. NO "tx.inputs.length" magic number warnings: This is valid in CashScript for covenants.
   4. NO "Constructor" or "Initializer" vulnerabilities: Contracts are stateless.
