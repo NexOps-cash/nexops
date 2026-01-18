@@ -82,3 +82,8 @@ Curated technical Q&As extracted from BCH developer Telegram groups:
 ---
 
 *Last updated: 2025-12-28*
+
+---
+## Credits
+
+https://github.com/toorik2
