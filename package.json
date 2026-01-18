@@ -9,10 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "cashc": "^0.12.1",
+    "@walletconnect/sign-client": "^2.23.3",
+    "@walletconnect/types": "^2.23.3",
+    "buffer": "^6.0.3",
+    "cashc": "^0.13.0-next.2",
     "diff": "5.2.0",
+    "events": "^3.3.0",
     "groq-sdk": "^0.37.0",
     "lucide-react": "^0.560.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "recharts": "^3.5.1"

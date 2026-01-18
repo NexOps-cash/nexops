@@ -138,7 +138,7 @@ export const generateProjectScaffold = async (name: string, description: string)
     Language: CashScript (BCH)
     
     Return a JSON object containing the files. 
-    1. Main contract file (Contract.cash)
+    1. Main contract file (Contract.cash).
     2. A dummy artifact.json
     3. A README.md
     
