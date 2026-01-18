@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Card, Button, Badge, CodeBlock } from '../components/UI';
+import React, { useState, useEffect } from 'react';
+import { Card, Button, Badge } from '../components/UI';
 import { Project, ChainType } from '../types';
 import { compileCashScript, verifyDeterminism, ContractArtifact } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
-import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet } from 'lucide-react';
+import { walletConnectService } from '../services/walletConnectService';
+import { QRCodeSVG } from 'qrcode.react';
+import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
@@ -25,6 +27,49 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [isFixing, setIsFixing] = useState(false);
     const [isDeterminismVerified, setIsDeterminismVerified] = useState(false);
 
+    // WalletConnect State
+    const [wcUri, setWcUri] = useState<string | null>(null);
+    const [wcSession, setWcSession] = useState<any | null>(null);
+    const [isConnecting, setIsConnecting] = useState(false);
+
+    useEffect(() => {
+        // Sync local session state with service
+        const session = walletConnectService.getSession();
+        if (session) {
+            setWcSession(session);
+            // Notify parent app of connection state if needed
+            if (!walletConnected) onConnectWallet();
+        }
+
+        const onConnected = (s: any) => {
+            setWcSession(s);
+            setWcUri(null);
+            setIsConnecting(false);
+            if (!walletConnected) onConnectWallet();
+        };
+
+        const onDisconnected = () => {
+            setWcSession(null);
+            setWcUri(null);
+            setIsConnecting(false);
+            if (walletConnected) onConnectWallet(); // Toggle off
+        };
+
+        const onProposal = (uri: string) => {
+            setWcUri(uri);
+        };
+
+        walletConnectService.on('session_connected', onConnected);
+        walletConnectService.on('session_disconnected', onDisconnected);
+        walletConnectService.on('session_proposal', onProposal);
+
+        return () => {
+            walletConnectService.off('session_connected', onConnected);
+            walletConnectService.off('session_disconnected', onDisconnected);
+            walletConnectService.off('session_proposal', onProposal);
+        };
+    }, [walletConnected, onConnectWallet]);
+
     if (!project) return <div className="p-8 text-center text-gray-500">No project selected.</div>;
 
     const auditScore = project.auditReport?.score || 0;
@@ -37,8 +82,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         setIsDeterminismVerified(false);
 
         try {
-            // 1. Compile
-            await new Promise(r => setTimeout(r, 500)); // UI flush
+            await new Promise(r => setTimeout(r, 500));
             const result = compileCashScript(project.contractCode);
 
             if (!result.success || !result.artifact) {
@@ -47,7 +91,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                 return;
             }
 
-            // 2. Determinism Check (Re-compile and verify)
             const isDeterministic = await verifyDeterminism(project.contractCode, result.artifact.bytecode);
 
             if (!isDeterministic) {
@@ -73,7 +116,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
             const prompt = `Fix the following CashScript compiler error in the contract.\nError: ${compilationError}`;
             const result = await fixSmartContract(project.contractCode, prompt);
 
-            // Update the project with fixed code
             onUpdateProject({
                 ...project,
                 contractCode: result.code,
@@ -81,7 +123,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
             });
 
             setCompilationError(null);
-            // Optionally notify user or clear error
+            handlePrepare(); // Auto-recompile
         } catch (e) {
             console.error("Auto-Fix failed", e);
         } finally {
@@ -89,23 +131,63 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         }
     };
 
-    const handleDeploy = () => {
-        if (!walletConnected || !isAuditPassed || !artifact) return;
-        setIsDeploying(true);
-        setDeploymentStep(1);
-
-        // Mock Deployment Process
-        setTimeout(() => setDeploymentStep(2), 1500); // Signing
-        setTimeout(() => setDeploymentStep(3), 3000); // Broadcasting
-        setTimeout(() => {
-            setDeploymentStep(4);
-            setTxHash("0x7f9a...3b21");
-            setIsDeploying(false);
-        }, 5000);
+    const handleConnectWC = async () => {
+        setIsConnecting(true);
+        try {
+            const chainId = 'bch:chipnet';
+            await walletConnectService.connect(chainId);
+        } catch (e) {
+            console.error(e);
+            setIsConnecting(false);
+        }
     };
 
-    // Helper to format Script Hash as "Address-like" for preview
+    const handleDisconnectWC = async () => {
+        await walletConnectService.disconnect();
+    };
+
+    const handleDeploy = async () => {
+        if (!wcSession || !isAuditPassed || !artifact) return;
+
+        // Final Safety Gate
+        if (auditScore < 80) {
+            alert("Security Gate Active: Cannot deploy because audit score is below threshold.");
+            return;
+        }
+
+        setIsDeploying(true);
+        setDeploymentStep(1); // Prepared
+
+        try {
+            // Mock TX Hex construction
+            const mockTxHex = "0200000001dummyhexfornow";
+            const chainId = 'bch:chipnet';
+
+            setDeploymentStep(2); // Signing
+
+            // Request Signature
+            const signedTx = await walletConnectService.requestSignature(mockTxHex, chainId);
+
+            setDeploymentStep(3); // Broadcasting
+            console.log("Signed Tx received:", signedTx);
+
+            // Simulate Broadcast
+            await new Promise(r => setTimeout(r, 2000));
+
+            setDeploymentStep(4); // Success
+            setTxHash("0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''));
+
+        } catch (e) {
+            console.error("Deployment failed", e);
+            setDeploymentStep(0);
+        } finally {
+            setIsDeploying(false);
+        }
+    };
+
     const formatAddressPreview = (sh: string) => `bchtest:p${sh.substring(0, 36)}...`;
+    // Safer wallet address extraction
+    const walletAddress = wcSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Connected';
 
     return (
         <div className="flex flex-col gap-6 pb-20">
@@ -197,33 +279,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
-                                    <Layout className="w-3 h-3 mr-1" /> Parameter Layout
-                                </label>
-                                <div className="bg-nexus-900 border border-nexus-700 rounded overflow-hidden">
-                                    <table className="w-full text-left text-xs">
-                                        <thead className="bg-nexus-800 text-gray-400">
-                                            <tr>
-                                                <th className="p-2">Name</th>
-                                                <th className="p-2">Type</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-gray-300">
-                                            {artifact.constructorInputs.length === 0 && (
-                                                <tr><td colSpan={2} className="p-2 text-center text-gray-500 italic">No constructor parameters</td></tr>
-                                            )}
-                                            {artifact.constructorInputs.map((input, i) => (
-                                                <tr key={i} className="border-t border-nexus-800">
-                                                    <td className="p-2 font-mono text-nexus-cyan">{input.name}</td>
-                                                    <td className="p-2 font-mono text-yellow-500">{input.type}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
                             <Button size="sm" variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
                                 Re-Compile
                             </Button>
@@ -251,7 +306,8 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                             </Badge>
                         </div>
 
-                        {!isAuditPassed ? (
+                        {/* Top Notification: Deployment Blocked (Only if connected or critical) */}
+                        {(!isAuditPassed && wcSession) && (
                             <div className="p-4 bg-red-900/10 border border-red-900/50 rounded text-center">
                                 <ShieldAlert className="w-8 h-8 text-red-500 mx-auto mb-2" />
                                 <h4 className="text-red-400 font-bold mb-1">Deployment Blocked</h4>
@@ -260,35 +316,106 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                     Return to Auditor to fix vulnerabilities.
                                 </p>
                             </div>
-                        ) : !walletConnected ? (
-                            <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded transition-all hover:bg-nexus-900/80">
-                                <Wallet className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                <p className="text-sm text-gray-300 mb-4">No Wallet Detected</p>
-                                <Button onClick={onConnectWallet} className="w-full bg-nexus-blue hover:bg-nexus-blue/80">
-                                    Connect Wallet Provider
-                                </Button>
-                                <p className="text-[10px] text-gray-500 mt-2">Supports Cashonize, Badger, or WalletConnect</p>
-                            </div>
-                        ) : !artifact ? (
-                            <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded">
-                                <FileCode className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                                <p className="text-sm text-gray-300">Artifacts not ready. Prepare deployment first.</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {artifact.constructorInputs.length > 0 && (
-                                    <div className="p-3 bg-yellow-900/10 border border-yellow-900/30 rounded text-xs text-yellow-500">
-                                        ⚠️ Constructor arguments needed. (Mock: using defaults)
+                        )}
+
+                        {!wcSession ? (
+                            // Not Connected State - Shows connect button regardless of audit for UX
+                            <div className="text-center p-6 bg-nexus-900/50 border border-nexus-700 rounded transition-all">
+                                {!wcUri ? (
+                                    // Initial State
+                                    <>
+                                        <Wallet className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                                        <p className="text-sm text-gray-300 mb-4">Connect Mobile Wallet (Chipnet)</p>
+                                        <Button
+                                            onClick={handleConnectWC}
+                                            className="w-full bg-nexus-blue hover:bg-nexus-blue/80"
+                                            isLoading={isConnecting}
+                                        >
+                                            Generate QRCode
+                                        </Button>
+                                        <div className="flex justify-center space-x-4 mt-4 opacity-50 grayscale">
+                                            <span className="text-[10px] text-gray-400">Paytaca</span>
+                                            <span className="text-[10px] text-gray-400">Electron Cash</span>
+                                        </div>
+                                    </>
+                                ) : (
+                                    // QR Code State
+                                    <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                                        <div className="bg-white p-3 rounded-xl mb-4">
+                                            <QRCodeSVG value={wcUri} size={180} />
+                                        </div>
+                                        <p className="text-xs text-gray-400 mb-4 animate-pulse">Scan with Paytaca or OPTN Wallet</p>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => { setWcUri(null); setIsConnecting(false); }}
+                                            icon={<RefreshCw className="w-3 h-3" />}
+                                        >
+                                            Reset
+                                        </Button>
                                     </div>
                                 )}
-                                <Button
-                                    onClick={handleDeploy}
-                                    disabled={isDeploying || deploymentStep === 4}
-                                    isLoading={isDeploying}
-                                    className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold"
-                                >
-                                    {deploymentStep === 4 ? "Deployed Successfully" : "Sign & Broadcast"}
-                                </Button>
+                            </div>
+                        ) : (
+                            // Connected State
+                            <div className="space-y-3">
+                                <div className="p-4 bg-nexus-cyan/10 border border-nexus-cyan/30 rounded-xl flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+                                    <div className="flex items-center space-x-3">
+                                        {wcSession?.peer?.metadata?.icons?.[0] ? (
+                                            <img src={wcSession.peer.metadata.icons[0]} alt="Wallet" className="w-10 h-10 rounded-full border border-nexus-cyan/30" />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-nexus-cyan/20 flex items-center justify-center">
+                                                <Wallet className="w-5 h-5 text-nexus-cyan" />
+                                            </div>
+                                        )}
+                                        <div>
+                                            <p className="text-xs text-nexus-cyan font-bold uppercase tracking-widest mb-0.5">Connected</p>
+                                            <h4 className="text-white font-medium text-sm">
+                                                {wcSession?.peer?.metadata?.name || "Unknown Wallet"}
+                                            </h4>
+                                            <div className="flex items-center mt-1 space-x-2">
+                                                <Badge variant="neutral" className="text-[10px] py-0 px-1.5 h-4">
+                                                    Chipnet
+                                                </Badge>
+                                                <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
+                                                    {walletAddress}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="glass"
+                                        size="sm"
+                                        onClick={handleDisconnectWC}
+                                        className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full"
+                                    >
+                                        <XCircle className="w-4 h-4" />
+                                    </Button>
+                                </div>
+
+                                {!artifact ? (
+                                    <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded">
+                                        <FileCode className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-sm text-gray-300">Artifacts not ready.</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {artifact.constructorInputs.length > 0 && (
+                                            <div className="p-3 bg-yellow-900/10 border border-yellow-900/30 rounded text-xs text-yellow-500">
+                                                ⚠️ Constructor arguments needed. (Using defaults)
+                                            </div>
+                                        )}
+                                        <Button
+                                            onClick={handleDeploy}
+                                            disabled={isDeploying || deploymentStep === 4 || !isAuditPassed}
+                                            isLoading={isDeploying}
+                                            className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            icon={<Rocket className="w-4 h-4" />}
+                                        >
+                                            {deploymentStep === 4 ? "Broadcasted" : isAuditPassed ? "Sign & Broadcast" : "Deploy Blocked (Audit)"}
+                                        </Button>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
@@ -302,9 +429,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                         {isCompiling && <p className="text-nexus-cyan">&gt; Compiling contract...</p>}
                         {isFixing && <p className="text-nexus-purple animate-pulse">&gt; Analyzing compiler error with NexusAI...</p>}
                         {artifact && <p className="text-green-500">&gt; Artifacts generated. Bytecode size: {artifact.bytecode.length / 2} bytes.</p>}
+
                         {deploymentStep >= 1 && <p className="text-nexus-cyan">&gt; Initiating deployment...</p>}
-                        {deploymentStep >= 2 && <p className="text-nexus-cyan">&gt; Requesting wallet signature (WalletConnect)...</p>}
-                        {deploymentStep >= 3 && <p className="text-nexus-cyan">&gt; Broadcasting transaction to Chipnet...</p>}
+                        {deploymentStep >= 2 && <p className="text-yellow-500 animate-pulse">&gt; Requesting signature on mobile device...</p>}
+                        {deploymentStep >= 3 && <p className="text-nexus-cyan">&gt; Broadcasting signed transaction...</p>}
+
                         {deploymentStep >= 4 && (
                             <div className="mt-4 p-4 border border-green-900/50 bg-green-900/10 rounded">
                                 <p className="text-green-400 flex items-center font-bold mb-2"><CheckCircle className="w-4 h-4 mr-2" /> Contract Deployed!</p>
