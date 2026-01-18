@@ -117,6 +117,8 @@ const App: React.FC = () => {
             project={activeProject}
             onUpdateProject={handleUpdateProject}
             onNavigate={setCurrentView}
+            walletConnected={walletConnected}
+            onConnectWallet={() => setWalletConnected(!walletConnected)}
           />
         );
       case PageView.SETTINGS:
