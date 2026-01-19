@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
+import { NamedTaskTerminal } from '../components/NamedTaskTerminal';
 import { Project, ProjectFile, PageView, CodeVersion } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
@@ -37,7 +38,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     // Tools State
     const [isAuditing, setIsAuditing] = useState(false);
-    const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentLog, setDeploymentLog] = useState<string[]>([]);
 
     // Assistant State
@@ -137,7 +137,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const applyFileUpdates = (updates: { name: string, content: string }[], messageIndex: number) => {
-        // Deep clone files
         const updatedFiles = [...project.files];
 
         updates.forEach(update => {
@@ -153,7 +152,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }
         });
 
-        // Set the primary updated file as active
         if (updates.length > 0) {
             setActiveFileName(updates[0].name);
         }
@@ -168,12 +166,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             author: 'AI'
         };
 
-        // Update local chat history to show it's applied
         const newHistory = [...chatHistory];
         newHistory[messageIndex] = { ...newHistory[messageIndex], isApplied: true };
         setChatHistory(newHistory);
 
-        // Commit to parent state (triggers App's useEffect localStorage sync)
         onUpdateProject({
             ...project,
             files: updatedFiles,
@@ -188,69 +184,41 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const handleRunAudit = async () => {
         if (!mainContractFile) return;
         setIsAuditing(true);
+        setDeploymentLog(prev => [...prev, 'Starting Audit...']);
         try {
             const report = await auditSmartContract(mainContractFile.content);
             onUpdateProject({ ...project, auditReport: report });
+            setDeploymentLog(prev => [...prev, 'Audit Complete. Issues found: ' + report.vulnerabilities.length]);
         } catch (e) {
             console.error(e);
-        } finally {
-            setIsAuditing(false);
-        }
-    };
-
-    const handleAutoFix = async () => {
-        if (!mainContractFile || !project.auditReport) return;
-
-        setIsAuditing(true);
-        const instructions = project.auditReport.vulnerabilities.map(v => `${v.title}: ${v.fixSuggestion}`).join('\n');
-        try {
-            const result = await fixSmartContract(mainContractFile.content, instructions);
-
-            const newVersion: CodeVersion = {
-                id: Date.now().toString(),
-                timestamp: Date.now(),
-                code: result.code,
-                description: 'Nex Auditor Auto-Fix Applied',
-                author: 'AI'
-            };
-
-            const updatedFiles = project.files.map(f =>
-                f.name === mainContractFile.name ? { ...f, content: result.code } : f
-            );
-
-            onUpdateProject({
-                ...project,
-                files: updatedFiles,
-                contractCode: result.code,
-                versions: [newVersion, ...project.versions],
-                auditReport: undefined,
-                lastModified: Date.now()
-            });
-        } catch (e) {
-            console.error(e);
+            setDeploymentLog(prev => [...prev, 'Audit Failed.']);
         } finally {
             setIsAuditing(false);
         }
     };
 
     const handleDeploy = () => {
-        // Legacy deploy handler (can be removed later if Deployment component handles it fully)
-        // But for now keeping it as a stub
-        console.log("Triggering deployment flow via UI");
+        setDeploymentLog(prev => [...prev, 'Initiating Deployment Flow via WalletConnect...']);
+        // The actual deployment logic is handled by the Deployment component now usually, 
+        // but for this task bar we are just mocking the start of the process logs
     };
 
-    const handleRevert = (v: CodeVersion) => {
-        if (!mainContractFile) return;
-        const updatedFiles = project.files.map(f =>
-            f.name === mainContractFile.name ? { ...f, content: v.code } : f
-        );
-        onUpdateProject({
-            ...project,
-            files: updatedFiles,
-            contractCode: v.code,
-            lastModified: Date.now()
-        });
-        setCompareVersion(null);
+    const handleRunTask = (task: string) => {
+        const timestamp = new Date().toLocaleTimeString();
+        setDeploymentLog(prev => [...prev, `[${timestamp}] Executing ${task}...`]);
+
+        if (task === 'COMPILE') {
+            // Mock compile
+            setTimeout(() => {
+                setDeploymentLog(prev => [...prev, `[${timestamp}] ✅ Compile Success: ${project.name}.json generated.`]);
+                setDeploymentLog(prev => [...prev, `[${timestamp}]   - Size: 1.2KB`]);
+                setDeploymentLog(prev => [...prev, `[${timestamp}]   - Opcodes: 45`]);
+            }, 800);
+        } else if (task === 'AUDIT') {
+            handleRunAudit();
+        } else if (task === 'DEPLOY') {
+            handleDeploy();
+        }
     };
 
     // -- Render Helpers --
@@ -405,15 +373,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     );
 
     const renderBottomPanel = () => (
-        <div className="h-full w-full flex">
-            <div className="w-full h-full bg-black/80 font-mono text-xs p-2 text-slate-300 overflow-y-auto">
-                <div className="text-slate-500 mb-1">$ nexops-cli ready</div>
-                {deploymentLog.map((log, i) => (
-                    <div key={i} className="text-nexus-cyan">&gt; {log}</div>
-                ))}
-                <div className="animate-pulse">_</div>
-            </div>
-        </div>
+        <NamedTaskTerminal
+            onRunTask={handleRunTask}
+            logs={deploymentLog}
+        />
     );
 
     return (
