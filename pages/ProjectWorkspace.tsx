@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Tabs, getFileIcon, Badge } from '../components/UI';
+import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
+import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { Project, ProjectFile, PageView, CodeVersion } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
@@ -31,7 +32,7 @@ interface ProjectWorkspaceProps {
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, onNavigate, walletConnected, onConnectWallet }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
-    const [activeTab, setActiveTab] = useState('ASSISTANT');
+    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG'>('EXPLORER');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
 
     // Tools State
@@ -233,16 +234,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const handleDeploy = () => {
-        if (!project.auditReport || project.auditReport.score < 80) return;
-        setIsDeploying(true);
-        setDeploymentLog(['Initializing NexOps broadcast engine...']);
-
-        setTimeout(() => setDeploymentLog(p => [...p, 'Compiling CashScript to Bytecode...']), 1000);
-        setTimeout(() => setDeploymentLog(p => [...p, 'Requesting provider signature...']), 2500);
-        setTimeout(() => {
-            setDeploymentLog(p => [...p, `Broadcasting to Chipnet!`, 'Transaction ID: 0x8a...f29b']);
-            setIsDeploying(false);
-        }, 4000);
+        // Legacy deploy handler (can be removed later if Deployment component handles it fully)
+        // But for now keeping it as a stub
+        console.log("Triggering deployment flow via UI");
     };
 
     const handleRevert = (v: CodeVersion) => {
@@ -259,349 +253,180 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setCompareVersion(null);
     };
 
-    // -- Render --
+    // -- Render Helpers --
 
-    return (
-        <div className="h-full flex gap-0 overflow-hidden relative bg-nexus-900">
-
-            {/* Explorer (Left) */}
-            <aside className="w-64 flex flex-shrink-0 flex-col border-r border-slate-800/50 bg-nexus-800">
-                <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                        <Folder size={16} className="text-slate-500" />
-                        <span className="text-xs font-black text-slate-300 uppercase tracking-widest">{project.name}</span>
-                    </div>
-                    <button className="text-slate-500 hover:text-nexus-cyan transition-colors">
-                        <FilePlus size={16} />
+    const renderSidebarExplorer = () => (
+        <div className="flex-1 overflow-y-auto no-scrollbar py-2">
+            <div className="px-4 mb-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{project.name}</span>
+            </div>
+            <div className="space-y-px">
+                {uniqueFiles.map(file => (
+                    <button
+                        key={file.name}
+                        onClick={() => setActiveFileName(file.name)}
+                        className={`w-full flex items-center space-x-3 px-4 py-2 text-xs transition-all relative truncate ${activeFileName === file.name
+                            ? 'text-white bg-nexus-cyan/10 font-bold'
+                            : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                            }`}
+                    >
+                        {activeFileName === file.name && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-nexus-cyan"></div>}
+                        <div className="flex-shrink-0">{getFileIcon(file.name)}</div>
+                        <span className="truncate">{file.name}</span>
                     </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto no-scrollbar py-2">
-                    <div className="px-4 mb-2">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Filesystem</span>
+                ))}
+            </div>
+            <div className="px-4 mt-6 mb-2">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">History</span>
+            </div>
+            <div className="px-2 space-y-1">
+                {project.versions.slice(0, 5).map(v => (
+                    <div key={v.id} className="flex items-center text-[10px] text-slate-500 px-2 py-1 hover:text-slate-300 cursor-pointer" onClick={() => setCompareVersion(v)}>
+                        <History size={10} className="mr-2" />
+                        <span className="truncate">{new Date(v.timestamp).toLocaleTimeString()}</span>
                     </div>
-                    <div className="space-y-px">
-                        {uniqueFiles.map(file => (
-                            <button
-                                key={file.name}
-                                onClick={() => setActiveFileName(file.name)}
-                                className={`w-full flex items-center space-x-3 px-4 py-2 text-xs transition-all relative truncate ${activeFileName === file.name
-                                    ? 'text-white bg-nexus-cyan/10 font-bold'
-                                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-                                    }`}
-                            >
-                                {activeFileName === file.name && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-nexus-cyan"></div>}
-                                <div className="flex-shrink-0">{getFileIcon(file.name)}</div>
-                                <span className="truncate">{file.name}</span>
-                            </button>
-                        ))}
+                ))}
+            </div>
+        </div>
+    );
+
+    const renderSidebarAuditor = () => (
+        <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                {chatHistory.length === 0 && (
+                    <div className="text-center py-10 opacity-40">
+                        <Bot size={32} className="mx-auto text-nexus-cyan mb-2" />
+                        <p className="text-[10px]">AI Assistant Ready</p>
                     </div>
-                </div>
-
-                <div className="p-4 bg-nexus-900/50 border-t border-slate-800/50">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Protocol</span>
-                        <Badge variant="info">{project.chain.split(' ')[0]}</Badge>
-                    </div>
-                </div>
-            </aside>
-
-            {/* Editor (Center) */}
-            <div className="flex-1 flex flex-col min-w-0 bg-nexus-900">
-                {/* File Tabs */}
-                <div className="h-10 flex items-center bg-nexus-800/40 border-b border-slate-800/50 px-1 overflow-x-auto no-scrollbar">
-                    {uniqueFiles.map(file => (
-                        <button
-                            key={file.name}
-                            onClick={() => setActiveFileName(file.name)}
-                            className={`flex items-center space-x-2 px-4 h-full text-[11px] font-bold transition-all border-b-2 ${activeFileName === file.name
-                                ? 'border-nexus-cyan bg-nexus-900 text-white'
-                                : 'border-transparent text-slate-500 hover:text-slate-300'
-                                }`}
-                        >
-                            <span className="truncate">{file.name}</span>
-                            {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning animate-pulse"></div>}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Main Editor Surface */}
-                <div className="flex-1 relative overflow-hidden flex flex-col">
-                    <div className="flex-1 relative">
-                        {compareVersion && activeFile ? (
-                            <MonacoEditorWrapper
-                                code={activeFile.content}
-                                originalCode={compareVersion.code}
-                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
-                                diffMode={true}
-                                onChange={() => { }} // Read-only in diff mode
-                                readOnly={true}
-                            />
-                        ) : activeFile ? (
-                            <MonacoEditorWrapper
-                                code={activeFile.content}
-                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
-                                onChange={(val) => handleFileChange(val || '')}
-                                readOnly={!!activeFile.readOnly}
-                            />
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-700">
-                                <FileCode size={48} className="mb-4 opacity-20" />
-                                <p className="text-sm font-black uppercase tracking-widest opacity-20">Initialize Code Module</p>
-                            </div>
+                )}
+                {chatHistory.map((msg, i) => (
+                    <div key={i} className={`p-3 rounded-xl text-xs ${msg.role === 'user' ? 'bg-nexus-cyan/10 text-white self-end text-right' : 'bg-slate-800/50 text-slate-300'}`}>
+                        <div className="font-bold opacity-50 text-[9px] mb-1 uppercase">{msg.role}</div>
+                        {msg.text}
+                        {msg.fileUpdates && (
+                            <Button size="sm" variant="glass" className="mt-2 w-full text-[10px]" onClick={() => applyFileUpdates(msg.fileUpdates!, i)} disabled={msg.isApplied}>
+                                {msg.isApplied ? 'Applied' : 'Apply Changes'}
+                            </Button>
                         )}
                     </div>
+                ))}
+                <div ref={chatEndRef} />
+            </div>
+            {/* Input */}
+            <div className="p-2 border-t border-slate-800 bg-nexus-900">
+                <textarea
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                    className="w-full bg-slate-800 text-xs p-2 rounded-lg outline-none border border-slate-700 focus:border-nexus-cyan"
+                    placeholder="Ask AI..."
+                    rows={2}
+                />
+            </div>
+        </div>
+    );
 
-                    {/* Bottom Actions Bar */}
-                    <div className="p-4 border-t border-slate-800/50 flex justify-between items-center bg-nexus-800/20 backdrop-blur-sm">
-                        <div className="flex items-center space-x-4">
-                            <div className="flex items-center space-x-2 text-[10px] font-bold text-slate-500">
-                                <GitMerge size={12} />
-                                <span>PROTOCOL REVISION v{project.versions.length}</span>
-                            </div>
-                        </div>
-                        <div className="flex space-x-3">
-                            <Button
-                                variant="glass"
-                                className="h-8 text-[10px] uppercase font-black"
-                                icon={<RotateCcw size={12} />}
-                                onClick={() => onUpdateProject({ ...project, files: project.files })} // Simple trigger
-                            >
-                                Refresh
-                            </Button>
-                            <Button
-                                variant="primary"
-                                className="h-8 px-4 text-[10px] uppercase font-black tracking-widest"
-                                onClick={() => handleSave()}
-                                icon={<Save size={12} />}
-                            >
-                                Save Changes
-                            </Button>
-                        </div>
-                    </div>
+    const renderSidebarDebug = () => (
+        <div className="p-4">
+            <div className="text-xs text-slate-500 mb-4">Execution Config</div>
+            <div className="space-y-4">
+                <div className="bg-slate-800 p-2 rounded border border-slate-700">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
+                    <div className="text-nexus-cyan text-xs">Chipnet (Testnet)</div>
                 </div>
+                <Button className="w-full text-xs" icon={<Play size={12} />} onClick={() => { }}>
+                    Run Simulation
+                </Button>
+            </div>
+        </div>
+    );
+
+    const renderEditorArea = () => (
+        <div className="flex flex-col h-full">
+            {/* Tabs */}
+            <div className="h-9 flex items-center bg-nexus-900 border-b border-slate-800 px-0">
+                {uniqueFiles.map(file => (
+                    <button
+                        key={file.name}
+                        onClick={() => setActiveFileName(file.name)}
+                        className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-slate-800 transition-all ${activeFileName === file.name
+                            ? 'bg-nexus-800 text-white border-t-2 border-t-nexus-cyan'
+                            : 'text-slate-500 hover:bg-slate-800/50'
+                            }`}
+                    >
+                        <span>{getFileIcon(file.name)}</span>
+                        <span>{file.name}</span>
+                        {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning ml-1"></div>}
+                    </button>
+                ))}
             </div>
 
-            {/* Tools (Right) */}
-            <aside className="w-[400px] flex flex-shrink-0 flex-col border-l border-slate-800/50 bg-nexus-800">
-                <div className="p-1 border-b border-slate-800/50">
-                    <Tabs
-                        tabs={['ASSISTANT', 'AUDIT', 'HISTORY', 'DEPLOY']}
-                        activeTab={activeTab}
-                        onChange={setActiveTab}
+            {/* Editor */}
+            <div className="flex-1 relative">
+                {compareVersion && activeFile ? (
+                    <MonacoEditorWrapper
+                        code={activeFile.content}
+                        originalCode={compareVersion.code}
+                        language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                        diffMode={true}
+                        onChange={() => { }}
+                        readOnly={true}
                     />
+                ) : activeFile ? (
+                    <MonacoEditorWrapper
+                        code={activeFile.content}
+                        language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                        onChange={(val) => handleFileChange(val || '')}
+                        readOnly={!!activeFile.readOnly}
+                    />
+                ) : (
+                    <div className="flex items-center justify-center h-full text-slate-600 text-xs uppercase tracking-widest font-bold">
+                        No File Selected
+                    </div>
+                )}
+            </div>
+
+            {/* Editor Actions / Footer */}
+            {activeFile && (
+                <div className="h-6 bg-nexus-cyan/5 border-t border-slate-800 flex items-center justify-between px-3">
+                    <div className="flex items-center space-x-3 text-[10px] text-slate-500 font-mono">
+                        <span>Master</span>
+                        <span>Ln 1, Col 1</span>
+                        <span>UTF-8</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        {unsavedChanges && <span className="text-[10px] text-nexus-warning animate-pulse">● Unsaved</span>}
+                        <button onClick={() => handleSave()} className="text-[10px] text-slate-400 hover:text-nexus-cyan hover:underline">Save</button>
+                    </div>
                 </div>
-
-                <div className="flex-1 overflow-hidden flex flex-col">
-                    {activeTab === 'ASSISTANT' && (
-                        <div className="flex-1 flex flex-col overflow-hidden bg-nexus-900/20">
-                            {/* Messages Container */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-                                {chatHistory.length === 0 && (
-                                    <div className="text-center py-20 flex flex-col items-center opacity-40">
-                                        <Bot size={40} className="text-nexus-cyan mb-4" />
-                                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-300">NexOps Assistant</h3>
-                                        <p className="text-[10px] text-slate-500 max-w-[220px] mt-2 font-medium">
-                                            Describe protocol changes, request security patches, or audit logic across your workspace.
-                                        </p>
-                                    </div>
-                                )}
-                                {chatHistory.map((msg, i) => (
-                                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-[90%] rounded-2xl p-4 text-xs leading-relaxed ${msg.role === 'user'
-                                            ? 'bg-nexus-cyan/10 border border-nexus-cyan/20 text-white'
-                                            : 'bg-slate-800/50 border border-slate-700/50 text-slate-300'
-                                            }`}>
-                                            <div className="flex items-center mb-2 text-[9px] uppercase font-black tracking-[0.2em] opacity-40">
-                                                {msg.role === 'user' ? 'Operator' : 'AI Logic Unit'}
-                                            </div>
-                                            <div className="whitespace-pre-wrap font-sans prose prose-invert prose-xs">{msg.text}</div>
-
-                                            {msg.fileUpdates && msg.fileUpdates.length > 0 && (
-                                                <div className="mt-4 pt-4 border-t border-slate-700/50">
-                                                    <div className="flex items-center justify-between mb-3">
-                                                        <span className="text-[10px] text-nexus-cyan font-black uppercase tracking-wider">Protocol Proposal</span>
-                                                        <Badge variant="info">{msg.fileUpdates.length} Modules</Badge>
-                                                    </div>
-                                                    <div className="space-y-1.5 mb-4">
-                                                        {msg.fileUpdates.map(u => (
-                                                            <div key={u.name} className="flex items-center text-[10px] text-slate-400 font-mono bg-nexus-900/80 p-2 rounded-lg border border-slate-800">
-                                                                <FileCode size={12} className="mr-2 text-nexus-cyan/70" /> {u.name}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <Button
-                                                        variant={msg.isApplied ? 'glass' : 'primary'}
-                                                        className="w-full text-[10px] py-2.5 h-auto uppercase font-black tracking-[0.15em] shadow-lg"
-                                                        icon={msg.isApplied ? <CheckCircle size={14} className="text-nexus-success" /> : <Wand2 size={14} />}
-                                                        disabled={msg.isApplied}
-                                                        onClick={() => applyFileUpdates(msg.fileUpdates!, i)}
-                                                    >
-                                                        {msg.isApplied ? 'Changes Commited' : 'Apply Updates'}
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                                {isChatting && (
-                                    <div className="flex justify-start">
-                                        <div className="bg-slate-800/30 border border-slate-700/30 rounded-full px-4 py-2">
-                                            <div className="flex space-x-1.5">
-                                                <div className="w-1.5 h-1.5 bg-nexus-cyan rounded-full animate-pulse"></div>
-                                                <div className="w-1.5 h-1.5 bg-nexus-cyan rounded-full animate-pulse delay-75"></div>
-                                                <div className="w-1.5 h-1.5 bg-nexus-cyan rounded-full animate-pulse delay-150"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                                <div ref={chatEndRef} />
-                            </div>
-
-                            {/* Assistant Input */}
-                            <div className="p-4 bg-nexus-900 border-t border-slate-800/50">
-                                <div className="relative group">
-                                    <textarea
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 pr-14 text-xs text-slate-200 focus:border-nexus-cyan focus:ring-1 focus:ring-nexus-cyan/20 outline-none resize-none h-24 custom-scrollbar transition-all"
-                                        placeholder="Command assistant (e.g. 'Add a refund function after a timeout')..."
-                                        value={chatInput}
-                                        onChange={(e) => setChatInput(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                handleSendMessage();
-                                            }
-                                        }}
-                                    />
-                                    <button
-                                        onClick={handleSendMessage}
-                                        disabled={!chatInput.trim() || isChatting}
-                                        className="absolute bottom-4 right-4 p-2.5 rounded-xl bg-nexus-cyan text-nexus-900 hover:bg-cyan-400 disabled:opacity-10 disabled:grayscale transition-all shadow-xl shadow-nexus-cyan/20"
-                                    >
-                                        <Send size={18} />
-                                    </button>
-                                </div>
-                                <div className="flex justify-between items-center mt-3 px-2">
-                                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Shift + Enter for multi-line</span>
-                                    <span className="text-[9px] text-slate-600 font-mono uppercase">Engine: Llama-3-Nexus</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'AUDIT' && (
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                            <div className="text-center p-6 bg-nexus-900/40 border border-slate-800 rounded-3xl">
-                                <ShieldCheck size={48} className="mx-auto text-nexus-cyan mb-4 opacity-50" />
-                                <h3 className="text-lg font-black text-white tracking-tight">Security Audit</h3>
-                                <p className="text-xs text-slate-500 mt-2 mb-6 font-medium">Static analysis & UTXO logic validation.</p>
-                                <Button
-                                    className="w-full h-11 rounded-xl text-xs font-black uppercase tracking-widest"
-                                    onClick={handleRunAudit}
-                                    isLoading={isAuditing}
-                                    icon={<Play size={14} />}
-                                >
-                                    Start Analysis
-                                </Button>
-                            </div>
-
-                            {project.auditReport && (
-                                <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                    <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-2xl border border-slate-700 mb-6 shadow-inner">
-                                        <div>
-                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Final Grade</span>
-                                            <div className={`text-3xl font-black mt-1 ${project.auditReport.score > 80 ? 'text-nexus-success' : 'text-nexus-danger'}`}>
-                                                {project.auditReport.score}<span className="text-sm opacity-50 font-medium ml-1">%</span>
-                                            </div>
-                                        </div>
-                                        <Badge variant={project.auditReport.score > 80 ? 'success' : 'high'}>
-                                            {project.auditReport.score > 80 ? 'SECURE' : 'UNSAFE'}
-                                        </Badge>
-                                    </div>
-
-                                    {project.auditReport.score < 80 && (
-                                        <Button
-                                            variant="secondary"
-                                            className="w-full mb-6 h-11 border-nexus-warning/40 text-nexus-warning font-black text-xs uppercase"
-                                            onClick={handleAutoFix}
-                                            isLoading={isAuditing}
-                                            icon={<GitMerge size={16} />}
-                                        >
-                                            Patch All Faults
-                                        </Button>
-                                    )}
-
-                                    <div className="space-y-3">
-                                        <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2 mb-4">Fault Report</h4>
-                                        {project.auditReport.vulnerabilities.map((v, i) => (
-                                            <div key={i} className="bg-nexus-900/50 p-4 rounded-2xl border border-slate-800/80 transition-all hover:border-slate-700">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-xs font-black text-slate-200">{v.title}</span>
-                                                    <Badge variant={v.severity.toLowerCase() as any}>{v.severity}</Badge>
-                                                </div>
-                                                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">{v.description}</p>
-                                                <div className="text-[10px] text-nexus-cyan font-bold bg-nexus-cyan/5 p-3 rounded-xl border border-nexus-cyan/10">
-                                                    <div className="uppercase tracking-widest text-[8px] mb-1 opacity-60">Recommendation</div>
-                                                    {v.fixSuggestion}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'HISTORY' && (
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                            <div className="flex items-center justify-between px-2">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Commit History</span>
-                                <Badge variant="info">{project.versions.length} versions</Badge>
-                            </div>
-                            {project.versions.map((v, i) => (
-                                <div key={v.id} className="p-4 bg-nexus-900/60 border border-slate-800 rounded-2xl group transition-all hover:bg-nexus-900/80 hover:border-slate-700">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <div className="flex items-center space-x-2">
-                                            <span className="text-[10px] font-black text-nexus-cyan bg-nexus-cyan/10 px-2 py-0.5 rounded-full">REV {project.versions.length - i}</span>
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{v.author}</span>
-                                        </div>
-                                        <span className="text-[9px] text-slate-600 font-mono">{new Date(v.timestamp).toLocaleTimeString()}</span>
-                                    </div>
-                                    <p className="text-[11px] text-slate-500 mb-4 line-clamp-2">{v.description}</p>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => setCompareVersion(compareVersion?.id === v.id ? null : v)}
-                                            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${compareVersion?.id === v.id
-                                                ? 'bg-nexus-cyan border-nexus-cyan text-nexus-900'
-                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
-                                                }`}
-                                        >
-                                            {compareVersion?.id === v.id ? 'Hide Diff' : 'Compare'}
-                                        </button>
-                                        <button
-                                            onClick={() => handleRevert(v)}
-                                            className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest bg-slate-800 border border-slate-700 rounded-lg text-nexus-danger hover:bg-nexus-danger hover:text-white transition-all"
-                                        >
-                                            Restore
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {activeTab === 'DEPLOY' && (
-                        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-black/20">
-                            <Deployment
-                                project={project}
-                                walletConnected={walletConnected}
-                                onConnectWallet={onConnectWallet}
-                                onUpdateProject={onUpdateProject}
-                            />
-                        </div>
-                    )}
-                </div>
-            </aside>
+            )}
         </div>
+    );
+
+    const renderBottomPanel = () => (
+        <div className="h-full w-full flex">
+            <div className="w-full h-full bg-black/80 font-mono text-xs p-2 text-slate-300 overflow-y-auto">
+                <div className="text-slate-500 mb-1">$ nexops-cli ready</div>
+                {deploymentLog.map((log, i) => (
+                    <div key={i} className="text-nexus-cyan">&gt; {log}</div>
+                ))}
+                <div className="animate-pulse">_</div>
+            </div>
+        </div>
+    );
+
+    return (
+        <WorkbenchLayout
+            activeView={activeView}
+            onViewChange={setActiveView}
+            sidebarContent={
+                activeView === 'EXPLORER' ? renderSidebarExplorer() :
+                    activeView === 'AUDITOR' ? renderSidebarAuditor() :
+                        renderSidebarDebug()
+            }
+            editorContent={renderEditorArea()}
+            bottomPanelContent={renderBottomPanel()}
+        />
     );
 };
