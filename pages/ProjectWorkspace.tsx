@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, CodeBlock, DiffViewer, Tabs, getFileIcon, Badge } from '../components/UI';
+import { Card, Button, Tabs, getFileIcon, Badge } from '../components/UI';
+import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { Project, ProjectFile, PageView, CodeVersion } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
@@ -328,12 +329,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 <div className="flex-1 relative overflow-hidden flex flex-col">
                     <div className="flex-1 relative">
                         {compareVersion && activeFile ? (
-                            <DiffViewer oldCode={compareVersion.code} newCode={activeFile.content} />
-                        ) : activeFile ? (
-                            <CodeBlock
+                            <MonacoEditorWrapper
                                 code={activeFile.content}
-                                editable={!activeFile.readOnly}
-                                onChange={handleFileChange}
+                                originalCode={compareVersion.code}
+                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                                diffMode={true}
+                                onChange={() => { }} // Read-only in diff mode
+                                readOnly={true}
+                            />
+                        ) : activeFile ? (
+                            <MonacoEditorWrapper
+                                code={activeFile.content}
+                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                                onChange={(val) => handleFileChange(val || '')}
+                                readOnly={!!activeFile.readOnly}
                             />
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full text-slate-700">

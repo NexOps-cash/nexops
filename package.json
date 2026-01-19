@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@walletconnect/sign-client": "^2.23.3",
     "@walletconnect/types": "^2.23.3",
     "buffer": "^6.0.3",
