@@ -5,6 +5,8 @@ import { compileCashScript, verifyDeterminism, ContractArtifact } from '../servi
 import { fixSmartContract } from '../services/groqService';
 import { walletConnectService } from '../services/walletConnectService';
 import { QRCodeSVG } from 'qrcode.react';
+import { Contract } from 'cashscript';
+import { ConstructorForm } from '../components/ConstructorForm';
 import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw } from 'lucide-react';
 
 interface DeploymentProps {
@@ -25,7 +27,12 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [isCompiling, setIsCompiling] = useState(false);
     const [compilationError, setCompilationError] = useState<string | null>(null);
     const [isFixing, setIsFixing] = useState(false);
+
     const [isDeterminismVerified, setIsDeterminismVerified] = useState(false);
+    const [derivedAddress, setDerivedAddress] = useState<string>('');
+    const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [fundingAmount, setFundingAmount] = useState<number>(2000); // Default 2000 sats
+    const [paymentRequestUri, setPaymentRequestUri] = useState<string | null>(null);
 
     // WalletConnect State
     const [wcUri, setWcUri] = useState<string | null>(null);
@@ -147,7 +154,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     };
 
     const handleDeploy = async () => {
-        if (!wcSession || !isAuditPassed || !artifact) return;
+        if (!walletConnectService.getSession() && !derivedAddress) return;
+        if (!derivedAddress) {
+            alert("Address derivation failed. check inputs.");
+            return;
+        }
 
         // Final Safety Gate
         if (auditScore < 80) {
@@ -159,23 +170,17 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         setDeploymentStep(1); // Prepared
 
         try {
-            // Mock TX Hex construction
-            const mockTxHex = "0200000001dummyhexfornow";
-            const chainId = 'bch:chipnet';
+            // Construct Payment Request URI (BIP-21)
+            // amount is in BCH usually for URI, but wallets vary. standard is BCH.
+            const amountBch = fundingAmount / 100_000_000;
+            const uri = `${derivedAddress}?amount=${amountBch}&label=NexOps%20Deployment`;
 
-            setDeploymentStep(2); // Signing
+            setPaymentRequestUri(uri);
+            setDeploymentStep(2); // Waiting for Payment
 
-            // Request Signature
-            const signedTx = await walletConnectService.requestSignature(mockTxHex, chainId);
-
-            setDeploymentStep(3); // Broadcasting
-            console.log("Signed Tx received:", signedTx);
-
-            // Simulate Broadcast
-            await new Promise(r => setTimeout(r, 2000));
-
-            setDeploymentStep(4); // Success
-            setTxHash("0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''));
+            // In a real app, we would start polling an Indexer here to detect the TX.
+            // For now, we simulate detection or wait for user to say "Done".
+            console.log("Payment URI:", uri);
 
         } catch (e) {
             console.error("Deployment failed", e);
@@ -183,6 +188,14 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         } finally {
             setIsDeploying(false);
         }
+    };
+
+    const handlePaymentDone = () => {
+        setDeploymentStep(4);
+        setTxHash("Detecting...");
+        setTimeout(() => {
+            setTxHash("0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''));
+        }, 2000);
     };
 
     const formatAddressPreview = (sh: string) => `bchtest:p${sh.substring(0, 36)}...`;
@@ -260,13 +273,22 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 )}
                             </div>
 
+
+                            <ConstructorForm
+                                inputs={artifact.constructorInputs}
+                                onChange={setConstructorArgs}
+                            />
+
                             {/* Artifact Preview Details */}
                             <div>
                                 <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
-                                    <Lock className="w-3 h-3 mr-1" /> Locking Address (Preview)
+                                    <Lock className="w-3 h-3 mr-1" /> Locking Address (Derived)
                                 </label>
                                 <div className="font-mono text-xs bg-nexus-900 p-2 rounded text-nexus-cyan truncate border border-nexus-700">
-                                    {artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : "Thinking..."}
+                                    {derivedAddress || (artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : "Thinking...")}
+                                </div>
+                                <div className="mt-1 flex items-center text-[10px] text-yellow-500 font-bold bg-yellow-900/10 p-1 rounded">
+                                    <AlertCircle className="w-3 h-3 mr-1" /> WARNING: Contract is NOT live until funded.
                                 </div>
                             </div>
 
@@ -400,20 +422,39 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                     </div>
                                 ) : (
                                     <>
-                                        {artifact.constructorInputs.length > 0 && (
-                                            <div className="p-3 bg-yellow-900/10 border border-yellow-900/30 rounded text-xs text-yellow-500">
-                                                ⚠️ Constructor arguments needed. (Using defaults)
+
+                                        <div className="mb-4">
+                                            <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Initial Funding (Sats)</label>
+                                            <input
+                                                type="number"
+                                                value={fundingAmount}
+                                                onChange={(e) => setFundingAmount(Number(e.target.value))}
+                                                className="w-full bg-nexus-900 border border-nexus-700 rounded p-2 text-sm text-white font-mono"
+                                            />
+                                        </div>
+
+                                        {deploymentStep === 2 && paymentRequestUri ? (
+                                            <div className="bg-white p-4 rounded-xl flex flex-col items-center animate-in zoom-in duration-300">
+                                                <QRCodeSVG value={paymentRequestUri} size={180} />
+                                                <p className="text-black text-xs font-bold mt-2 text-center break-all max-w-[200px]">
+                                                    {derivedAddress}
+                                                </p>
+                                                <p className="text-gray-500 text-[10px] mt-1">Scan to Fund Contract ({fundingAmount} sats)</p>
+                                                <Button size="sm" className="mt-4 w-full" variant="secondary" onClick={handlePaymentDone}>
+                                                    I have sent the funds
+                                                </Button>
                                             </div>
+                                        ) : (
+                                            <Button
+                                                onClick={handleDeploy}
+                                                disabled={isDeploying || deploymentStep === 4 || !isAuditPassed || !derivedAddress}
+                                                isLoading={isDeploying}
+                                                className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                icon={<Rocket className="w-4 h-4" />}
+                                            >
+                                                {deploymentStep === 4 ? "Broadcasted" : isAuditPassed ? "Generate Funding Request" : "Deploy Blocked (Audit)"}
+                                            </Button>
                                         )}
-                                        <Button
-                                            onClick={handleDeploy}
-                                            disabled={isDeploying || deploymentStep === 4 || !isAuditPassed}
-                                            isLoading={isDeploying}
-                                            className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            icon={<Rocket className="w-4 h-4" />}
-                                        >
-                                            {deploymentStep === 4 ? "Broadcasted" : isAuditPassed ? "Sign & Broadcast" : "Deploy Blocked (Audit)"}
-                                        </Button>
                                     </>
                                 )}
                             </div>
