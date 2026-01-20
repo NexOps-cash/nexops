@@ -30,6 +30,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
     const [isDeterminismVerified, setIsDeterminismVerified] = useState(false);
     const [derivedAddress, setDerivedAddress] = useState<string>('');
+    const [derivationError, setDerivationError] = useState<string | null>(null);
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
     const [fundingAmount, setFundingAmount] = useState<number>(2000); // Default 2000 sats
     const [paymentRequestUri, setPaymentRequestUri] = useState<string | null>(null);
@@ -272,7 +273,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                     </span>
                                 )}
                             </div>
-
 
                             <ConstructorForm
                                 inputs={artifact.constructorInputs}
