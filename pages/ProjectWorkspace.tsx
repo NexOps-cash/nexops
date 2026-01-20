@@ -530,6 +530,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             activeBottomTab={activeBottomTab}
             onTabChange={setActiveBottomTab}
             problemsCount={problems.length}
+            outputLogs={deploymentLog}
             problemsContent={
                 <ProblemsPanel
                     problems={problems}

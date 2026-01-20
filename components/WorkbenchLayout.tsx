@@ -16,6 +16,7 @@ interface WorkbenchLayoutProps {
     onTabChange?: (tab: 'TERMINAL' | 'OUTPUT' | 'PROBLEMS') => void;
     problemsCount?: number;
     problemsContent?: ReactNode;
+    outputLogs?: string[];
 }
 
 const ActivityBarItem = ({
@@ -51,7 +52,8 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
     activeBottomTab = 'TERMINAL', // Default
     onTabChange,
     problemsCount = 0,
-    problemsContent
+    problemsContent,
+    outputLogs = []
 }) => {
     const [isBottomOpen, setIsBottomOpen] = useState(true);
 
@@ -158,8 +160,13 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                             {activeBottomTab === 'TERMINAL' && bottomPanelContent}
                                             {activeBottomTab === 'OUTPUT' && (
                                                 <div className="p-4 font-mono text-xs text-slate-400 h-full overflow-y-auto custom-scrollbar">
-                                                    {/* This would be the general log output passed as a prop, for now reusing terminal logic or placeholder */}
-                                                    <div className="opacity-50">No General Output channel configured (Logs are in Terminal for now).</div>
+                                                    {outputLogs && outputLogs.length > 0 ? (
+                                                        outputLogs.map((log, i) => (
+                                                            <div key={i} className="whitespace-pre-wrap mb-1">{log}</div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="opacity-50">No output logs.</div>
+                                                    )}
                                                 </div>
                                             )}
                                             {activeBottomTab === 'PROBLEMS' && problemsContent}
