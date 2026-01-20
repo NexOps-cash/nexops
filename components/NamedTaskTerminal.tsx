@@ -41,7 +41,8 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
             fontSize: 12,
             lineHeight: 1.2,
             disableStdin: true,
-            allowProposedApi: true
+            allowProposedApi: true,
+            scrollback: 5000 // Allow scrolling back 5000 lines
         });
 
         const fitAddon = new FitAddon();
@@ -154,8 +155,8 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
                 </button>
             </div>
 
-            {/* XTerm Container - ensure it has flexible height */}
-            <div className="flex-1 relative overflow-hidden p-1 min-h-0 bg-[#0f172a]">
+            {/* XTerm Container - Fixed: Removed overflow-hidden to allow scrollbar */}
+            <div className="flex-1 relative bg-[#0f172a] min-h-0 pl-2">
                 <div ref={terminalRef} className="absolute inset-0 h-full w-full" />
             </div>
         </div>

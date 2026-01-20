@@ -13,6 +13,9 @@ import {
     FileCode
 } from 'lucide-react';
 import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../services/groqService';
+import { compileCashScript } from '../services/compilerService';
+import { DebuggerService, DebuggerState } from '../services/DebuggerService';
+import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
 import { Deployment } from './Deployment';
 
 interface ChatMessage {
@@ -39,6 +42,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     // Tools State
     const [isAuditing, setIsAuditing] = useState(false);
     const [deploymentLog, setDeploymentLog] = useState<string[]>([]);
+    const [debugState, setDebugState] = useState<DebuggerState | null>(null);
+    const debuggerRef = useRef<DebuggerService>(new DebuggerService());
 
     // Assistant State
     const [chatInput, setChatInput] = useState('');
@@ -203,17 +208,68 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         // but for this task bar we are just mocking the start of the process logs
     };
 
-    const handleRunTask = (task: string) => {
+    const handleRunTask = async (task: string) => {
         const timestamp = new Date().toLocaleTimeString();
         setDeploymentLog(prev => [...prev, `[${timestamp}] Executing ${task}...`]);
 
         if (task === 'COMPILE') {
-            // Mock compile
-            setTimeout(() => {
-                setDeploymentLog(prev => [...prev, `[${timestamp}] ✅ Compile Success: ${project.name}.json generated.`]);
-                setDeploymentLog(prev => [...prev, `[${timestamp}]   - Size: 1.2KB`]);
-                setDeploymentLog(prev => [...prev, `[${timestamp}]   - Opcodes: 45`]);
-            }, 800);
+            if (!mainContractFile) {
+                setDeploymentLog(prev => [...prev, `[${timestamp}] Error: No .cash file found.`]);
+                return;
+            }
+
+            setDeploymentLog(prev => [...prev, `[${timestamp}] Compiling ${mainContractFile.name}...`]);
+
+            try {
+                // Verify cashc import and run compilation
+                await new Promise(resolve => setTimeout(resolve, 10));
+
+                const result = compileCashScript(mainContractFile.content);
+
+                if (result.success && result.artifact) {
+                    const bytes = result.artifact.bytecode.length / 2;
+
+                    // Create/Update Artifact File
+                    const artifactContent = JSON.stringify(result.artifact, null, 2);
+                    const artifactFileName = `${result.artifact.contractName}.json`;
+
+                    const updatedFiles = [...project.files];
+                    const existingIndex = updatedFiles.findIndex(f => f.name === artifactFileName);
+
+                    if (existingIndex !== -1) {
+                        updatedFiles[existingIndex] = { ...updatedFiles[existingIndex], content: artifactContent };
+                    } else {
+                        updatedFiles.push({
+                            name: artifactFileName,
+                            content: artifactContent,
+                            language: 'json',
+                            readOnly: true
+                        });
+                    }
+
+                    onUpdateProject({ ...project, files: updatedFiles });
+
+                    setDeploymentLog(prev => [
+                        ...prev,
+                        `[${timestamp}] ✅ Compile Success!`,
+                        `[${timestamp}]   - Contract: ${result.artifact.contractName}`,
+                        `[${timestamp}]   - Bytecode Size: ${bytes} bytes`,
+                        `[${timestamp}]   - Artifact: ${artifactFileName} saved to explorer.`
+                    ]);
+
+                } else {
+                    setDeploymentLog(prev => [
+                        ...prev,
+                        `[${timestamp}] ❌ Compile Failed:`,
+                        ...(result.errors.map(e => `[${timestamp}]   ${e}`))
+                    ]);
+                }
+
+            } catch (e: any) {
+                setDeploymentLog(prev => [...prev, `[${timestamp}] Critical Error: ${e.message}`]);
+                console.error(e);
+            }
+
         } else if (task === 'AUDIT') {
             handleRunAudit();
         } else if (task === 'DEPLOY') {
@@ -295,18 +351,77 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         </div>
     );
 
+    const handleStartDebug = async () => {
+        if (!mainContractFile) return;
+
+        // Re-compile to get fresh bytecode
+        const result = compileCashScript(mainContractFile.content);
+        if (result.success && result.artifact) {
+            setDeploymentLog(prev => [...prev, `[Debug] Loaded ${result.artifact?.contractName} for simulation.`]);
+            debuggerRef.current.load(result.artifact.bytecode);
+            setDebugState(debuggerRef.current.getState());
+        } else {
+            setDeploymentLog(prev => [...prev, `[Debug] Compile failed. Cannot start simulation.`]);
+        }
+    };
+
+    const handleDebugStep = () => {
+        const newState = debuggerRef.current.step();
+        setDebugState(newState);
+    };
+
+    const handleDebugReset = () => {
+        debuggerRef.current.reset();
+        setDebugState(debuggerRef.current.getState());
+    };
+
     const renderSidebarDebug = () => (
-        <div className="p-4">
-            <div className="text-xs text-slate-500 mb-4">Execution Config</div>
-            <div className="space-y-4">
-                <div className="bg-slate-800 p-2 rounded border border-slate-700">
-                    <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
-                    <div className="text-nexus-cyan text-xs">Chipnet (Testnet)</div>
+        <div className="flex flex-col h-full">
+            {!debugState ? (
+                <div className="p-4">
+                    <div className="text-xs text-slate-500 mb-4">Execution Config</div>
+                    <div className="space-y-4">
+                        <div className="bg-slate-800 p-2 rounded border border-slate-700">
+                            <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
+                            <div className="text-nexus-cyan text-xs">Chipnet (Testnet)</div>
+                        </div>
+                        <Button className="w-full text-xs" icon={<Play size={12} />} onClick={handleStartDebug}>
+                            Run Simulation
+                        </Button>
+                    </div>
                 </div>
-                <Button className="w-full text-xs" icon={<Play size={12} />} onClick={() => { }}>
-                    Run Simulation
-                </Button>
-            </div>
+            ) : (
+                <div className="flex flex-col h-full bg-[#0f172a]">
+                    {/* Controls */}
+                    <div className="p-2 border-b border-slate-700 bg-slate-800/50 flex items-center justify-between">
+                        <div className="flex items-center space-x-1">
+                            <button onClick={handleDebugStep} disabled={debugState.isHalting} className="p-1.5 hover:bg-slate-700 rounded text-nexus-cyan disabled:opacity-50 disabled:cursor-not-allowed transition-colors" title="Step">
+                                <Play size={14} className="fill-current" />
+                            </button>
+                            <button onClick={handleDebugReset} className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Reset">
+                                <RotateCcw size={14} />
+                            </button>
+                        </div>
+                        <div className="text-[10px] mono text-slate-500 font-medium">
+                            PC: {debugState.programCounter.toString(16).toUpperCase().padStart(2, '0')} | <span className="text-nexus-cyan">{debugState.nextOpcode}</span>
+                        </div>
+                    </div>
+
+                    {/* Visualizer */}
+                    <div className="flex-1 overflow-hidden relative">
+                        <DebugStackVisualizer stack={debugState.stack} altStack={debugState.altStack} />
+                    </div>
+
+                    {/* Opcode History (Logs style) */}
+                    <div className="h-1/3 border-t border-slate-700 bg-black/40 p-2 overflow-y-auto font-mono text-[10px] text-slate-400 custom-scrollbar">
+                        <div className="text-slate-500 font-bold mb-1 text-[9px] uppercase tracking-wider">Opcode History</div>
+                        {debugState.opcodeHistory.slice().reverse().map((op, i) => (
+                            <div key={i} className="opacity-75 hover:opacity-100">{op}</div>
+                        ))}
+                        {debugState.isHalting && <div className="text-nexus-warning mt-2 font-bold">-- END OF EXECUTION --</div>}
+                    </div>
+                </div>
+            )}
         </div>
     );
 
