@@ -16,6 +16,7 @@ import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../serv
 import { compileCashScript } from '../services/compilerService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
+import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
 
 interface ChatMessage {
@@ -42,6 +43,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     // Tools State
     const [isAuditing, setIsAuditing] = useState(false);
     const [deploymentLog, setDeploymentLog] = useState<string[]>([]);
+    const [activeBottomTab, setActiveBottomTab] = useState<'TERMINAL' | 'OUTPUT' | 'PROBLEMS'>('TERMINAL');
+    const [problems, setProblems] = useState<Problem[]>([]);
     const [debugState, setDebugState] = useState<DebuggerState | null>(null);
     const debuggerRef = useRef<DebuggerService>(new DebuggerService());
 
@@ -256,6 +259,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         `[${timestamp}]   - Bytecode Size: ${bytes} bytes`,
                         `[${timestamp}]   - Artifact: ${artifactFileName} saved to explorer.`
                     ]);
+                    setProblems([]); // Clear problems on success
+                    setActiveBottomTab('OUTPUT');
 
                 } else {
                     setDeploymentLog(prev => [
@@ -263,6 +268,22 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         `[${timestamp}] ❌ Compile Failed:`,
                         ...(result.errors.map(e => `[${timestamp}]   ${e}`))
                     ]);
+
+                    // Parse Errors for Problems Tab
+                    const newProblems: Problem[] = result.errors.map((err, idx) => {
+                        // Simple regex to find line number if present
+                        const lineMatch = err.match(/line (\d+)/i);
+                        const line = lineMatch ? parseInt(lineMatch[1]) : undefined;
+                        return {
+                            id: `err-${Date.now()}-${idx}`,
+                            severity: 'error' as const,
+                            file: mainContractFile.name,
+                            message: err,
+                            line
+                        };
+                    });
+                    setProblems(newProblems);
+                    setActiveBottomTab('PROBLEMS');
                 }
 
             } catch (e: any) {
@@ -505,6 +526,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}
+            activeBottomTab={activeBottomTab}
+            onTabChange={setActiveBottomTab}
+            problemsCount={problems.length}
+            problemsContent={
+                <ProblemsPanel
+                    problems={problems}
+                    onNavigate={(file, line) => {
+                        setActiveFileName(file);
+                        // In a real implementation, we would also scroll to line using editor ref
+                    }}
+                />
+            }
         />
     );
 };
