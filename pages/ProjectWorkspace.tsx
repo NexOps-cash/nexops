@@ -483,6 +483,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
                         onChange={(val) => handleFileChange(val || '')}
                         readOnly={!!activeFile.readOnly}
+                        markers={problems.filter(p => p.file === activeFile.name)}
                     />
                 ) : (
                     <div className="flex items-center justify-center h-full text-slate-600 text-xs uppercase tracking-widest font-bold">

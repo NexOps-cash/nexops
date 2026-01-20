@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
+import { Problem } from './ProblemsPanel';
 
 
 interface MonacoEditorProps {
@@ -11,7 +12,9 @@ interface MonacoEditorProps {
     minimap?: boolean;
     diffMode?: boolean; // For Audit View
     originalCode?: string; // For Diff Mode
+    markers?: Problem[];
 }
+
 
 export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
     code,
@@ -20,7 +23,8 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
     readOnly = false,
     minimap = true,
     diffMode = false,
-    originalCode = ''
+    originalCode = '',
+    markers
 }) => {
 
     // Register CashScript Language on Mount
@@ -163,6 +167,37 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
         monaco.editor.setTheme('nexops-dark');
     };
 
+    const editorRef = useRef<any>(null);
+
+    const handleEditorDidMountWithRef: OnMount = (editor, monaco) => {
+        editorRef.current = editor;
+        handleEditorDidMount(editor, monaco);
+    };
+
+    // Update Markers
+    useEffect(() => {
+        if (editorRef.current && markers) { // Error "serializers" undefined. Wait, I made a mistake in previous turn? 
+            // Wait, I typed "markers" in the prompt "useEffect(() => { if (editorRef.current && markers) ...". 
+            // BUT "serializers" appeared in my thought?? NO.
+            // I should stick to "markers".
+            const monaco = (window as any).monaco;
+            if (!monaco) return;
+
+            const model = editorRef.current.getModel();
+            if (model && markers) {
+                const markerData = markers.map(p => ({
+                    severity: p.severity === 'error' ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
+                    message: p.message,
+                    startLineNumber: p.line || 1,
+                    startColumn: 1,
+                    endLineNumber: p.line || 1,
+                    endColumn: 1000
+                }));
+                monaco.editor.setModelMarkers(model, 'owner', markerData);
+            }
+        }
+    }, [markers, code]); // Re-run when markers or code changes
+
     const options = {
         readOnly,
         minimap: { enabled: minimap },
@@ -196,7 +231,7 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
             theme="nexops-dark"
             value={code}
             onChange={onChange}
-            onMount={handleEditorDidMount}
+            onMount={handleEditorDidMountWithRef}
             options={options}
         />
     );
