@@ -5,6 +5,8 @@ export interface ContractArtifact {
     scriptHash?: string; // Derived if not present
     constructorInputs: { name: string; type: string }[];
     contractName: string;
+    abi: any[];
+    [key: string]: any;
 }
 
 export interface CompilationResult {
@@ -31,11 +33,8 @@ export const compileCashScript = (code: string): CompilationResult => {
         const artifactRaw = compileString(code) as any;
 
         // map raw artifact to our clean interface
-        const artifact: ContractArtifact = {
-            contractName: artifactRaw.contractName || 'Contract',
-            bytecode: artifactRaw.bytecode || '',
-            constructorInputs: artifactRaw.constructorInputs || [],
-        };
+        // Return the full artifact to ensure compatibility with cashscript Contract class
+        const artifact: ContractArtifact = artifactRaw;
 
         return {
             success: true,
