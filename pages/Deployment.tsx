@@ -4,9 +4,12 @@ import { Project, ChainType } from '../types';
 import { compileCashScript, verifyDeterminism, ContractArtifact } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
 import { walletConnectService } from '../services/walletConnectService';
+import { deriveContractAddress } from '../services/addressService';
+import { Network } from 'cashscript';
 import { QRCodeSVG } from 'qrcode.react';
-import { Contract } from 'cashscript';
 import { ConstructorForm } from '../components/ConstructorForm';
+import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
+import { pollForFunding, getExplorerLink, FundingStatus } from '../services/blockchainService';
 import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw } from 'lucide-react';
 
 interface DeploymentProps {
@@ -32,8 +35,10 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [derivedAddress, setDerivedAddress] = useState<string>('');
     const [derivationError, setDerivationError] = useState<string | null>(null);
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [constructorValidations, setConstructorValidations] = useState<Record<string, any>>({});
     const [fundingAmount, setFundingAmount] = useState<number>(2000); // Default 2000 sats
     const [paymentRequestUri, setPaymentRequestUri] = useState<string | null>(null);
+    const [fundingStatus, setFundingStatus] = useState<FundingStatus>({ status: 'idle', utxos: [], totalValue: 0 });
 
     // WalletConnect State
     const [wcUri, setWcUri] = useState<string | null>(null);
@@ -121,7 +126,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
         if (!compilationError) return;
         setIsFixing(true);
         try {
-            const prompt = `Fix the following CashScript compiler error in the contract.\nError: ${compilationError}`;
+            const prompt = `Fix the following CashScript compiler error in the contract.\nError: ${compilationError} `;
             const result = await fixSmartContract(project.contractCode, prompt);
 
             onUpdateProject({
@@ -172,32 +177,91 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
         try {
             // Construct Payment Request URI (BIP-21)
-            // amount is in BCH usually for URI, but wallets vary. standard is BCH.
             const amountBch = fundingAmount / 100_000_000;
             const uri = `${derivedAddress}?amount=${amountBch}&label=NexOps%20Deployment`;
 
             setPaymentRequestUri(uri);
             setDeploymentStep(2); // Waiting for Payment
+            setFundingStatus({ status: 'monitoring', utxos: [], totalValue: 0 });
 
-            // In a real app, we would start polling an Indexer here to detect the TX.
-            // For now, we simulate detection or wait for user to say "Done".
             console.log("Payment URI:", uri);
+            console.log("Starting blockchain monitoring for:", derivedAddress);
+
+            // Start real-time UTXO monitoring
+            pollForFunding(
+                derivedAddress,
+                fundingAmount,
+                (status) => {
+                    console.log('[Deployment] Funding status update:', status);
+                    setFundingStatus(status);
+
+                    if (status.status === 'confirmed') {
+                        setDeploymentStep(4); // Success
+                        setTxHash(status.txid || 'Unknown');
+                    }
+                },
+                300000 // 5 minute timeout
+            ).catch((error) => {
+                console.error('[Deployment] Funding monitoring error:', error);
+                setFundingStatus({
+                    status: 'error',
+                    utxos: [],
+                    totalValue: 0,
+                    error: error.error || 'Monitoring failed'
+                });
+            });
 
         } catch (e) {
             console.error("Deployment failed", e);
             setDeploymentStep(0);
+            setFundingStatus({ status: 'error', utxos: [], totalValue: 0, error: (e as Error).message });
         } finally {
             setIsDeploying(false);
         }
     };
 
-    const handlePaymentDone = () => {
-        setDeploymentStep(4);
-        setTxHash("Detecting...");
-        setTimeout(() => {
-            setTxHash("0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''));
-        }, 2000);
+    // Check if all critical validations pass
+    // Rule: Derivation is always allowed
+    // Rule: Funding is allowed only if all CRITICAL validations pass
+    const hasCriticalValidationErrors = () => {
+        return Object.values(constructorValidations).some(
+            (validation: any) => validation?.severity === 'error'
+        );
     };
+
+    // Address Derivation Effect
+    useEffect(() => {
+        console.log('🔄 [Deployment] useEffect FIRED');
+        console.log('🔄 [Deployment] artifact:', artifact ? 'EXISTS' : 'NULL');
+        console.log('🔄 [Deployment] constructorArgs:', constructorArgs);
+
+        if (!artifact) {
+            console.log('⚠️ [Deployment] No artifact, returning early');
+            return;
+        }
+
+        setDerivationError(null);
+
+        try {
+            console.log('🔄 [Deployment] Args length:', constructorArgs.length);
+            console.log('🔄 [Deployment] Inputs length:', artifact.constructorInputs.length);
+
+            if (constructorArgs.length === artifact.constructorInputs.length) {
+                console.log('✅ [Deployment] Length match! Calling deriveContractAddress...');
+                const addr = deriveContractAddress(artifact, constructorArgs, Network.CHIPNET);
+                console.log('✅ [Deployment] Got address:', addr);
+                setDerivedAddress(addr);
+                console.log('✅ [Deployment] State updated with address');
+            } else {
+                console.log('⚠️ [Deployment] Length mismatch, clearing address');
+                setDerivedAddress('');
+            }
+        } catch (e: any) {
+            console.error("❌ [Deployment] Derivation failed:", e);
+            setDerivationError(e.message || "Invalid arguments");
+            setDerivedAddress('');
+        }
+    }, [artifact, constructorArgs]);
 
     const formatAddressPreview = (sh: string) => `bchtest:p${sh.substring(0, 36)}...`;
     // Safer wallet address extraction
@@ -276,7 +340,10 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
                             <ConstructorForm
                                 inputs={artifact.constructorInputs}
-                                onChange={setConstructorArgs}
+                                onChange={(args, validations) => {
+                                    setConstructorArgs(args);
+                                    setConstructorValidations(validations);
+                                }}
                             />
 
                             {/* Artifact Preview Details */}
@@ -300,6 +367,13 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                     {artifact.bytecode}
                                 </div>
                             </div>
+
+                            {/* Contract Safety Panel */}
+                            <ContractSafetyPanel
+                                artifact={artifact}
+                                validations={constructorValidations}
+                                derivedAddress={derivedAddress}
+                            />
 
                             <Button size="sm" variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
                                 Re-Compile
@@ -440,19 +514,62 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                                     {derivedAddress}
                                                 </p>
                                                 <p className="text-gray-500 text-[10px] mt-1">Scan to Fund Contract ({fundingAmount} sats)</p>
-                                                <Button size="sm" className="mt-4 w-full" variant="secondary" onClick={handlePaymentDone}>
-                                                    I have sent the funds
-                                                </Button>
+
+                                                {/* Real-time Funding Status */}
+                                                <div className="mt-4 w-full">
+                                                    {fundingStatus.status === 'monitoring' && (
+                                                        <div className="flex items-center justify-center text-blue-600 text-xs">
+                                                            <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
+                                                            Monitoring blockchain... ({fundingStatus.totalValue} / {fundingAmount} sats)
+                                                        </div>
+                                                    )}
+                                                    {fundingStatus.status === 'confirmed' && (
+                                                        <div className="flex flex-col items-center text-green-600 text-xs">
+                                                            <div className="flex items-center mb-2">
+                                                                <CheckCircle className="w-4 h-4 mr-2" />
+                                                                Funded! ✓
+                                                            </div>
+                                                            {fundingStatus.txid && (
+                                                                <a
+                                                                    href={getExplorerLink(fundingStatus.txid)}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-blue-600 hover:underline text-[10px] font-mono truncate max-w-[180px]"
+                                                                >
+                                                                    {fundingStatus.txid}
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {fundingStatus.status === 'timeout' && (
+                                                        <div className="flex items-center justify-center text-yellow-600 text-xs">
+                                                            <AlertCircle className="w-3 h-3 mr-2" />
+                                                            Timeout - Please verify manually
+                                                        </div>
+                                                    )}
+                                                    {fundingStatus.status === 'error' && (
+                                                        <div className="flex items-center justify-center text-red-600 text-xs">
+                                                            <AlertCircle className="w-3 h-3 mr-2" />
+                                                            {fundingStatus.error || 'Monitoring error'}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         ) : (
                                             <Button
                                                 onClick={handleDeploy}
-                                                disabled={isDeploying || deploymentStep === 4 || !isAuditPassed || !derivedAddress}
+                                                disabled={isDeploying || deploymentStep === 4 || !isAuditPassed || !derivedAddress || hasCriticalValidationErrors()}
                                                 isLoading={isDeploying}
                                                 className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 icon={<Rocket className="w-4 h-4" />}
                                             >
-                                                {deploymentStep === 4 ? "Broadcasted" : isAuditPassed ? "Generate Funding Request" : "Deploy Blocked (Audit)"}
+                                                {deploymentStep === 4
+                                                    ? "Broadcasted"
+                                                    : hasCriticalValidationErrors()
+                                                        ? "Funding Blocked (Invalid Inputs)"
+                                                        : !isAuditPassed
+                                                            ? "Deploy Blocked (Audit)"
+                                                            : "Generate Funding Request"}
                                             </Button>
                                         )}
                                     </>
