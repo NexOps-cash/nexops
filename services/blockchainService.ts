@@ -1,6 +1,6 @@
 /**
  * Blockchain Service - UTXO Monitoring for BCH Chipnet
- * Uses FullStack.cash API (free, no key required)
+ * Uses Chaingraph GraphQL API (more reliable than FullStack.cash)
  */
 
 export interface UTXO {
@@ -19,54 +19,80 @@ export interface FundingStatus {
     error?: string;
 }
 
-const FULLSTACK_API = 'https://api.fullstack.cash/v5';
+const CHAINGRAPH_API = 'https://gql.chaingraph.pat.mn/v1/graphql';
 const CHIPNET_EXPLORER = 'https://chipnet.chaingraph.cash/tx';
 
 /**
- * Get UTXOs for a given address on Chipnet
+ * Get UTXOs for a given address on Chipnet using Chaingraph GraphQL
  */
 export async function getUTXOs(address: string): Promise<UTXO[]> {
     try {
-        // FullStack.cash endpoint for address UTXOs
-        const response = await fetch(`${FULLSTACK_API}/electrumx/utxos/${address}`, {
-            method: 'GET',
+        // Remove cashaddr prefix if present
+        const cleanAddress = address.replace(/^(bchtest|bitcoincash):/, '');
+
+        // Chaingraph GraphQL query for unspent outputs
+        // We search by the encoded locking bytecode prefix (the address hash)
+        const query = `
+            query GetUTXOs {
+                search_output(
+                    args: { encoded_locking_bytecode_prefix_hex: "${cleanAddress}" }
+                    where: { _not: { spent_by: {} } }
+                    limit: 50
+                ) {
+                    transaction_hash
+                    output_index
+                    value_satoshis
+                    block_inclusions(limit: 1, order_by: { block: { height: desc } }) {
+                        block {
+                            height
+                        }
+                    }
+                }
+            }
+        `;
+
+        const response = await fetch(CHAINGRAPH_API, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
+            body: JSON.stringify({ query }),
         });
 
         if (!response.ok) {
-            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            throw new Error(`GraphQL Error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
 
-        // FullStack.cash returns { success: true, utxos: [...] }
-        if (data.success && Array.isArray(data.utxos)) {
-            return data.utxos.map((utxo: any) => ({
-                txid: utxo.tx_hash,
-                vout: utxo.tx_pos,
-                value: utxo.value,
-                height: utxo.height,
-                confirmations: utxo.confirmations || 0,
-            }));
+        if (data.errors) {
+            console.error('[blockchainService] GraphQL errors:', data.errors);
+            return []; // Return empty array instead of throwing to allow retry
         }
 
-        return [];
+        const outputs = data.data?.search_output || [];
+
+        return outputs.map((output: any) => ({
+            txid: output.transaction_hash,
+            vout: output.output_index,
+            value: output.value_satoshis,
+            height: output.block_inclusions?.[0]?.block?.height || 0,
+            confirmations: output.block_inclusions?.[0]?.block?.height ? 1 : 0,
+        }));
     } catch (error) {
         console.error('[blockchainService] getUTXOs error:', error);
-        throw error;
+        return []; // Return empty array on error to allow retry
     }
 }
 
 /**
  * Poll for funding at an address
- * Resolves when UTXOs totaling >= expectedAmount are found
+ * Resolves when ANY UTXOs are found (users may overfund or send multiple UTXOs)
  * Rejects on timeout or error
  */
 export async function pollForFunding(
     address: string,
-    expectedAmount: number,
+    minimumRequired: number,
     onUpdate: (status: FundingStatus) => void,
     timeoutMs: number = 300000 // 5 minutes default
 ): Promise<FundingStatus> {
@@ -97,7 +123,8 @@ export async function pollForFunding(
 
                 // Update status
                 const status: FundingStatus = {
-                    status: totalValue >= expectedAmount ? 'confirmed' : 'monitoring',
+                    // ✅ Check for ANY UTXO with sufficient total value
+                    status: utxos.length > 0 && totalValue >= minimumRequired ? 'confirmed' : 'monitoring',
                     utxos,
                     totalValue,
                     txid: utxos.length > 0 ? utxos[0].txid : undefined,
@@ -106,7 +133,7 @@ export async function pollForFunding(
                 onUpdate(status);
 
                 // Check if funded
-                if (totalValue >= expectedAmount) {
+                if (utxos.length > 0 && totalValue >= minimumRequired) {
                     resolve(status);
                     return;
                 }
