@@ -10,6 +10,7 @@ import { CreateProject } from './pages/CreateProject';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
 import { PageView, Project, AuditReport } from './types';
 import { Card, Button } from './components/UI';
+import { TopMenuBar } from './components/TopMenuBar';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 
@@ -72,6 +73,12 @@ const App: React.FC = () => {
 
     handleUpdateProject(fixingProject);
     setCurrentView(PageView.GENERATOR);
+  };
+
+  const handleMenuAction = (action: string) => {
+    console.log('Menu action:', action);
+    // TODO: Implement menu actions in Phase 3
+    // For now, just log them
   };
 
   const renderContent = () => {
@@ -159,17 +166,25 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout
-      currentView={currentView}
-      onNavigate={setCurrentView}
-      walletConnected={walletConnected}
-      onConnectWallet={() => setWalletConnected(!walletConnected)}
-      projects={projects}
-      activeProjectId={activeProjectId}
-      onSelectProject={handleSelectProject}
-    >
-      {renderContent()}
-    </Layout>
+    <div className="h-screen w-screen flex flex-col overflow-hidden">
+      <TopMenuBar
+        activeProject={activeProject}
+        onAction={handleMenuAction}
+      />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <Layout
+          currentView={currentView}
+          onNavigate={setCurrentView}
+          walletConnected={walletConnected}
+          onConnectWallet={() => setWalletConnected(!walletConnected)}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onSelectProject={handleSelectProject}
+        >
+          {renderContent()}
+        </Layout>
+      </div>
+    </div>
   );
 };
 
