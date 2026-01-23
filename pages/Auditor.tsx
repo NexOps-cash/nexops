@@ -3,19 +3,18 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, CodeBlock, Badge, DiffViewer } from '../components/UI';
 import { auditSmartContract, fixSmartContract } from '../services/groqService';
 import { compileCashScript } from '../services/compilerService';
-import { Project, PageView, AuditReport, ChainType } from '../types';
+import { Project, AuditReport, ChainType } from '../types';
 import { ShieldCheck, CheckCircle, ArrowRight, Play, RefreshCcw, GitCompare, FileCode, History } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface AuditorProps {
     project: Project | null;
     onUpdateProject: (p: Project) => void;
-    onNavigate: (view: PageView) => void;
     onRequestFix: (project: Project, report: AuditReport) => void;
     onCreateProject: (project: Project) => void;
 }
 
-export const Auditor: React.FC<AuditorProps> = ({ project, onUpdateProject, onNavigate, onRequestFix, onCreateProject }) => {
+export const Auditor: React.FC<AuditorProps> = ({ project, onUpdateProject, onRequestFix, onCreateProject }) => {
     const [isAuditing, setIsAuditing] = useState(false);
     const [localCode, setLocalCode] = useState(project?.contractCode || '');
     const [report, setReport] = useState<AuditReport | null>(project?.auditReport || null);
@@ -299,15 +298,7 @@ export const Auditor: React.FC<AuditorProps> = ({ project, onUpdateProject, onNa
                                 >
                                     Auto-Fix with AI
                                 </Button>
-                            ) : (
-                                <Button
-                                    className="flex-1 bg-green-600 hover:bg-green-500 text-white"
-                                    icon={<ArrowRight className="w-4 h-4" />}
-                                    onClick={() => onNavigate(PageView.DEPLOYMENT)}
-                                >
-                                    Proceed to Deploy
-                                </Button>
-                            )}
+                            ) : null}
                         </div>
                     </Card>
                 )}
