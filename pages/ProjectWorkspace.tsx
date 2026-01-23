@@ -481,6 +481,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             <div className="flex-1 relative">
                 {compareVersion && activeFile ? (
                     <MonacoEditorWrapper
+                        key={`${activeFile.name}-diff`}
                         code={activeFile.content}
                         originalCode={compareVersion.code}
                         language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
@@ -490,6 +491,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     />
                 ) : activeFile ? (
                     <MonacoEditorWrapper
+                        key={activeFile.name}
                         code={activeFile.content}
                         language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
                         onChange={(val) => handleFileChange(val || '')}
