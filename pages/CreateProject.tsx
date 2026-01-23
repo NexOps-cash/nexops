@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Card, Button, Input } from '../components/UI';
-import { PageView, ChainType, Project, ProjectFile } from '../types';
+import { ChainType, Project, ProjectFile } from '../types';
 import { Cpu, ArrowRight, Layers, FileText, Wand2 } from 'lucide-react';
 import { generateProjectScaffold } from '../services/groqService';
 
 interface CreateProjectProps {
-    onNavigate: (view: PageView) => void;
+    onNavigate: () => void;
     onCreateProject: (project: Project) => void;
 }
 
@@ -90,7 +90,7 @@ export const CreateProject: React.FC<CreateProjectProps> = ({ onNavigate, onCrea
                     </div>
 
                     <div className="flex justify-end space-x-3 pt-4 border-t border-nexus-700/50">
-                        <Button variant="ghost" onClick={() => onNavigate(PageView.DASHBOARD)}>Cancel</Button>
+                        <Button variant="ghost" onClick={() => onNavigate()}>Cancel</Button>
                         <Button
                             onClick={handleCreate}
                             disabled={!name}
