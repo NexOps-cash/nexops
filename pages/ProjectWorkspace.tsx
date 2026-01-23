@@ -446,6 +446,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         </div>
     );
 
+    const renderSidebarDeploy = () => (
+        <Deployment
+            project={project}
+            onUpdateProject={onUpdateProject}
+            onNavigate={onNavigate}
+            walletConnected={walletConnected}
+            onConnectWallet={onConnectWallet}
+            compact={true}
+        />
+    );
+
     const renderEditorArea = () => (
         <div className="flex flex-col h-full">
             {/* Tabs */}
@@ -523,7 +534,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             sidebarContent={
                 activeView === 'EXPLORER' ? renderSidebarExplorer() :
                     activeView === 'AUDITOR' ? renderSidebarAuditor() :
-                        renderSidebarDebug()
+                        activeView === 'DEBUG' ? renderSidebarDebug() :
+                            renderSidebarDeploy()
             }
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}

@@ -17,9 +17,11 @@ interface DeploymentProps {
     walletConnected: boolean;
     onConnectWallet: () => void;
     onUpdateProject: (p: Project) => void;
+    onNavigate?: (view: any) => void;  // Optional for standalone page
+    compact?: boolean;  // NEW: Enable sidebar-optimized layout
 }
 
-export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject }) => {
+export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, compact = false }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0); // 0: Idle, 1: Compiling, 2: Signing, 3: Broadcasting, 4: Success
@@ -268,15 +270,15 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const walletAddress = wcSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Connected';
 
     return (
-        <div className="flex flex-col gap-6 pb-20">
+        <div className={compact ? "flex flex-col gap-3 p-2 h-full overflow-y-auto custom-scrollbar" : "flex flex-col gap-6 pb-20"}>
             {/* Config & Artifacts */}
-            <div className="space-y-6">
+            <div className={compact ? "space-y-3" : "space-y-6"}>
                 <Card>
                     <h3 className="text-lg font-medium text-white mb-4 flex items-center">
                         <Server className="w-5 h-5 mr-2 text-nexus-purple" />
                         Network & Compiler
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div className={compact ? "space-y-3 mb-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4"}>
                         <div>
                             <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Target Network</label>
                             <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
