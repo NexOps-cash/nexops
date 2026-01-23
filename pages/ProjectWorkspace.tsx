@@ -4,7 +4,7 @@ import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal } from '../components/NamedTaskTerminal';
-import { Project, ProjectFile, PageView, CodeVersion } from '../types';
+import { Project, ProjectFile, CodeVersion } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
@@ -29,12 +29,11 @@ interface ChatMessage {
 interface ProjectWorkspaceProps {
     project: Project;
     onUpdateProject: (p: Project) => void;
-    onNavigate: (view: PageView) => void;
     walletConnected: boolean;
     onConnectWallet: () => void;
 }
 
-export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, onNavigate, walletConnected, onConnectWallet }) => {
+export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
     const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG'>('EXPLORER');
@@ -450,7 +449,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         <Deployment
             project={project}
             onUpdateProject={onUpdateProject}
-            onNavigate={onNavigate}
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
