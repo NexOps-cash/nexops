@@ -452,6 +452,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
+            onNavigate={(view) => setActiveView(view)}
         />
     );
 

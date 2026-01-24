@@ -198,8 +198,18 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     setFundingStatus(status);
 
                     if (status.status === 'confirmed') {
-                        setDeploymentStep(4); // Success
-                        setTxHash(status.txid || 'Unknown');
+                        // Delay transition to show "Funded" state
+                        if (onNavigate) {
+                            setTimeout(() => {
+                                setDeploymentStep(4); // Success
+                                setTxHash(status.txid || 'Unknown');
+                                onNavigate('AUDITOR');
+                            }, 2000);
+                        } else {
+                            // Fallback if no navigation (e.g. standalone)
+                            setDeploymentStep(4);
+                            setTxHash(status.txid || 'Unknown');
+                        }
                     }
                 },
                 300000 // 5 minute timeout

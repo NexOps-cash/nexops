@@ -1,7 +1,9 @@
 /**
  * Blockchain Service - UTXO Monitoring for BCH Chipnet
- * Uses Chaingraph GraphQL API (more reliable than FullStack.cash)
+ * Uses Electrum Cash Network (Reliable UTXO detection)
  */
+import { ElectrumClient } from '@electrum-cash/network';
+import { cashAddressToLockingBytecode, sha256, binToHex } from '@bitauth/libauth';
 
 export interface UTXO {
     txid: string;
@@ -19,149 +21,223 @@ export interface FundingStatus {
     error?: string;
 }
 
-const CHAINGRAPH_API = 'https://gql.chaingraph.pat.mn/v1/graphql';
 const CHIPNET_EXPLORER = 'https://chipnet.chaingraph.cash/tx';
 
+// --- Pure Utilities ---
+
 /**
- * Get UTXOs for a given address on Chipnet using Chaingraph GraphQL
+ * Convert CashAddress to Electrum ScriptHash (SHA256 of locking bytecode, reversed)
  */
-export async function getUTXOs(address: string): Promise<UTXO[]> {
-    try {
-        // Remove cashaddr prefix if present
-        const cleanAddress = address.replace(/^(bchtest|bitcoincash):/, '');
+function addressToScriptHash(address: string): string {
+    const lockResult = cashAddressToLockingBytecode(address);
+    if (typeof lockResult === 'string') throw new Error(lockResult);
 
-        // Chaingraph GraphQL query for unspent outputs
-        // We search by the encoded locking bytecode prefix (the address hash)
-        const query = `
-            query GetUTXOs {
-                search_output(
-                    args: { encoded_locking_bytecode_prefix_hex: "${cleanAddress}" }
-                    where: { _not: { spent_by: {} } }
-                    limit: 50
-                ) {
-                    transaction_hash
-                    output_index
-                    value_satoshis
-                    block_inclusions(limit: 1, order_by: { block: { height: desc } }) {
-                        block {
-                            height
-                        }
-                    }
-                }
+    // Electrum uses the SHA256 hash of the locking bytecode, interpreted as little-endian
+    const bytecode = lockResult.bytecode;
+    const hash = sha256.hash(bytecode);
+
+    // Reverse the hash to match Electrum's expected little-endian format
+    const reversedHash = hash.reverse();
+    return binToHex(reversedHash);
+}
+
+// --- Singleton Manager ---
+
+/**
+ * Singleton Connection Manager
+ * Manges the single Electrum connection for the application.
+ */
+class ElectrumManager {
+    private static instance: ElectrumClient<any> | null = null;
+    private static connectionPromise: Promise<ElectrumClient<any>> | null = null;
+
+    /**
+     * Get the singleton Electrum client.
+     * Connects only once on the first call.
+     */
+    static async getClient(): Promise<ElectrumClient<any>> {
+        // 1. Return existing instance if ready
+        if (this.instance) return this.instance;
+
+        // 2. Return in-flight promise if connecting
+        if (this.connectionPromise) return this.connectionPromise;
+
+        // 3. Start new connection
+        this.connectionPromise = (async () => {
+            try {
+                console.log('[ElectrumManager] Initializing connection to Chipnet...');
+
+                // USER REQUIREMENT: Pass hostname ONLY. No protocol, no port.
+                // The library interprets this and manages the transport.
+                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'chipnet.imaginary.cash');
+
+                await client.connect();
+                console.log('[ElectrumManager] Connected successfully.');
+
+                this.instance = client;
+
+                // Cleanup on disconnect
+                client.on('disconnected', () => {
+                    console.warn('[ElectrumManager] Disconnected. Clearing instance.');
+                    this.instance = null;
+                    this.connectionPromise = null;
+                });
+
+                return client;
+            } catch (error) {
+                console.error('[ElectrumManager] Critical Connection Failure:', error);
+                this.connectionPromise = null;
+                throw error;
             }
-        `;
+        })();
 
-        const response = await fetch(CHAINGRAPH_API, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ query }),
-        });
+        return this.connectionPromise;
+    }
+}
 
-        if (!response.ok) {
-            throw new Error(`GraphQL Error: ${response.status} ${response.statusText}`);
-        }
+// --- Logic ---
 
-        const data = await response.json();
+/**
+ * Fetch UTXOs for a specific address using the shared connection.
+ */
+async function fetchUTXOs(address: string): Promise<UTXO[]> {
+    try {
+        const client = await ElectrumManager.getClient();
+        const scriptHash = addressToScriptHash(address);
 
-        if (data.errors) {
-            console.error('[blockchainService] GraphQL errors:', data.errors);
-            return []; // Return empty array instead of throwing to allow retry
-        }
+        // Use generic request, library handles ID and framing
+        const listUnspent = await client.request('blockchain.scripthash.listunspent', scriptHash) as any[];
 
-        const outputs = data.data?.search_output || [];
-
-        return outputs.map((output: any) => ({
-            txid: output.transaction_hash,
-            vout: output.output_index,
-            value: output.value_satoshis,
-            height: output.block_inclusions?.[0]?.block?.height || 0,
-            confirmations: output.block_inclusions?.[0]?.block?.height ? 1 : 0,
+        return listUnspent.map(u => ({
+            txid: u.tx_hash,
+            vout: u.tx_pos,
+            value: u.value,
+            height: u.height,
+            confirmations: u.height > 0 ? 1 : 0
         }));
+
     } catch (error) {
-        console.error('[blockchainService] getUTXOs error:', error);
-        return []; // Return empty array on error to allow retry
+        console.error('[blockchainService] UTXO fetch error:', error);
+        return [];
     }
 }
 
 /**
+ * Funding Watcher
+ * Polls for UTXOs without managing connection state.
+ */
+class FundingWatcher {
+    private active = true;
+
+    constructor(
+        private address: string,
+        private requiredAmount: number,
+        private onUpdate: (status: FundingStatus) => void,
+        private timeoutMs: number
+    ) { }
+
+    async start() {
+        const startTime = Date.now();
+        const pollInterval = 3000;
+
+        const poll = async () => {
+            if (!this.active) return;
+
+            // Check timeout
+            if (Date.now() - startTime > this.timeoutMs) {
+                this.emit({
+                    status: 'timeout',
+                    utxos: [],
+                    totalValue: 0,
+                    error: 'Funding timeout',
+                });
+                return;
+            }
+
+            try {
+                // Fetch using singleton
+                const utxos = await fetchUTXOs(this.address);
+                const totalValue = utxos.reduce((sum, u) => sum + u.value, 0);
+
+                console.log(`[Watcher] ${this.address.slice(0, 8)}... | ${utxos.length} UTXOs | ${totalValue}/${this.requiredAmount}`);
+
+                // Check status
+                if (utxos.length > 0 && totalValue >= this.requiredAmount) {
+                    console.log('[Watcher] Funding Confirmed! UTXOs found:', utxos);
+                    this.emit({
+                        status: 'confirmed',
+                        utxos,
+                        totalValue,
+                        txid: utxos[0].txid
+                    });
+                    return; // Stop polling
+                } else {
+                    this.emit({
+                        status: 'monitoring',
+                        utxos,
+                        totalValue
+                    });
+
+                    // Continue
+                    setTimeout(poll, pollInterval);
+                }
+
+            } catch (error) {
+                // Transient error, just log and retry
+                console.warn('[Watcher] Transient polling error:', error);
+                setTimeout(poll, pollInterval); // Retry
+            }
+        };
+
+        poll();
+    }
+
+    stop() {
+        this.active = false;
+    }
+
+    private emit(status: FundingStatus) {
+        if (this.active) this.onUpdate(status);
+        if (status.status === 'confirmed' || status.status === 'timeout' || status.status === 'error') {
+            this.active = false;
+        }
+    }
+}
+
+// --- Public Facade ---
+
+/**
  * Poll for funding at an address
- * Resolves when ANY UTXOs are found (users may overfund or send multiple UTXOs)
- * Rejects on timeout or error
+ * Thin facade for the FundingWatcher
  */
 export async function pollForFunding(
     address: string,
     minimumRequired: number,
     onUpdate: (status: FundingStatus) => void,
-    timeoutMs: number = 300000 // 5 minutes default
+    timeoutMs: number = 300000
 ): Promise<FundingStatus> {
-    const startTime = Date.now();
-    const pollInterval = 5000; // 5 seconds
+
+    // Initial status
+    onUpdate({ status: 'monitoring', utxos: [], totalValue: 0 });
 
     return new Promise((resolve, reject) => {
-        const poll = async () => {
-            try {
-                // Check timeout
-                if (Date.now() - startTime > timeoutMs) {
-                    const timeoutStatus: FundingStatus = {
-                        status: 'timeout',
-                        utxos: [],
-                        totalValue: 0,
-                        error: 'Funding timeout - please verify manually',
-                    };
-                    onUpdate(timeoutStatus);
-                    reject(timeoutStatus);
-                    return;
-                }
 
-                // Query UTXOs
-                const utxos = await getUTXOs(address);
-                const totalValue = utxos.reduce((sum, utxo) => sum + utxo.value, 0);
+        // Wrap the user's callback to handle promise resolution
+        const wrappedCallback = (status: FundingStatus) => {
+            onUpdate(status);
 
-                console.log(`[blockchainService] Poll: ${utxos.length} UTXOs, ${totalValue} sats`);
-
-                // Update status
-                const status: FundingStatus = {
-                    // ✅ Check for ANY UTXO with sufficient total value
-                    status: utxos.length > 0 && totalValue >= minimumRequired ? 'confirmed' : 'monitoring',
-                    utxos,
-                    totalValue,
-                    txid: utxos.length > 0 ? utxos[0].txid : undefined,
-                };
-
-                onUpdate(status);
-
-                // Check if funded
-                if (utxos.length > 0 && totalValue >= minimumRequired) {
-                    resolve(status);
-                    return;
-                }
-
-                // Continue polling
-                setTimeout(poll, pollInterval);
-            } catch (error) {
-                console.error('[blockchainService] Poll error:', error);
-                const errorStatus: FundingStatus = {
-                    status: 'error',
-                    utxos: [],
-                    totalValue: 0,
-                    error: (error as Error).message,
-                };
-                onUpdate(errorStatus);
-
-                // Retry on network errors
-                setTimeout(poll, pollInterval * 2); // Exponential backoff
-            }
+            if (status.status === 'confirmed') resolve(status);
+            if (status.status === 'timeout') reject(status);
+            if (status.status === 'error') reject(status);
         };
 
-        // Start polling
-        poll();
+        const watcher = new FundingWatcher(address, minimumRequired, wrappedCallback, timeoutMs);
+        watcher.start();
     });
 }
 
 /**
- * Get explorer link for a transaction
+ * Wrapper for the Explorer Link
  */
 export function getExplorerLink(txid: string): string {
     return `${CHIPNET_EXPLORER}/${txid}`;
