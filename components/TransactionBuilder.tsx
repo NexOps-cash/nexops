@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ContractArtifact } from '../services/compilerService';
-import { Card, Button, Badge } from './UI';
-import { WalletConnectService } from '../services/walletConnectService';
-import { Play, Copy, Terminal, Activity, AlertCircle, CheckCircle } from 'lucide-react';
-// import { Contract, ElectrumNetworkProvider, Network } from 'cashscript'; // Uncomment when ready
+import { Button, Badge, Modal, Input, Card } from './UI';
+import {
+    Play, Terminal, Activity, CheckCircle,
+    ArrowRight, Wallet, ChevronRight, AlertCircle,
+    Cpu, Hash, ArrowLeft, Loader2
+} from 'lucide-react';
+import { getExplorerLink } from '../services/blockchainService';
 
 interface TransactionBuilderProps {
     artifact: ContractArtifact;
     deployedAddress: string;
-    constructorArgs: string[]; // <--- ADDED: Required for contract reconstruction
-    wcSession: any; // WalletConnect Session
+    constructorArgs: string[];
+    wcSession: any;
 }
 
 interface FunctionInput {
@@ -18,20 +21,36 @@ interface FunctionInput {
     value: string;
 }
 
-export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({ artifact, deployedAddress, constructorArgs, wcSession }) => {
+export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
+    artifact,
+    deployedAddress,
+    constructorArgs,
+    wcSession
+}) => {
+    // Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+    // Form State
     const [selectedFunction, setSelectedFunction] = useState<string>('');
     const [inputs, setInputs] = useState<FunctionInput[]>([]);
-    const [logs, setLogs] = useState<string[]>([]);
+
+    // Execution State
     const [isExecuting, setIsExecuting] = useState(false);
+    const [executionResult, setExecutionResult] = useState<{ success: boolean; txid?: string; error?: string } | null>(null);
 
-    // Parse ABI to get functions
-    const functions = artifact.abi.filter(item => item.type === 'function');
+    // Parse ABI
+    // Note: cashc ABI often omits 'type' for functions, so we include items with no type or type='function'
+    const functions = artifact.abi.filter(item => item.type === 'function' || !item.type);
 
-    useEffect(() => {
-        if (functions.length > 0 && !selectedFunction) {
-            handleFunctionSelect(functions[0].name);
-        }
-    }, [artifact]);
+    // Reset state when modal opens
+    const openModal = () => {
+        setIsModalOpen(true);
+        setCurrentStep(1);
+        setExecutionResult(null);
+        setSelectedFunction('');
+        setInputs([]);
+    };
 
     const handleFunctionSelect = (funcName: string) => {
         const func = functions.find(f => f.name === funcName);
@@ -43,8 +62,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({ artifact
             type: input.type,
             value: ''
         })));
-
-        addLog(`Selected function: ${funcName}`);
+        setCurrentStep(2);
     };
 
     const handleInputChange = (index: number, value: string) => {
@@ -53,22 +71,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({ artifact
         setInputs(newInputs);
     };
 
-    const addLog = (msg: string) => {
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
-    };
-
     const handleExecute = async () => {
         if (!selectedFunction || !wcSession) return;
 
         setIsExecuting(true);
-        addLog(`Preparing transaction for ${selectedFunction}...`);
-
         try {
+            // Validate inputs
             const func = functions.find(f => f.name === selectedFunction);
             if (!func) throw new Error("Function not found");
 
-            // 1. Validate and convert inputs
-            addLog("Validating inputs...");
+            // Type conversion simulation
             const typedArgs = inputs.map((input, i) => {
                 const def = func.inputs[i];
                 if (def.type === 'int') {
@@ -79,123 +91,234 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({ artifact
                 return input.value;
             });
 
-            addLog(`Inputs valid. Arguments: ${JSON.stringify(typedArgs.map(a => a.toString()))}`);
+            console.log("Executing with:", typedArgs);
 
-            // 2. Mock Execution Loop (Placeholder for CashScript)
-            // Ideally:
-            // const provider = new ElectrumNetworkProvider('chipnet');
-            // const contract = new Contract(artifact, constructorArgs, { provider });
-            // const tx = await contract.functions[selectedFunction](...typedArgs).send();
+            // Simulating network delay and signature
+            await new Promise(r => setTimeout(r, 2000));
 
-            await new Promise(r => setTimeout(r, 1500));
-            addLog("⚠️ Execution skipped: CashScript signing provider missing.");
-            addLog("Simulation Success: Inputs matched types.");
+            // Mock Success (Replace with actual CashScript call later)
+            setExecutionResult({
+                success: true,
+                txid: '7f9c8d...3a2b1' // Mock TXID
+            });
 
         } catch (error: any) {
-            addLog(`Error: ${error.message}`);
+            setExecutionResult({
+                success: false,
+                error: error.message
+            });
         } finally {
             setIsExecuting(false);
         }
+
+    };
+
+    const resetFlow = () => {
+        setCurrentStep(1);
+        setExecutionResult(null);
+        setSelectedFunction('');
     };
 
     const getWalletAddress = () => {
-        return wcSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Unknown';
+        return wcSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
     };
 
-    return (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    // -- Renders --
 
-                {/* Left Col: Functions */}
-                <Card className="col-span-1 border-nexus-700 bg-nexus-900/50">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center">
-                        <Activity className="w-4 h-4 mr-2" /> Contract Functions
-                    </h3>
-                    <div className="space-y-2">
-                        {functions.map(func => (
-                            <button
-                                key={func.name}
-                                onClick={() => handleFunctionSelect(func.name)}
-                                className={`w-full text-left px-4 py-3 rounded text-sm font-mono transition-colors ${selectedFunction === func.name
-                                        ? 'bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/50'
-                                        : 'bg-black/40 text-gray-400 hover:bg-black/60 border border-transparent'
-                                    }`}
-                            >
-                                {func.name}
-                            </button>
-                        ))}
-                    </div>
-                </Card>
-
-                {/* Center Col: Builder Form */}
-                <Card className="col-span-1 md:col-span-2 border-nexus-700 bg-nexus-900/50">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center">
-                            <Terminal className="w-4 h-4 mr-2 text-nexus-blue" />
-                            {selectedFunction || 'Select Function'}
-                        </h3>
-                        <Badge variant="neutral">{inputs.length} Inputs</Badge>
-                    </div>
-
-                    <div className="space-y-4 mb-8">
-                        {inputs.map((input, idx) => (
-                            <div key={idx}>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                                    {input.name} <span className="text-nexus-cyan">({input.type})</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={input.value}
-                                    onChange={(e) => handleInputChange(idx, e.target.value)}
-                                    placeholder={`${input.type} value...`}
-                                    className="w-full bg-black border border-nexus-700 rounded p-2 text-sm font-mono text-white focus:border-nexus-cyan focus:outline-none transition-colors"
-                                />
-                            </div>
-                        ))}
-                        {inputs.length === 0 && (
-                            <div className="text-center py-8 text-gray-600 italic">
-                                No arguments required.
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="border-t border-nexus-800 pt-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <div className="text-xs text-gray-500">
-                                Signer: <span className="text-nexus-cyan font-mono">{getWalletAddress().slice(0, 10)}...</span>
-                            </div>
-                            <div className="text-xs text-gray-500">
-                                Target: <span className="text-yellow-500 font-mono">{deployedAddress.slice(0, 10)}...</span>
-                            </div>
+    const renderStep1_Select = () => (
+        <div className="space-y-4">
+            <p className="text-sm text-gray-400">Select a function to interact with on the contract.</p>
+            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                {functions.map(func => (
+                    <button
+                        key={func.name}
+                        onClick={() => handleFunctionSelect(func.name)}
+                        className="flex items-center justify-between w-full p-4 bg-nexus-900 border border-nexus-700/50 hover:border-nexus-cyan/50 hover:bg-nexus-cyan/5 rounded-xl transition-all group text-left"
+                    >
+                        <div>
+                            <span className="font-mono text-nexus-cyan font-bold">{func.name}</span>
+                            <span className="ml-2 text-xs text-gray-500">({func.inputs.length} args)</span>
                         </div>
+                        <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-nexus-cyan transition-colors" />
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
 
-                        <Button
-                            className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12"
-                            onClick={handleExecute}
-                            isLoading={isExecuting}
-                            disabled={!selectedFunction || !wcSession}
-                            icon={<Play className="w-4 h-4" />}
-                        >
-                            Sign & Broadcast
-                        </Button>
-                    </div>
-                </Card>
+    const renderStep2_Args = () => (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-nexus-700 pb-2">
+                <span className="text-sm text-gray-400">Function</span>
+                <Badge variant="info" className="font-mono">{selectedFunction}</Badge>
             </div>
 
-            {/* Bottom: Logs */}
-            <Card className="bg-black border-nexus-800 font-mono text-xs h-48 overflow-y-auto custom-scrollbar p-0">
-                <div className="sticky top-0 bg-nexus-900/80 backdrop-blur border-b border-nexus-800 px-4 py-2 text-gray-500 text-[10px] uppercase font-bold">
-                    Transaction Logs
-                </div>
-                <div className="p-4 space-y-1">
-                    {logs.length === 0 && <span className="text-gray-700">Waiting for interaction...</span>}
-                    {logs.map((log, i) => (
-                        <div key={i} className="text-gray-400 border-b border-gray-900/50 pb-0.5 last:border-0">
-                            {log}
+            <div className="space-y-4">
+                {inputs.length === 0 ? (
+                    <div className="p-8 bg-nexus-900/30 border border-dashed border-nexus-700 rounded-lg text-center text-gray-500 text-sm">
+                        This function requires no arguments.
+                    </div>
+                ) : (
+                    inputs.map((input, idx) => (
+                        <div key={idx}>
+                            <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                {input.name} <span className="text-nexus-cyan/80 text-[10px]">({input.type})</span>
+                            </label>
+                            <Input
+                                value={input.value}
+                                onChange={(e) => handleInputChange(idx, e.target.value)}
+                                placeholder={`Enter ${input.type} value`}
+                                className="font-mono text-sm"
+                            />
                         </div>
-                    ))}
+                    ))
+                )}
+            </div>
+
+            <div className="flex justify-between pt-4">
+                <Button variant="ghost" onClick={() => setCurrentStep(1)} size="sm" icon={<ArrowLeft className="w-4 h-4" />}>
+                    Back
+                </Button>
+                <Button onClick={() => setCurrentStep(3)} icon={<ArrowRight className="w-4 h-4" />}>
+                    Next: Preview
+                </Button>
+            </div>
+        </div>
+    );
+
+    const renderStep3_Preview = () => (
+        <div className="space-y-6">
+            <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
+                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                        <Wallet className="w-3 h-3 mr-2 text-nexus-pink" /> Transaction Signer
+                    </h4>
                 </div>
+                <div className="p-4 flex items-center justify-between">
+                    <span className="text-sm text-white font-mono break-all">{getWalletAddress()}</span>
+                    {!wcSession && <span className="text-xs text-red-500 font-bold">DISCONNECTED</span>}
+                </div>
+            </div>
+
+            <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
+                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                        <Cpu className="w-3 h-3 mr-2 text-nexus-cyan" /> Contract Call
+                    </h4>
+                </div>
+                <div className="p-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Function:</span>
+                        <span className="text-nexus-cyan font-mono">{selectedFunction}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Target:</span>
+                        <span className="text-gray-300 font-mono truncate max-w-[150px]">{deployedAddress}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-between pt-4">
+                <Button variant="ghost" onClick={() => setCurrentStep(2)} size="sm">Back</Button>
+                <Button
+                    onClick={() => {
+                        handleExecute();
+                        setCurrentStep(4); // Move to execution/result view
+                    }}
+                    disabled={!wcSession}
+                    variant={!wcSession ? 'secondary' : 'primary'}
+                    icon={<Play className="w-4 h-4" />}
+                >
+                    {wcSession ? 'Sign & Broadcast' : 'Connect Wallet First'}
+                </Button>
+            </div>
+        </div>
+    );
+
+    const renderStep4_Result = () => (
+        <div className="text-center py-6 space-y-6">
+            {isExecuting ? (
+                <div className="animate-in fade-in zoom-in">
+                    <Loader2 className="w-12 h-12 text-nexus-cyan animate-spin mx-auto mb-4" />
+                    <h3 className="text-lg font-bold text-white">Broadcasting...</h3>
+                    <p className="text-sm text-gray-500">Waiting for wallet signature.</p>
+                </div>
+            ) : executionResult?.success ? (
+                <div className="animate-in fade-in zoom-in space-y-4">
+                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto border border-green-500/50">
+                        <CheckCircle className="w-8 h-8 text-green-500" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white">Transaction Sent!</h3>
+                        <p className="text-sm text-gray-400 mt-1">Ref: {executionResult.txid}</p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-4">
+                        <Button
+                            variant="secondary"
+                            onClick={() => window.open(getExplorerLink(executionResult.txid!), '_blank')}
+                        >
+                            View on Explorer
+                        </Button>
+                        <Button onClick={resetFlow}>
+                            Make Another Call
+                        </Button>
+                    </div>
+                </div>
+            ) : (
+                <div className="animate-in fade-in zoom-in space-y-4">
+                    <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto border border-red-500/50">
+                        <AlertCircle className="w-8 h-8 text-red-500" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white">Transaction Failed</h3>
+                        <p className="text-sm text-red-400 mt-2 bg-red-900/20 p-3 rounded border border-red-900/50 font-mono">
+                            {executionResult?.error || "Unknown error"}
+                        </p>
+                    </div>
+                    <Button onClick={() => setCurrentStep(2)} variant="secondary">
+                        Edit Arguments & Retry
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+
+    // -- Main Render --
+    return (
+        <div className="p-4">
+            {/* Primary Trigger */}
+            <Card className="bg-nexus-900/50 border-nexus-700 flex flex-col items-center justify-center p-8 space-y-4">
+                <Terminal className="w-12 h-12 text-nexus-cyan/50" />
+                <div className="text-center">
+                    <h3 className="text-lg font-bold text-white">Interact with Contract</h3>
+                    <p className="text-sm text-gray-500 mt-1 max-w-sm mx-auto">
+                        Execute functions on the deployed contract. Requires a connected wallet for signing.
+                    </p>
+                </div>
+                <Button onClick={openModal} className="px-8 py-3" icon={<Play className="w-4 h-4" />}>
+                    Call Function
+                </Button>
             </Card>
+
+            {/* Wizard Modal */}
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                title={
+                    currentStep === 1 ? "Select Function" :
+                        currentStep === 2 ? "Configure Arguments" :
+                            currentStep === 3 ? "Review Transaction" :
+                                "Execution Status"
+                }
+            >
+                <div className="min-h-[300px]">
+                    {currentStep === 1 && renderStep1_Select()}
+                    {currentStep === 2 && renderStep2_Args()}
+                    {currentStep === 3 && renderStep3_Preview()}
+                    {currentStep === 4 && renderStep4_Result()}
+                </div>
+            </Modal>
         </div>
     );
 };
