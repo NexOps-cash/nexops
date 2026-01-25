@@ -285,12 +285,23 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     {artifact && (
                         <ConstructorForm
                             inputs={artifact.constructorInputs}
+                            values={constructorArgs}
                             onChange={(args, validations) => {
                                 setConstructorArgs(args);
                                 setConstructorValidations(validations);
                             }}
                         />
                     )}
+
+                    {/* Safety Panel in Modal */}
+                    <div className="pt-2 border-t border-nexus-800">
+                        <ContractSafetyPanel
+                            artifact={artifact}
+                            validations={constructorValidations}
+                            derivedAddress={derivedAddress}
+                        />
+                    </div>
+
                     <div className="flex justify-end pt-4">
                         <Button
                             onClick={() => {
@@ -423,6 +434,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 </label>
                                 <ConstructorForm
                                     inputs={artifact.constructorInputs}
+                                    values={constructorArgs}
                                     onChange={(args, validations) => {
                                         setConstructorArgs(args);
                                         setConstructorValidations(validations);

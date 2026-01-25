@@ -5,6 +5,7 @@ import { validateConstructorArg, ValidationResult } from '../services/validation
 
 interface ConstructionProps {
     inputs: ContractArtifact['constructorInputs'];
+    values?: string[]; // Added prop for persistence
     onChange: (args: string[], validations: Record<string, ValidationResult>) => void;
 }
 
@@ -22,10 +23,38 @@ const getInputExplanation = (name: string, type: string): string => {
     return `Parameter ${name} of type ${type}. This value affects the contract address.`;
 };
 
-export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, onChange }) => {
-    const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, onChange }) => {
+    // Initialize from values prop if available
+    const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
+        const initial: Record<string, string> = {};
+        if (values) {
+            inputs.forEach((inp, i) => {
+                initial[inp.name] = values[i] || '';
+            });
+        }
+        return initial;
+    });
+
     const [fieldValidations, setFieldValidations] = useState<Record<string, ValidationResult>>({});
     const [showTooltip, setShowTooltip] = useState<string | null>(null);
+
+    // Sync state if external values change (e.g. edited in one view and switched to another)
+    React.useEffect(() => {
+        if (values) {
+            setFieldValues((prev) => {
+                const next = { ...prev };
+                let changed = false;
+                inputs.forEach((inp, i) => {
+                    const val = values[i] || '';
+                    if (next[inp.name] !== val) {
+                        next[inp.name] = val;
+                        changed = true;
+                    }
+                });
+                return changed ? next : prev;
+            });
+        }
+    }, [values, inputs]);
 
     // Manual Apply Handler
     const handleApply = () => {
