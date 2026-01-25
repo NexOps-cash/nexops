@@ -1,4 +1,3 @@
-
 import React, { useState, ReactNode } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
@@ -10,8 +9,8 @@ interface WorkbenchLayoutProps {
     sidebarContent: ReactNode;
     editorContent: ReactNode;
     bottomPanelContent: ReactNode;
-    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY';
-    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY') => void;
+    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT';
+    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT') => void;
     activeBottomTab?: 'TERMINAL' | 'OUTPUT' | 'PROBLEMS';
     onTabChange?: (tab: 'TERMINAL' | 'OUTPUT' | 'PROBLEMS') => void;
     problemsCount?: number;
@@ -86,6 +85,12 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         isActive={activeView === 'DEPLOY'}
                         onClick={() => onViewChange('DEPLOY')}
                     />
+                    <ActivityBarItem
+                        icon={BoxSelect}
+                        label="Interact (Builder)"
+                        isActive={activeView === 'INTERACT'}
+                        onClick={() => onViewChange('INTERACT')}
+                    />
                 </div>
                 <div className="pb-2">
                     <ActivityBarItem
@@ -102,13 +107,14 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                 <PanelGroup direction="horizontal">
 
                     {/* Sidebar Panel */}
-                    <Panel defaultSize={20} minSize={15} maxSize={30} className="bg-nexus-800 border-r border-slate-800 flex flex-col">
+                    <Panel defaultSize={25} minSize={20} maxSize={50} className="bg-nexus-800 border-r border-slate-800 flex flex-col">
                         <div className="h-9 min-h-[36px] px-4 flex items-center border-b border-slate-800 bg-nexus-800/50">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                 {activeView === 'EXPLORER' && 'Project Contracts'}
                                 {activeView === 'AUDITOR' && 'AI Security Agent'}
                                 {activeView === 'DEBUG' && 'Execution Trace'}
                                 {activeView === 'DEPLOY' && 'Deploy Contract'}
+                                {activeView === 'INTERACT' && 'Transaction Builder'}
                             </span>
                         </div>
                         <div className="flex-1 overflow-hidden relative">

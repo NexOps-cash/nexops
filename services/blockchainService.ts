@@ -21,7 +21,7 @@ export interface FundingStatus {
     error?: string;
 }
 
-const CHIPNET_EXPLORER = 'https://chipnet.chaingraph.cash/tx';
+const CHIPNET_EXPLORER = 'https://chipnet.chaingraph.cash';
 
 // --- Pure Utilities ---
 
@@ -239,6 +239,15 @@ export async function pollForFunding(
 /**
  * Wrapper for the Explorer Link
  */
-export function getExplorerLink(txid: string): string {
-    return `${CHIPNET_EXPLORER}/${txid}`;
+
+
+/**
+ * Wrapper for the Explorer Link
+ * Handles both Transactions and Addresses based on prefix.
+ */
+export function getExplorerLink(value: string): string {
+    if (value.startsWith('bchtest:') || value.startsWith('bitcoincash:')) {
+        return `${CHIPNET_EXPLORER}/address/${value}`;
+    }
+    return `${CHIPNET_EXPLORER}/tx/${value}`;
 }

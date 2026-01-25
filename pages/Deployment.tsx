@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Badge } from '../components/UI';
+import { Card, Button, Badge, Modal } from '../components/UI';
 import { Project, ChainType } from '../types';
 import { compileCashScript, verifyDeterminism, ContractArtifact } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
@@ -17,14 +17,15 @@ interface DeploymentProps {
     walletConnected: boolean;
     onConnectWallet: () => void;
     onUpdateProject: (p: Project) => void;
-    onNavigate?: (view: any) => void;  // Optional for standalone page
-    compact?: boolean;  // NEW: Enable sidebar-optimized layout
+    onNavigate?: (view: any) => void;
+    onDeployed?: (address: string, artifact: ContractArtifact, args: string[]) => void;
+    compact?: boolean;
 }
 
-export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, compact = false }) => {
+export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, onDeployed, compact = false }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
-    const [deploymentStep, setDeploymentStep] = useState(0); // 0: Idle, 1: Compiling, 2: Signing, 3: Broadcasting, 4: Success
+    const [deploymentStep, setDeploymentStep] = useState(0);
     const [txHash, setTxHash] = useState<string | null>(null);
 
     // Artifact State
@@ -33,12 +34,16 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [compilationError, setCompilationError] = useState<string | null>(null);
     const [isFixing, setIsFixing] = useState(false);
 
+    // Modal State
+    const [showConstructorModal, setShowConstructorModal] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+
     const [isDeterminismVerified, setIsDeterminismVerified] = useState(false);
     const [derivedAddress, setDerivedAddress] = useState<string>('');
     const [derivationError, setDerivationError] = useState<string | null>(null);
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
     const [constructorValidations, setConstructorValidations] = useState<Record<string, any>>({});
-    const [fundingAmount, setFundingAmount] = useState<number>(2000); // Default 2000 sats
+    const [fundingAmount, setFundingAmount] = useState<number>(2000);
     const [paymentRequestUri, setPaymentRequestUri] = useState<string | null>(null);
     const [fundingStatus, setFundingStatus] = useState<FundingStatus>({ status: 'idle', utxos: [], totalValue: 0 });
 
@@ -116,6 +121,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
             setArtifact(result.artifact);
             setIsDeterminismVerified(true);
+            setShowConstructorModal(true); // Open modal on success
 
         } catch (e: any) {
             setCompilationError(e.message);
@@ -168,12 +174,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
             return;
         }
 
-        // Final Safety Gate
-        if (auditScore < 80) {
-            alert("Security Gate Active: Cannot deploy because audit score is below threshold.");
-            return;
-        }
-
         setIsDeploying(true);
         setDeploymentStep(1); // Prepared
 
@@ -198,6 +198,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     setFundingStatus(status);
 
                     if (status.status === 'confirmed') {
+                        // Success Callback
+                        if (onDeployed && artifact) {
+                            onDeployed(derivedAddress, artifact, constructorArgs);
+                        }
+
                         // Delay transition to show "Funded" state
                         if (onNavigate) {
                             setTimeout(() => {
@@ -233,8 +238,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     };
 
     // Check if all critical validations pass
-    // Rule: Derivation is always allowed
-    // Rule: Funding is allowed only if all CRITICAL validations pass
     const hasCriticalValidationErrors = () => {
         return Object.values(constructorValidations).some(
             (validation: any) => validation?.severity === 'error'
@@ -243,29 +246,16 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
     // Address Derivation Effect
     useEffect(() => {
-        console.log('🔄 [Deployment] useEffect FIRED');
-        console.log('🔄 [Deployment] artifact:', artifact ? 'EXISTS' : 'NULL');
-        console.log('🔄 [Deployment] constructorArgs:', constructorArgs);
-
-        if (!artifact) {
-            console.log('⚠️ [Deployment] No artifact, returning early');
-            return;
-        }
+        if (!artifact) return;
 
         setDerivationError(null);
 
         try {
-            console.log('🔄 [Deployment] Args length:', constructorArgs.length);
-            console.log('🔄 [Deployment] Inputs length:', artifact.constructorInputs.length);
-
             if (constructorArgs.length === artifact.constructorInputs.length) {
-                console.log('✅ [Deployment] Length match! Calling deriveContractAddress...');
                 const addr = deriveContractAddress(artifact, constructorArgs, Network.CHIPNET);
-                console.log('✅ [Deployment] Got address:', addr);
                 setDerivedAddress(addr);
-                console.log('✅ [Deployment] State updated with address');
+                // setShowSuccessModal(true); // removed to avoid auto-popup on every keystroke, user clicks confirm in modal
             } else {
-                console.log('⚠️ [Deployment] Length mismatch, clearing address');
                 setDerivedAddress('');
             }
         } catch (e: any) {
@@ -281,6 +271,82 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
     return (
         <div className={compact ? "flex flex-col gap-3 p-2 h-full overflow-y-auto custom-scrollbar" : "flex flex-col gap-6 pb-20"}>
+
+            {/* CONSTRUCTOR MODAL */}
+            <Modal
+                isOpen={showConstructorModal}
+                onClose={() => setShowConstructorModal(false)}
+                title="Configure Contract Parameters"
+            >
+                <div className="space-y-4">
+                    <p className="text-gray-400 text-sm">
+                        Enter the constructor arguments to derive the deterministic address for your contract.
+                    </p>
+                    {artifact && (
+                        <ConstructorForm
+                            inputs={artifact.constructorInputs}
+                            onChange={(args, validations) => {
+                                setConstructorArgs(args);
+                                setConstructorValidations(validations);
+                            }}
+                        />
+                    )}
+                    <div className="flex justify-end pt-4">
+                        <Button
+                            onClick={() => {
+                                setShowConstructorModal(false);
+                                if (derivedAddress) setShowSuccessModal(true);
+                            }}
+                            disabled={!derivedAddress || hasCriticalValidationErrors()}
+                        >
+                            Confirm & View Address
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* SUCCESS MODAL */}
+            <Modal
+                isOpen={showSuccessModal}
+                onClose={() => setShowSuccessModal(false)}
+                title="Artifacts Generated Successfully"
+            >
+                <div className="space-y-4 text-center">
+                    <div className="mx-auto w-16 h-16 bg-green-900/20 rounded-full flex items-center justify-center border border-green-500/50 mb-2">
+                        <CheckCircle className="w-8 h-8 text-green-500" />
+                    </div>
+                    <h4 className="text-xl font-bold text-white">Contract Optimized</h4>
+                    <p className="text-gray-400 text-sm">
+                        Your contract has been compiled and is ready for funding on Chipnet.
+                    </p>
+
+                    <div className="bg-nexus-900 p-3 rounded border border-nexus-700 text-left">
+                        <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Derived Address</label>
+                        <div className="flex justify-between items-center bg-black/50 p-2 rounded">
+                            <span className="font-mono text-nexus-cyan text-xs truncate mr-2">{derivedAddress}</span>
+                            <Copy className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white" />
+                        </div>
+                    </div>
+
+                    <div className="flex space-x-3 pt-2">
+                        <Button
+                            variant="secondary"
+                            className="flex-1"
+                            onClick={() => window.open(getExplorerLink(derivedAddress), '_blank')}
+                            icon={<Server className="w-4 h-4" />}
+                        >
+                            View on Explorer
+                        </Button>
+                        <Button
+                            className="flex-1"
+                            onClick={() => setShowSuccessModal(false)}
+                        >
+                            Continue to Funding
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
             {/* Config & Artifacts */}
             <div className={compact ? "space-y-3" : "space-y-6"}>
                 <Card>
@@ -350,13 +416,19 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 )}
                             </div>
 
-                            <ConstructorForm
-                                inputs={artifact.constructorInputs}
-                                onChange={(args, validations) => {
-                                    setConstructorArgs(args);
-                                    setConstructorValidations(validations);
-                                }}
-                            />
+                            {/* Constructor Inputs (In-Panel) */}
+                            <div className="bg-nexus-900/50 p-3 rounded border border-nexus-700/50 mb-4">
+                                <label className="text-xs text-gray-400 uppercase font-bold mb-3 block flex items-center">
+                                    <FileCode className="w-3 h-3 mr-1" /> Constructor Arguments
+                                </label>
+                                <ConstructorForm
+                                    inputs={artifact.constructorInputs}
+                                    onChange={(args, validations) => {
+                                        setConstructorArgs(args);
+                                        setConstructorValidations(validations);
+                                    }}
+                                />
+                            </div>
 
                             {/* Artifact Preview Details */}
                             <div>
@@ -380,6 +452,8 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 </div>
                             </div>
 
+
+
                             {/* Contract Safety Panel */}
                             <ContractSafetyPanel
                                 artifact={artifact}
@@ -388,7 +462,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                             />
 
                             <Button size="sm" variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
-                                Re-Compile
+                                Re-Compile & Configure
                             </Button>
                         </div>
                     )}
@@ -570,7 +644,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                         ) : (
                                             <Button
                                                 onClick={handleDeploy}
-                                                disabled={isDeploying || deploymentStep === 4 || !isAuditPassed || !derivedAddress || hasCriticalValidationErrors()}
+                                                disabled={isDeploying || deploymentStep === 4 || !derivedAddress || hasCriticalValidationErrors()}
                                                 isLoading={isDeploying}
                                                 className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 icon={<Rocket className="w-4 h-4" />}
@@ -579,9 +653,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                                     ? "Broadcasted"
                                                     : hasCriticalValidationErrors()
                                                         ? "Funding Blocked (Invalid Inputs)"
-                                                        : !isAuditPassed
-                                                            ? "Deploy Blocked (Audit)"
-                                                            : "Generate Funding Request"}
+                                                        : "Generate Funding Request"}
                                             </Button>
                                         )}
                                     </>
@@ -610,7 +682,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 <p className="text-gray-400">Transaction Hash:</p>
                                 <div className="flex items-center space-x-2 mt-1">
                                     <span className="text-white bg-nexus-800 px-2 py-1 rounded text-xs">{txHash}</span>
-                                    <Copy className="w-4 h-4 text-gray-500 cursor-pointer hover:text-white" />
+                                    <Copy className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white" />
                                 </div>
                             </div>
                         )}

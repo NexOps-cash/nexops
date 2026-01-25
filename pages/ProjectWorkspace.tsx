@@ -13,8 +13,10 @@ import {
     FileCode
 } from 'lucide-react';
 import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../services/groqService';
-import { compileCashScript } from '../services/compilerService';
+import { compileCashScript, ContractArtifact } from '../services/compilerService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
+import { walletConnectService } from '../services/walletConnectService';
+import { TransactionBuilder } from '../components/TransactionBuilder';
 import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
 import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
@@ -36,7 +38,7 @@ interface ProjectWorkspaceProps {
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
-    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG'>('EXPLORER');
+    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'INTERACT'>('EXPLORER');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
 
     // Tools State
@@ -55,6 +57,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     // Version State
     const [compareVersion, setCompareVersion] = useState<CodeVersion | null>(null);
+
+    // Deployment State
+    const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(null);
+    const [deployedAddress, setDeployedAddress] = useState<string>('');
+    const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
@@ -445,6 +452,25 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         </div>
     );
 
+    const renderSidebarInteract = () => (
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+            {!deployedArtifact ? (
+                <div className="text-center py-10 text-gray-500">
+                    <Rocket className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p className="text-xs uppercase tracking-widest font-bold">No Active Deployment</p>
+                    <p className="text-[10px] mt-2">Deploy a contract to enable interaction.</p>
+                </div>
+            ) : (
+                <TransactionBuilder
+                    artifact={deployedArtifact}
+                    deployedAddress={deployedAddress}
+                    constructorArgs={constructorArgs}
+                    wcSession={walletConnectService.getSession()}
+                />
+            )}
+        </div>
+    );
+
     const renderSidebarDeploy = () => (
         <Deployment
             project={project}
@@ -452,6 +478,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
+            onDeployed={(addr, artifact, args) => {
+                setDeployedAddress(addr);
+                setDeployedArtifact(artifact);
+                setConstructorArgs(args);
+                setActiveView('INTERACT'); // Auto-navigate to Interact
+            }}
             onNavigate={(view) => setActiveView(view)}
         />
     );
@@ -536,7 +568,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 activeView === 'EXPLORER' ? renderSidebarExplorer() :
                     activeView === 'AUDITOR' ? renderSidebarAuditor() :
                         activeView === 'DEBUG' ? renderSidebarDebug() :
-                            renderSidebarDeploy()
+                            activeView === 'INTERACT' ? renderSidebarInteract() :
+                                renderSidebarDeploy()
             }
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}
