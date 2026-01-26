@@ -20,12 +20,15 @@ import { TransactionBuilder } from '../components/TransactionBuilder';
 import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
 import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
+import { AIPanel } from '../components/AIPanel';
+import { AuditReport, Vulnerability } from '../types';
 
 interface ChatMessage {
     role: 'user' | 'model';
     text: string;
     fileUpdates?: { name: string, content: string }[];
     isApplied?: boolean;
+    auditReport?: AuditReport;
 }
 
 interface ProjectWorkspaceProps {
@@ -128,16 +131,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setUnsavedChanges(false);
     };
 
-    const handleSendMessage = async () => {
-        if (!chatInput.trim() || isChatting) return;
+    const handleSendMessage = async (message?: string) => {
+        const msgToSend = message || chatInput;
+        if (!msgToSend.trim() || isChatting) return;
 
-        const userMsg = chatInput;
         setChatInput('');
-        setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
+        setChatHistory(prev => [...prev, { role: 'user', text: msgToSend }]);
         setIsChatting(true);
 
         try {
-            const result = await chatWithAssistant(userMsg, project.files, chatHistory);
+            const result = await chatWithAssistant(msgToSend, project.files, chatHistory);
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.response,
@@ -199,15 +202,52 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         if (!mainContractFile) return;
         setIsAuditing(true);
         setDeploymentLog(prev => [...prev, 'Starting Audit...']);
+
+        // Show indicator in Chat
+        setChatHistory(prev => [...prev, { role: 'user', text: 'Run Security Audit' }]);
+
         try {
             const report = await auditSmartContract(mainContractFile.content);
             onUpdateProject({ ...project, auditReport: report });
             setDeploymentLog(prev => [...prev, 'Audit Complete. Issues found: ' + report.vulnerabilities.length]);
+
+            // Push Report to Chat
+            setChatHistory(prev => [...prev, {
+                role: 'model',
+                text: report.summary,
+                auditReport: report
+            }]);
+
+            // Switch to Auditor view
+            setActiveView('AUDITOR');
+
         } catch (e) {
             console.error(e);
             setDeploymentLog(prev => [...prev, 'Audit Failed.']);
+            setChatHistory(prev => [...prev, { role: 'model', text: "Audit Failed due to an internal error." }]);
         } finally {
             setIsAuditing(false);
+        }
+    };
+
+    const handleFixVulnerability = async (vuln: Vulnerability) => {
+        if (!mainContractFile) return;
+        setIsChatting(true);
+
+        const prompt = `Fix this vulnerability:\nTitle: ${vuln.title}\nDescription: ${vuln.description}\nSuggestion: ${vuln.fixSuggestion}`;
+        setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
+
+        try {
+            const result = await fixSmartContract(mainContractFile.content, prompt);
+            setChatHistory(prev => [...prev, {
+                role: 'model',
+                text: result.explanation,
+                fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+            }]);
+        } catch (e) {
+            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix." }]);
+        } finally {
+            setIsChatting(false);
         }
     };
 
@@ -342,40 +382,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     );
 
     const renderSidebarAuditor = () => (
-        <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                {chatHistory.length === 0 && (
-                    <div className="text-center py-10 opacity-40">
-                        <Bot size={32} className="mx-auto text-nexus-cyan mb-2" />
-                        <p className="text-[10px]">AI Assistant Ready</p>
-                    </div>
-                )}
-                {chatHistory.map((msg, i) => (
-                    <div key={i} className={`p-3 rounded-xl text-xs ${msg.role === 'user' ? 'bg-nexus-cyan/10 text-white self-end text-right' : 'bg-slate-800/50 text-slate-300'}`}>
-                        <div className="font-bold opacity-50 text-[9px] mb-1 uppercase">{msg.role}</div>
-                        {msg.text}
-                        {msg.fileUpdates && (
-                            <Button size="sm" variant="glass" className="mt-2 w-full text-[10px]" onClick={() => applyFileUpdates(msg.fileUpdates!, i)} disabled={msg.isApplied}>
-                                {msg.isApplied ? 'Applied' : 'Apply Changes'}
-                            </Button>
-                        )}
-                    </div>
-                ))}
-                <div ref={chatEndRef} />
-            </div>
-            {/* Input */}
-            <div className="p-2 border-t border-slate-800 bg-nexus-900">
-                <textarea
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                    className="w-full bg-slate-800 text-xs p-2 rounded-lg outline-none border border-slate-700 focus:border-nexus-cyan"
-                    placeholder="Ask AI..."
-                    rows={2}
-                />
-            </div>
-        </div>
+        <AIPanel
+            history={chatHistory}
+            onSend={handleSendMessage}
+            isBusy={isChatting}
+            onApply={applyFileUpdates}
+            onFixVulnerability={handleFixVulnerability}
+        />
     );
 
     const handleStartDebug = async () => {
