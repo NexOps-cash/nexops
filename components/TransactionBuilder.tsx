@@ -7,6 +7,8 @@ import {
     Cpu, Hash, ArrowLeft, Loader2
 } from 'lucide-react';
 import { getExplorerLink } from '../services/blockchainService';
+import { walletConnectService } from '../services/walletConnectService';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface TransactionBuilderProps {
     artifact: ContractArtifact;
@@ -38,6 +40,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     // Execution State
     const [isExecuting, setIsExecuting] = useState(false);
     const [executionResult, setExecutionResult] = useState<{ success: boolean; txid?: string; error?: string } | null>(null);
+
+    // Wallet State
+    const [connectUri, setConnectUri] = useState<string>('');
+    const [activeSession, setActiveSession] = useState<any>(wcSession || walletConnectService.getSession());
 
     // Parse ABI
     // Note: cashc ABI often omits 'type' for functions, so we include items with no type or type='function'
@@ -71,46 +77,137 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         setInputs(newInputs);
     };
 
+    // --- Real Execution Logic ---
     const handleExecute = async () => {
-        if (!selectedFunction || !wcSession) return;
+        if (!selectedFunction) return;
 
+        // 1. Setup Provider & Signer
         setIsExecuting(true);
+        setExecutionResult(null);
+
         try {
-            // Validate inputs
+            // Import dynamically to avoid SSR/Init issues if any
+            const { Contract, ElectrumNetworkProvider, SignatureTemplate } = await import('cashscript');
+
+            // Reuse existing connection if possible, or new one
+            // Note: ElectrumNetworkProvider manages its own connection to 'chipnet.imaginary.cash' by default for 'chipnet'
+            const provider = new ElectrumNetworkProvider('chipnet');
+
+            // 2. Initialize Contract
+            // Address is derived from artifact + args. Type assertion used to bypass strict TS check on 'functions'.
+            const contract = new Contract(artifact, constructorArgs, { provider }) as any;
+
+            if (deployedAddress && contract.address !== deployedAddress) {
+                console.warn("Warning: initialized contract address differs from derived address:", contract.address, deployedAddress);
+            }
+            console.log('Contract initialized:', contract);
+            console.log('Available functions:', contract.functions); // Debugging line
+
+            // 3. Prepare Arguments
             const func = functions.find(f => f.name === selectedFunction);
             if (!func) throw new Error("Function not found");
 
-            // Type conversion simulation
-            const typedArgs = inputs.map((input, i) => {
+            // Mock Signature Template for WalletConnect
+            // We use the REAL SignatureTemplate class to pass 'instanceof' checks in CashScript.
+            // We pass a dummy private key (32 bytes) because we override generateSignature anyway.
+            const dummyKey = new Uint8Array(32).fill(1);
+            const createWCTemplate = () => {
+                const wcTemplate = new SignatureTemplate(dummyKey);
+                // Override generateSignature to return empty placeholder
+                wcTemplate.generateSignature = (_payload: any, _bchForkId: any) => new Uint8Array(65).fill(0);
+                return wcTemplate;
+            };
+
+            const typedArgs = await Promise.all(inputs.map(async (input, i) => {
                 const def = func.inputs[i];
+
+                // Handle Signature Placeholders
+                if (def.type === 'sig') {
+                    // Use our placeholder template
+                    return createWCTemplate();
+                }
+
                 if (def.type === 'int') {
                     if (isNaN(Number(input.value))) throw new Error(`Invalid integer for ${input.name}`);
                     return BigInt(input.value);
                 }
                 if (def.type === 'bool') return input.value === 'true';
+                if (def.type === 'bytes') return input.value.startsWith('0x') ? input.value.slice(2) : input.value;
+
                 return input.value;
-            });
+            }));
 
-            console.log("Executing with:", typedArgs);
+            console.log("Building transaction with args:", typedArgs);
 
-            // Simulating network delay and signature
-            await new Promise(r => setTimeout(r, 2000));
+            // 4. Build Transaction Builder
+            // Breaking Change Fix: CashScript v0.10+ uses 'unlock' instead of 'functions'
+            // to conform to the new mental model (we are unlocking UTXOs).
+            // However, the object is still dynamically keyed by function name.
 
-            // Mock Success (Replace with actual CashScript call later)
+            // 4. Build Transaction (CashScript v0.10+ Flow)
+            // In v0.10+, "contract.functions.foo()" is replaced by:
+            // 1. Instantiate TransactionBuilder
+            // 2. Fetch UTXOs for the contract
+            // 3. Add Input using contract.unlock.foo() as the unlocker
+
+            console.log("Fetching contract UTXOs...");
+            const utxos = await contract.getUtxos();
+            if (utxos.length === 0) {
+                throw new Error("No UTXOs found for this contract. Please fund it first.");
+            }
+            console.log(`Found ${utxos.length} UTXOs for contract.`);
+
+            // Use the first UTXO for simplicity in this generic builder
+            // A smarter builder might let user select inputs or use "Coin Control"
+            const inputUtxo = utxos[0];
+
+            // Import TransactionBuilder class
+            const { TransactionBuilder: CashScriptTransactionBuilder } = await import('cashscript');
+
+            const txBuilder = new CashScriptTransactionBuilder({ provider });
+
+            // Get the unlocker (Redeem Script + Args)
+            const unlocker = contract.unlock[selectedFunction](...typedArgs);
+
+            // Add Input
+            txBuilder.addInput(inputUtxo, unlocker);
+
+            // 5. Configure Transaction
+            const walletAddress = getWalletAddress();
+            if (walletAddress && walletAddress !== 'Not Connected') {
+                // Ensure chipnet/testnet prefix if missing, though typically handled
+                txBuilder.addOutput({ to: walletAddress, amount: 1000n });
+            } else {
+                txBuilder.addOutput({ to: contract.address, amount: 1000n });
+            }
+
+            // 6. Build Unsigned Transaction
+            const unsignedHex = await txBuilder.build();
+            console.log("Unsigned Hex (Pre-Sign):", unsignedHex);
+
+            // 7. Request Signature from Wallet
+            console.log("Requesting signature via WalletConnect...");
+            const signedHex = await walletConnectService.requestSignature(unsignedHex, 'bch:chipnet');
+            console.log("Signed Hex (Post-Sign):", signedHex);
+
+            // 8. Broadcast
+            console.log("Broadcasting...");
+            const txid = await provider.sendRawTransaction(signedHex);
+
             setExecutionResult({
                 success: true,
-                txid: '7f9c8d...3a2b1' // Mock TXID
+                txid: txid
             });
 
         } catch (error: any) {
+            console.error("Execution failed:", error);
             setExecutionResult({
                 success: false,
-                error: error.message
+                error: error.message || "Transaction failed"
             });
         } finally {
             setIsExecuting(false);
         }
-
     };
 
     const resetFlow = () => {
@@ -119,8 +216,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         setSelectedFunction('');
     };
 
+
+
     const getWalletAddress = () => {
-        return wcSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
+        return activeSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
     };
 
     // -- Renders --
@@ -164,12 +263,19 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5 ml-1">
                                 {input.name} <span className="text-nexus-cyan/80 text-[10px]">({input.type})</span>
                             </label>
-                            <Input
-                                value={input.value}
-                                onChange={(e) => handleInputChange(idx, e.target.value)}
-                                placeholder={`Enter ${input.type} value`}
-                                className="font-mono text-sm"
-                            />
+                            {input.type === 'sig' ? (
+                                <div className="flex items-center p-3 bg-nexus-800/50 border border-nexus-700 rounded-lg text-sm text-gray-400 font-mono italic">
+                                    <Wallet className="w-4 h-4 mr-2 text-nexus-pink" />
+                                    Will be signed by connected wallet
+                                </div>
+                            ) : (
+                                <Input
+                                    value={input.value}
+                                    onChange={(e) => handleInputChange(idx, e.target.value)}
+                                    placeholder={`Enter ${input.type} value`}
+                                    className="font-mono text-sm"
+                                />
+                            )}
                         </div>
                     ))
                 )}
@@ -186,6 +292,38 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         </div>
     );
 
+    // --- Wallet Connection Logic ---
+    // (State moved to top)
+
+    const handleConnect = async () => {
+        try {
+            // Check if already connected (global session check via prop is good, but let's be sure)
+            if (walletConnectService.getSession()) {
+                console.log("Already connected");
+                return;
+            }
+
+            const uri = await walletConnectService.connect('bch:chipnet');
+            if (uri) {
+                setConnectUri(uri);
+            }
+        } catch (error) {
+            console.error("Connection failed:", error);
+        }
+    };
+
+    // Listen for connection success to close QR
+    useEffect(() => {
+        const handleSessionConnected = () => {
+            setConnectUri('');
+            // ideally parent updates 'wcSession' prop, causing re-render
+        };
+        walletConnectService.on('session_connected', handleSessionConnected);
+        return () => {
+            walletConnectService.off('session_connected', handleSessionConnected);
+        };
+    }, []);
+
     const renderStep3_Preview = () => (
         <div className="space-y-6">
             <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
@@ -194,9 +332,25 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         <Wallet className="w-3 h-3 mr-2 text-nexus-pink" /> Transaction Signer
                     </h4>
                 </div>
-                <div className="p-4 flex items-center justify-between">
-                    <span className="text-sm text-white font-mono break-all">{getWalletAddress()}</span>
-                    {!wcSession && <span className="text-xs text-red-500 font-bold">DISCONNECTED</span>}
+                <div className="p-4 flex flex-col items-center justify-between gap-4">
+                    {wcSession ? (
+                        <div className="text-sm text-white font-mono break-all">{getWalletAddress()}</div>
+                    ) : (
+                        <div className="w-full text-center">
+                            {!connectUri ? (
+                                <Button size="sm" onClick={handleConnect} icon={<Wallet className="w-4 h-4" />}>
+                                    Connect Wallet
+                                </Button>
+                            ) : (
+                                <div className="flex flex-col items-center animate-in fade-in zoom-in">
+                                    <div className="bg-white p-2 rounded-lg mb-2">
+                                        <QRCodeSVG value={connectUri} size={150} />
+                                    </div>
+                                    <p className="text-xs text-gray-400">Scan with Paytaca / Zapit</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -223,13 +377,13 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 <Button
                     onClick={() => {
                         handleExecute();
-                        setCurrentStep(4); // Move to execution/result view
+                        setCurrentStep(4);
                     }}
-                    disabled={!wcSession}
-                    variant={!wcSession ? 'secondary' : 'primary'}
+                    disabled={!activeSession}
+                    variant={!activeSession ? 'secondary' : 'primary'}
                     icon={<Play className="w-4 h-4" />}
                 >
-                    {wcSession ? 'Sign & Broadcast' : 'Connect Wallet First'}
+                    {activeSession ? 'Sign & Broadcast' : 'Wallet Required'}
                 </Button>
             </div>
         </div>
