@@ -143,7 +143,21 @@ class WalletConnectService extends EventEmitter {
         // Wallets often return 'bch:testnet' even if we asked for 'bch:chipnet' (or vice versa)
         // We MUST use the chainId that is present in the session namespaces.
         const namespace = this.session.namespaces['bch'];
-        const approvedChainId = namespace?.chains?.[0];
+        console.log("DEBUG: WC Session Namespaces:", this.session.namespaces);
+
+        let approvedChainId = namespace?.chains?.[0];
+
+        // Fallback: If 'bch' namespace is missing or empty, look for any namespace containing 'bch:'
+        if (!approvedChainId) {
+            const allNamespaces = Object.values(this.session.namespaces);
+            for (const ns of allNamespaces) {
+                const bchChain = ns.chains?.find(c => c.startsWith('bch:'));
+                if (bchChain) {
+                    approvedChainId = bchChain;
+                    break;
+                }
+            }
+        }
 
         if (!approvedChainId) {
             throw new Error('No approved BCH chain found in session namespaces.');
