@@ -18,12 +18,20 @@ interface AIPanelProps {
     isBusy: boolean;
     onApply: (updates: { name: string, content: string }[], index: number) => void;
     onFixVulnerability?: (vuln: Vulnerability) => void;
+    draftInput?: string;
 }
 
-export const AIPanel: React.FC<AIPanelProps> = ({ history, onSend, isBusy, onApply, onFixVulnerability }) => {
+export const AIPanel: React.FC<AIPanelProps> = ({ history, onSend, isBusy, onApply, onFixVulnerability, draftInput }) => {
     const [input, setInput] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Update input when draftInput changes
+    useEffect(() => {
+        if (draftInput) {
+            setInput(draftInput);
+        }
+    }, [draftInput]);
 
     // Auto-scroll to bottom
     useEffect(() => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, XCircle, FileWarning } from 'lucide-react';
+import { AlertTriangle, XCircle, FileWarning, MessageSquare } from 'lucide-react';
 
 export interface Problem {
     id: string;
@@ -13,9 +13,10 @@ export interface Problem {
 interface ProblemsPanelProps {
     problems: Problem[];
     onNavigate: (file: string, line?: number) => void;
+    onAskAI: (problem: Problem) => void;
 }
 
-export const ProblemsPanel: React.FC<ProblemsPanelProps> = ({ problems, onNavigate }) => {
+export const ProblemsPanel: React.FC<ProblemsPanelProps> = ({ problems, onNavigate, onAskAI }) => {
     if (problems.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50">
@@ -34,6 +35,7 @@ export const ProblemsPanel: React.FC<ProblemsPanelProps> = ({ problems, onNaviga
                         <th className="py-2 px-2">Description</th>
                         <th className="py-2 px-2 w-32">File</th>
                         <th className="py-2 px-2 w-16 text-right">Line</th>
+                        <th className="py-2 px-2 w-8"></th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-xs font-mono">
@@ -58,6 +60,19 @@ export const ProblemsPanel: React.FC<ProblemsPanelProps> = ({ problems, onNaviga
                             </td>
                             <td className="py-1 px-2 text-right text-slate-600 group-hover:text-slate-400">
                                 {problem.line ? `:${problem.line}` : ''}
+                            </td>
+                            <td className="py-1 px-2 text-right">
+                                <button
+                                    className="flex items-center gap-1.5 px-2 py-0.5 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 text-nexus-cyan/80 hover:text-nexus-cyan border border-nexus-cyan/20 hover:border-nexus-cyan/50 rounded transition-all group/btn shadow-[0_0_10px_-5px_var(--nexus-cyan)]"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onAskAI(problem);
+                                    }}
+                                    title="Ask AI Agent"
+                                >
+                                    <MessageSquare size={10} className="stroke-2" />
+                                    <span className="text-[10px] font-bold tracking-wide">ASK AI</span>
+                                </button>
                             </td>
                         </tr>
                     ))}

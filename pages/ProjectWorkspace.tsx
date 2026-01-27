@@ -56,6 +56,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [chatInput, setChatInput] = useState('');
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [isChatting, setIsChatting] = useState(false);
+    const [chatDraft, setChatDraft] = useState('');
     const chatEndRef = useRef<HTMLDivElement>(null);
 
     // Version State
@@ -388,6 +389,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             isBusy={isChatting}
             onApply={applyFileUpdates}
             onFixVulnerability={handleFixVulnerability}
+            draftInput={chatDraft}
         />
     );
 
@@ -596,6 +598,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     onNavigate={(file, line) => {
                         setActiveFileName(file);
                         // In a real implementation, we would also scroll to line using editor ref
+                    }}
+                    onAskAI={(problem: Problem) => {
+                        const msg = `Explain this error in ${problem.file}${problem.line ? `:${problem.line}` : ''}: ${problem.message}`;
+                        setChatDraft(msg);
+                        setActiveView('AUDITOR');
                     }}
                 />
             }
