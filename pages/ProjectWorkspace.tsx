@@ -41,6 +41,24 @@ interface ProjectWorkspaceProps {
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
+    const [wcSession, setWcSession] = useState<any>(null);
+
+    // Initialize WalletConnect on mount
+    useEffect(() => {
+        walletConnectService.init();
+    }, []);
+
+    // Listen for WalletConnect session changes
+    useEffect(() => {
+        const handleStatusChange = () => {
+            setWcSession(walletConnectService.getSession());
+        };
+
+        walletConnectService.on('connection_status_changed', handleStatusChange);
+        return () => {
+            walletConnectService.off('connection_status_changed', handleStatusChange);
+        };
+    }, []);
     const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'INTERACT'>('EXPLORER');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
 
@@ -307,7 +325,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         `[${timestamp}]   - Artifact: ${artifactFileName} saved to explorer.`
                     ]);
                     setProblems([]); // Clear problems on success
-                    setActiveBottomTab('OUTPUT');
 
                 } else {
                     setDeploymentLog(prev => [

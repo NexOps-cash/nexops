@@ -25,6 +25,13 @@ const CHAIN_NAMESPACES = {
 
 export type ChainId = string;
 
+// Connection Status Enum
+export enum ConnectionStatus {
+    DISCONNECTED = 'disconnected',  // Never connected or user disconnected
+    CONNECTED = 'connected',        // Active session, peer reachable
+    EXPIRED = 'expired'             // Session exists but peer unreachable/rejected OR session_delete emitted
+}
+
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
@@ -42,6 +49,7 @@ export interface WalletConnectEvents {
 class WalletConnectService extends EventEmitter {
     private client: SignClient | null = null;
     private session: SessionTypes.Struct | null = null;
+    private currentStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
     private static instance: WalletConnectService;
 
     private constructor() {
@@ -53,6 +61,34 @@ class WalletConnectService extends EventEmitter {
             WalletConnectService.instance = new WalletConnectService();
         }
         return WalletConnectService.instance;
+    }
+
+    /**
+     * Check if wallet is connected.
+     * Single source of truth - delegates to getConnectionStatus().
+     */
+    public isConnected(): boolean {
+        return this.getConnectionStatus() === ConnectionStatus.CONNECTED;
+    }
+
+    /**
+     * Get current connection status.
+     * Returns DISCONNECTED, CONNECTED, or EXPIRED.
+     */
+    public getConnectionStatus(): ConnectionStatus {
+        return this.currentStatus;
+    }
+
+    /**
+     * Update connection status and emit event.
+     * All state changes funnel through this method.
+     */
+    private updateConnectionStatus(status: ConnectionStatus) {
+        if (this.currentStatus !== status) {
+            this.currentStatus = status;
+            this.emit('connection_status_changed', status);
+            console.log(`WalletConnect status changed: ${status}`);
+        }
     }
 
     /**
@@ -75,15 +111,28 @@ class WalletConnectService extends EventEmitter {
 
             this.setupEventListeners();
 
-            // Check for restored session (optional, but we prefer ephemeral for this flow)
+            // Check for restored session and validate it
             if (this.client.session.length) {
                 const lastSession = this.client.session.get(this.client.session.keys[this.client.session.keys.length - 1]);
                 this.session = lastSession;
-                this.emit('session_connected', lastSession);
+
+                // Validate session is still active
+                try {
+                    // Ping to check if peer is reachable
+                    await this.client.ping({ topic: lastSession.topic });
+                    this.updateConnectionStatus(ConnectionStatus.CONNECTED);
+                    console.log('Session rehydrated and validated:', lastSession.topic);
+                } catch (e) {
+                    console.warn('Restored session is expired or unreachable:', e);
+                    this.updateConnectionStatus(ConnectionStatus.EXPIRED);
+                }
+            } else {
+                this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
             }
 
         } catch (e) {
             console.error('WalletConnect init failed', e);
+            this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
         }
     }
 
@@ -114,9 +163,11 @@ class WalletConnectService extends EventEmitter {
                 // Wait for approval in background
                 approval().then((session) => {
                     this.session = session;
+                    this.updateConnectionStatus(ConnectionStatus.CONNECTED);
                     this.emit('session_connected', session);
                 }).catch((e) => {
                     console.error('Connection refused', e);
+                    this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
                     this.emit('session_disconnected');
                 });
 
@@ -124,6 +175,7 @@ class WalletConnectService extends EventEmitter {
             }
         } catch (e) {
             console.error('Connect failed', e);
+            this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
             throw e;
         }
     }
@@ -142,24 +194,54 @@ class WalletConnectService extends EventEmitter {
         // Fix: Derive chainId from the specific session namespace approval
         // Wallets often return 'bch:testnet' even if we asked for 'bch:chipnet' (or vice versa)
         // We MUST use the chainId that is present in the session namespaces.
-        const namespace = this.session.namespaces['bch'];
-        console.log("DEBUG: WC Session Namespaces:", this.session.namespaces);
+        console.log("DEBUG: WC Session Namespaces:", JSON.stringify(this.session.namespaces, null, 2));
 
-        let approvedChainId = namespace?.chains?.[0];
+        let approvedChainId: string | undefined;
 
-        // Fallback: If 'bch' namespace is missing or empty, look for any namespace containing 'bch:'
+        // Strategy 1: Try the 'bch' namespace directly
+        const bchNamespace = this.session.namespaces['bch'];
+        if (bchNamespace?.chains?.[0]) {
+            approvedChainId = bchNamespace.chains[0];
+            console.log("DEBUG: Found BCH chain in 'bch' namespace:", approvedChainId);
+        }
+
+        // Strategy 2: Search all namespaces for any chain starting with 'bch:'
         if (!approvedChainId) {
-            const allNamespaces = Object.values(this.session.namespaces);
-            for (const ns of allNamespaces) {
+            console.log("DEBUG: 'bch' namespace not found, searching all namespaces...");
+            const allNamespaces = Object.entries(this.session.namespaces);
+            console.log("DEBUG: Available namespaces:", Object.keys(this.session.namespaces));
+
+            for (const [nsKey, ns] of allNamespaces) {
+                console.log(`DEBUG: Checking namespace '${nsKey}':`, ns.chains);
                 const bchChain = ns.chains?.find(c => c.startsWith('bch:'));
                 if (bchChain) {
                     approvedChainId = bchChain;
+                    console.log(`DEBUG: Found BCH chain in '${nsKey}' namespace:`, approvedChainId);
                     break;
                 }
             }
         }
 
+        // Strategy 3: Check accounts array for BCH addresses
         if (!approvedChainId) {
+            console.log("DEBUG: Checking accounts for BCH chain...");
+            const allNamespaces = Object.entries(this.session.namespaces);
+            for (const [nsKey, ns] of allNamespaces) {
+                const bchAccount = ns.accounts?.find(a => a.includes('bch:'));
+                if (bchAccount) {
+                    // Extract chain from account string (format: "bch:chipnet:address")
+                    const parts = bchAccount.split(':');
+                    if (parts.length >= 2) {
+                        approvedChainId = `${parts[0]}:${parts[1]}`;
+                        console.log(`DEBUG: Derived BCH chain from account in '${nsKey}':`, approvedChainId);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!approvedChainId) {
+            console.error("DEBUG: Failed to find BCH chain. Full session:", this.session);
             throw new Error('No approved BCH chain found in session namespaces.');
         }
 
@@ -211,6 +293,7 @@ class WalletConnectService extends EventEmitter {
             }
         }
         this.session = null;
+        this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
         this.emit('session_disconnected');
     }
 
@@ -234,12 +317,16 @@ class WalletConnectService extends EventEmitter {
             const { namespaces } = params;
             if (this.session && this.session.topic === topic) {
                 this.session = { ...this.session, namespaces };
+                // Session updated, maintain CONNECTED status
+                this.updateConnectionStatus(ConnectionStatus.CONNECTED);
                 this.emit('session_connected', this.session);
             }
         });
 
         this.client.on('session_delete', () => {
+            console.log('Session deleted by peer');
             this.session = null;
+            this.updateConnectionStatus(ConnectionStatus.EXPIRED);
             this.emit('session_disconnected');
         });
     }

@@ -7,7 +7,7 @@ import {
     Cpu, Hash, ArrowLeft, Loader2
 } from 'lucide-react';
 import { getExplorerLink } from '../services/blockchainService';
-import { walletConnectService } from '../services/walletConnectService';
+import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface TransactionBuilderProps {
@@ -43,7 +43,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
     // Wallet State
     const [connectUri, setConnectUri] = useState<string>('');
-    const [activeSession, setActiveSession] = useState<any>(wcSession || walletConnectService.getSession());
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(walletConnectService.getConnectionStatus());
 
     // Parse ABI
     // Note: cashc ABI often omits 'type' for functions, so we include items with no type or type='function'
@@ -77,9 +77,38 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         setInputs(newInputs);
     };
 
+    // Sync initial connection status on mount
+    useEffect(() => {
+        // Update status immediately in case service already initialized
+        setConnectionStatus(walletConnectService.getConnectionStatus());
+    }, []);
+
+    // Listen for connection status changes
+    useEffect(() => {
+        const handleStatusChange = (status: ConnectionStatus) => {
+            console.log('TransactionBuilder: Status changed to', status);
+            setConnectionStatus(status);
+        };
+
+        walletConnectService.on('connection_status_changed', handleStatusChange);
+        return () => {
+            walletConnectService.off('connection_status_changed', handleStatusChange);
+        };
+    }, []);
+
     // --- Real Execution Logic ---
     const handleExecute = async () => {
         if (!selectedFunction) return;
+
+        // Guard: Check wallet connection before signing
+        if (!walletConnectService.isConnected()) {
+            setExecutionResult({
+                success: false,
+                error: 'Wallet not connected. Please connect your wallet first.'
+            });
+            setIsExecuting(false);
+            return;
+        }
 
         // 1. Setup Provider & Signer
         setIsExecuting(true);
@@ -219,7 +248,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
 
     const getWalletAddress = () => {
-        return activeSession?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
+        const session = walletConnectService.getSession();
+        return session?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
     };
 
     // -- Renders --
@@ -316,7 +346,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     useEffect(() => {
         const handleSessionConnected = () => {
             setConnectUri('');
-            // ideally parent updates 'wcSession' prop, causing re-render
         };
         walletConnectService.on('session_connected', handleSessionConnected);
         return () => {
@@ -324,70 +353,99 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         };
     }, []);
 
-    const renderStep3_Preview = () => (
-        <div className="space-y-6">
-            <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
-                <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
-                        <Wallet className="w-3 h-3 mr-2 text-nexus-pink" /> Transaction Signer
-                    </h4>
-                </div>
-                <div className="p-4 flex flex-col items-center justify-between gap-4">
-                    {wcSession ? (
-                        <div className="text-sm text-white font-mono break-all">{getWalletAddress()}</div>
-                    ) : (
-                        <div className="w-full text-center">
-                            {!connectUri ? (
+    const renderStep3_Preview = () => {
+        const isConnected = connectionStatus === ConnectionStatus.CONNECTED;
+        const isExpired = connectionStatus === ConnectionStatus.EXPIRED;
+        const isDisconnected = connectionStatus === ConnectionStatus.DISCONNECTED;
+
+        return (
+            <div className="space-y-6">
+                <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
+                    <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                            <Wallet className="w-3 h-3 mr-2 text-nexus-pink" /> Transaction Signer
+                        </h4>
+                    </div>
+                    <div className="p-4 flex flex-col items-center justify-between gap-4">
+                        {/* State 1: CONNECTED - Show wallet address */}
+                        {isConnected && (
+                            <div className="w-full">
+                                <div className="text-sm text-white font-mono break-all text-center">{getWalletAddress()}</div>
+                                <p className="text-xs text-green-400 text-center mt-2">✓ Wallet Connected</p>
+                            </div>
+                        )}
+
+                        {/* State 2: EXPIRED - Show reconnect option */}
+                        {isExpired && (
+                            <div className="w-full text-center space-y-3">
+                                <div className="text-sm text-yellow-400">⚠ Session Expired</div>
+                                <p className="text-xs text-gray-400">Your wallet session has expired or disconnected</p>
                                 <Button size="sm" onClick={handleConnect} icon={<Wallet className="w-4 h-4" />}>
-                                    Connect Wallet
+                                    Reconnect Wallet
                                 </Button>
-                            ) : (
-                                <div className="flex flex-col items-center animate-in fade-in zoom-in">
-                                    <div className="bg-white p-2 rounded-lg mb-2">
-                                        <QRCodeSVG value={connectUri} size={150} />
+                            </div>
+                        )}
+
+                        {/* State 3: DISCONNECTED - Show connect option */}
+                        {isDisconnected && (
+                            <div className="w-full text-center">
+                                {!connectUri ? (
+                                    <Button size="sm" onClick={handleConnect} icon={<Wallet className="w-4 h-4" />}>
+                                        Connect Wallet
+                                    </Button>
+                                ) : (
+                                    <div className="flex flex-col items-center animate-in fade-in zoom-in">
+                                        <div className="bg-white p-2 rounded-lg mb-2">
+                                            <QRCodeSVG value={connectUri} size={150} />
+                                        </div>
+                                        <p className="text-xs text-gray-400">Scan with Paytaca / Zapit</p>
                                     </div>
-                                    <p className="text-xs text-gray-400">Scan with Paytaca / Zapit</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
+                    <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                            <Cpu className="w-3 h-3 mr-2 text-nexus-cyan" /> Contract Call
+                        </h4>
+                    </div>
+                    <div className="p-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Function:</span>
+                            <span className="text-nexus-cyan font-mono">{selectedFunction}</span>
                         </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden">
-                <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
-                        <Cpu className="w-3 h-3 mr-2 text-nexus-cyan" /> Contract Call
-                    </h4>
-                </div>
-                <div className="p-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Function:</span>
-                        <span className="text-nexus-cyan font-mono">{selectedFunction}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Target:</span>
-                        <span className="text-gray-300 font-mono truncate max-w-[150px]">{deployedAddress}</span>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Target:</span>
+                            <span className="text-gray-300 font-mono truncate max-w-[150px]">{deployedAddress}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="flex justify-between pt-4">
-                <Button variant="ghost" onClick={() => setCurrentStep(2)} size="sm">Back</Button>
-                <Button
-                    onClick={() => {
-                        handleExecute();
-                        setCurrentStep(4);
-                    }}
-                    disabled={!activeSession}
-                    variant={!activeSession ? 'secondary' : 'primary'}
-                    icon={<Play className="w-4 h-4" />}
-                >
-                    {activeSession ? 'Sign & Broadcast' : 'Wallet Required'}
-                </Button>
+                <div className="flex justify-between pt-4">
+                    <Button variant="ghost" onClick={() => setCurrentStep(2)} size="sm">Back</Button>
+                    <div className="flex flex-col items-end gap-1">
+                        <Button
+                            onClick={() => {
+                                handleExecute();
+                                setCurrentStep(4);
+                            }}
+                            disabled={!isConnected}
+                            variant={isConnected ? 'primary' : 'secondary'}
+                            icon={<Play className="w-4 h-4" />}
+                        >
+                            {isConnected ? 'Sign & Broadcast' : 'Wallet Required'}
+                        </Button>
+                        {!isConnected && (
+                            <p className="text-xs text-gray-500 italic">Connect a wallet to sign this transaction</p>
+                        )}
+                    </div>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderStep4_Result = () => (
         <div className="text-center py-6 space-y-6">

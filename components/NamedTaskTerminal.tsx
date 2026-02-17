@@ -104,8 +104,10 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
             }
         });
 
-        // Scroll to bottom after write
-        xtermRef.current.scrollToBottom();
+        // Scroll to bottom after write with delay to ensure render
+        setTimeout(() => {
+            xtermRef.current?.scrollToBottom();
+        }, 50);
 
     }, [logs]);
 
