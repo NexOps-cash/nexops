@@ -42,7 +42,12 @@ class SimpleVectorStore {
             let matchedTerms = 0;
             for (const term of queryTerms) {
                 if (contentLower.includes(term)) {
-                    score += 1;
+                    // ID Boost: If term looks like SEC-XXX, give it a massive weight
+                    if (/^sec-\d+$/i.test(term)) {
+                        score += 15;
+                    } else {
+                        score += 1;
+                    }
                     matchedTerms++;
                 }
             }
@@ -50,13 +55,13 @@ class SimpleVectorStore {
             // 2. Topic Match (Metadata)
             for (const topic of chunk.topics) {
                 if (queryTerms.some(term => topic.toLowerCase().includes(term))) {
-                    score += 2; // Higher weight for topic metadata
+                    score += 3; // Higher weight for topic metadata
                 }
             }
 
             // 3. Exact Phrase Boost
             if (contentLower.includes(query.toLowerCase())) {
-                score += 5;
+                score += 10;
             }
 
             // 4. Inverse Document Frequency (Simulated)
@@ -78,9 +83,9 @@ export class QueryRouter {
     static route(query: string): Tier[] {
         const q = query.toLowerCase();
 
-        // Security / Audit Route
-        if (/audit|safe|secur|vuln|hack|risk|attack/i.test(q)) {
-            console.log("🔀 Routing to: Security + Canonical");
+        // Security / Audit / Rule Route
+        if (/audit|safe|secur|vuln|hack|risk|attack|sec-|rule/i.test(q)) {
+            console.log("🔀 Routing to: Security + Canonical (Rule/Audit)");
             return ['tier_a_canonical', 'tier_b_patterns_security'];
         }
 

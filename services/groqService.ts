@@ -28,10 +28,12 @@ export const generateSmartContract = async (prompt: string): Promise<GenerationR
   Generate secure, optimized smart contract code based on the user's request.
   
   CRITICAL SOURCE ADHERENCE:
-  You have been provided with OFFICIAL context from the Knowledge Base. 
+  You have been provided with OFFICIAL context from the Knowledge Base (Tier A/B). 
   1. ONLY use syntax and patterns defined in the [SOURCE] blocks.
-  2. If the context contradicts your general knowledge, follow the context.
-  3. Cite the Used Sources in your explanation.
+  2. STRICTLY follow 'NexKB/security_rules.json' if present in context.
+  3. If generating a covenant, you MUST implement the '5-point validation' (lockingBytecode, tokenCategory, value, tokenAmount, nftCommitment).
+  4. NEVER use EVM concepts (msg.sender, address, transfer, send, reentrancy).
+  5. Cite the Used Sources in your explanation.
 
   CRITICAL OUTPUT RULES:
   1. Return the response in PURE JSON format.
@@ -245,9 +247,11 @@ export const auditSmartContract = async (code: string): Promise<AuditReport> => 
   List vulnerabilities with severity: HIGH, MEDIUM, LOW, or INFO.
   
   Common Real BCH Vulnerabilities:
-  - Covenants (introspection issues, broken logic)
-  - Stack limits (opcount > 201)
-  - Signature checks (missing checks for required parties)
+  - SEC-001: Missing 5-point covenant validation (CRITICAL)
+  - SEC-002: Missing output count limit (CRITICAL)
+  - SEC-006: Missing this.activeInputIndex validation (CRITICAL)
+  - SEC-013: Missing tokenCategory validation on BCH-only outputs (HIGH)
+  - SEC-012: Integer overflow in counters without guards (HIGH)
   - Dust limits (outputs < 546 satoshis)
   
   Provide a specific fix suggestion for each issue.
