@@ -1,0 +1,7 @@
+{
+  "name": "NexOps Protocol - Smart Contract AI Layer",
+  "description": "An AI-powered smart contract operations layer for generating, auditing, and deploying BCH CashScript contracts.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+    "tier_a_canonical": {
+        "description": "Syntax, API correctness, strict compilation rules. High Confidence.",
+        "files": [
+            "Knowledge-Base-V2/CORE_REFERENCE.md",
+            "language/language-reference.md",
+            "sdk/contracts/contract-instantiation.md",
+            "sdk/transactions/transaction-building.md",
+            "reference/quick-reference.md",
+            "cashtokens/overview.md"
+        ]
+    },
+    "tier_b_patterns_security": {
+        "description": "Architecture, patterns, security auditing. Medium Confidence.",
+        "files": [
+            "concepts/cashscript-mental-model.md",
+            "concepts/multi-contract-architecture.md",
+            "concepts/utxo-vs-account-model.md",
+            "examples/real-world/parityusd-analysis.md",
+            "examples/real-world/production-patterns.md",
+            "best-practices/security/smart-contract-security.md",
+            "Knowledge-Base-V2/SECURITY_ARCHITECTURE.md",
+            "NexKB/security_rules.json",
+            "NexKB/anti_pattern/fee_assumption_violation.cash",
+            "NexKB/anti_pattern/implicit_output_ordering.cash",
+            "NexKB/anti_pattern/minting_authority_leak.cash",
+            "NexKB/anti_pattern/missing_output_limit.cash",
+            "NexKB/anti_pattern/missing_token_amount_validation.cash",
+            "NexKB/anti_pattern/missing_token_validation.cash",
+            "NexKB/anti_pattern/time_validation_error.cash",
+            "NexKB/anti_pattern/unvalidated_position.cash",
+            "NexKB/anti_pattern/vulnerable_covenant.cash",
+            "NexKB/patterns/covenant_validation.cash",
+            "NexKB/patterns/cross_contract_auth.cash",
+            "NexKB/patterns/input_validation.cash",
+            "NexKB/patterns/minting_control.cash",
+            "NexKB/patterns/output_count_limit.cash",
+            "NexKB/patterns/position_validation.cash",
+            "NexKB/patterns/sidecar_attach.cash",
+            "NexKB/templates/auction_dutch.cash",
+            "NexKB/templates/auction_english.cash",
+            "NexKB/templates/crowdfunding_refundable.cash",
+            "NexKB/templates/escrow_2of3.cash",
+            "NexKB/templates/vesting_linear.cash"
+        ]
+    },
+    "tier_c_faq": {
+        "description": "Common mistakes, debugging. Low Confidence.",
+        "files": [
+            "faq/telegram/bch_compilers_faq_2025.json",
+            "faq/telegram/bch_devs_faq_2025.json",
+            "faq/telegram/bchn_faq_2025.json",
+            "faq/telegram/cashscript_faq_2025.json",
+            "faq/telegram/cashtoken_devs_faq_2025.json",
+            "faq/telegram/electron_cash_faq_2025.json",
+            "Knowledge-Base-V2/FAQ_DISTILLED.md",
+            "NexKB/common_mistakes/array_bounds.cash",
+            "NexKB/common_mistakes/division_by_zero.cash",
+            "NexKB/common_mistakes/integer_overflow.cash",
+            "NexKB/common_mistakes/state_corruption.cash"
+        ]
+    }
+}
