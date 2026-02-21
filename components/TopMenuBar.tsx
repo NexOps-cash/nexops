@@ -37,7 +37,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction 
     };
 
     return (
-        <div className="h-[30px] bg-nexus-900 border-b border-slate-800 flex items-center justify-between px-2 relative z-50">
+        <div className="h-[30px] bg-nexus-900 border-b border-slate-800 flex items-center justify-between px-2 relative z-[100]">
             {/* Left: Menu Items */}
             <div className="flex items-center space-x-1">
                 {menus.map((menu) => (
@@ -45,8 +45,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction 
                         <button
                             onClick={() => handleMenuClick(menu.label)}
                             className={`px-3 py-1 text-xs transition-colors rounded ${activeMenu === menu.label
-                                    ? 'bg-slate-700 text-white'
-                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                ? 'bg-slate-700 text-white'
+                                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                                 }`}
                         >
                             {menu.label}
@@ -57,11 +57,11 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction 
                             <>
                                 {/* Backdrop to close menu */}
                                 <div
-                                    className="fixed inset-0 z-40"
+                                    className="fixed inset-0 z-[90]"
                                     onClick={() => setActiveMenu(null)}
                                 />
 
-                                <div className="absolute top-full left-0 mt-1 bg-nexus-800 border border-slate-700 rounded shadow-xl py-1 min-w-[180px] z-50">
+                                <div className="absolute top-full left-0 mt-1 bg-nexus-800 border border-slate-700 rounded shadow-xl py-1 min-w-[180px] z-[100]">
                                     {menu.items.map((item, idx) => (
                                         item === '---' ? (
                                             <div key={idx} className="h-px bg-slate-700 my-1" />

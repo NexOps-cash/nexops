@@ -64,3 +64,13 @@ export interface GenerationResponse {
   code: string;
   explanation: string;
 }
+
+export interface StatusBarState {
+  activeFileName?: string;
+  isModified?: boolean;
+  encoding?: string;
+  language?: string;
+  gitBranch?: string;
+  activeChannel?: string;
+  isTerminalActive?: boolean;
+}

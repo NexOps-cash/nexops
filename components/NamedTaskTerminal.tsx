@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { Play, ShieldCheck, Rocket, Terminal as TerminalIcon, XCircle, Eraser, Cpu, Activity, AlertCircle } from 'lucide-react';
+import { Play, ShieldCheck, Rocket, Terminal as TerminalIcon, XCircle, Eraser, Cpu, Activity, AlertCircle, ChevronDown } from 'lucide-react';
 
 export type TerminalChannel = 'SYSTEM' | 'COMPILER' | 'AUDITOR' | 'PROBLEMS';
 
@@ -29,6 +29,8 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const observerRef = useRef<ResizeObserver | null>(null);
+
+    const [terminalReady, setTerminalReady] = useState(false);
 
     // -- Initialize xterm --
     useEffect(() => {
@@ -65,20 +67,41 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
 
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
+        setTerminalReady(true);
+
+        // Immediate feedback
+        term.writeln('\x1b[1;36m[System] Initializing NexOps Terminal Session...\x1b[0m');
+        term.writeln('\x1b[2mConnecting to virtual kernel...\x1b[0m');
 
         setTimeout(() => {
-            try {
-                fitAddon.fit();
-            } catch (e) { }
-        }, 50);
-
-        // Robust Resize Observer
-        observerRef.current = new ResizeObserver(() => {
             try {
                 if (terminalRef.current && terminalRef.current.clientWidth > 0) {
                     fitAddon.fit();
                 }
             } catch (e) { }
+        }, 150);
+
+        // Robust Resize Observer with multi-stage fitting
+        observerRef.current = new ResizeObserver(() => {
+            const runFit = () => {
+                try {
+                    if (terminalRef.current && terminalRef.current.clientWidth > 0) {
+                        fitAddon.fit();
+                    }
+                } catch (e) { }
+            };
+
+            runFit();
+            // Multi-stage fit to ensure DOM has settled after panel resize
+            const t1 = setTimeout(runFit, 50);
+            const t2 = setTimeout(runFit, 150);
+            const t3 = setTimeout(runFit, 300);
+
+            return () => {
+                clearTimeout(t1);
+                clearTimeout(t2);
+                clearTimeout(t3);
+            };
         });
 
         observerRef.current.observe(terminalRef.current);
@@ -87,18 +110,20 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
             observerRef.current?.disconnect();
             term.dispose();
             xtermRef.current = null;
+            setTerminalReady(false);
         };
     }, []);
 
     // -- Sync Logs for Active Channel --
     useEffect(() => {
-        if (!xtermRef.current || activeChannel === 'PROBLEMS') return;
+        if (!terminalReady || !xtermRef.current || activeChannel === 'PROBLEMS') return;
         const term = xtermRef.current;
 
         term.clear();
         term.writeln(`\x1b[1;36mλ nexops --channel=${activeChannel.toLowerCase()}\x1b[0m`);
 
-        const logs = channelLogs[activeChannel] || [];
+        const logs = [...(channelLogs[activeChannel] || [])].reverse();
+        // Write logs
         logs.forEach(log => {
             if (log.toLowerCase().includes('error') || log.toLowerCase().includes('failed')) {
                 term.writeln(`\x1b[31m${log}\x1b[0m`);
@@ -111,12 +136,26 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
             }
         });
 
-        setTimeout(() => {
-            fitAddonRef.current?.fit();
-            term.scrollToBottom();
-        }, 30);
+        const doScroll = () => {
+            if (fitAddonRef.current) {
+                try {
+                    fitAddonRef.current.fit();
+                } catch (e) { }
+            }
+            term.scrollToTop();
+        };
 
-    }, [channelLogs, activeChannel]);
+        requestAnimationFrame(doScroll);
+        const t1 = setTimeout(doScroll, 50);
+        const t2 = setTimeout(doScroll, 150);
+        const t3 = setTimeout(doScroll, 400);
+
+        return () => {
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearTimeout(t3);
+        };
+    }, [channelLogs, activeChannel, terminalReady]);
 
     const channelConfig: { id: TerminalChannel; label: string; icon: any; count?: number }[] = [
         { id: 'SYSTEM', label: 'System', icon: Activity },
@@ -178,6 +217,14 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
                 <div className="flex-1" />
 
                 <button
+                    onClick={() => xtermRef.current?.scrollToBottom()}
+                    className="p-1.5 text-slate-600 hover:text-nexus-cyan transition-colors rounded hover:bg-white/5 mr-1"
+                    title="Scroll to Bottom"
+                >
+                    <ChevronDown size={14} />
+                </button>
+
+                <button
                     onClick={() => onClearLogs(activeChannel)}
                     className="p-1.5 text-slate-600 hover:text-red-400 transition-colors rounded hover:bg-red-400/5"
                     title="Clear current channel"
@@ -187,32 +234,24 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
             </div>
 
             {/* Container */}
-            <div className="flex-1 relative bg-[#0a0a0c] min-h-0">
+            <div className="flex-1 relative bg-[#0a0a0c] min-h-0 overflow-hidden">
                 {/* Problems View */}
-                {activeChannel === 'PROBLEMS' && problemsContent ? (
-                    <div className="absolute inset-0 overflow-auto no-scrollbar">
-                        {problemsContent}
-                    </div>
-                ) : (
-                    <div className="absolute inset-0 pl-2 pt-2">
-                        <div ref={terminalRef} className="h-full w-full" />
+                {problemsContent && (
+                    <div className={`absolute inset-0 overflow-auto no-scrollbar bg-[#0a0a0c] transition-opacity duration-200 ${activeChannel === 'PROBLEMS' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
+                        <div className="p-2 pb-8">
+                            {problemsContent}
+                        </div>
                     </div>
                 )}
+
+                {/* Terminal View */}
+                <div className={`absolute inset-0 bg-[#0a0a0c] transition-opacity duration-200 ${activeChannel !== 'PROBLEMS' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
+                    <div className="absolute inset-x-2 inset-y-1 pb-4 overflow-hidden">
+                        <div ref={terminalRef} className="h-full w-full" />
+                    </div>
+                </div>
             </div>
 
-            {/* Status Footer */}
-            <div className="h-5 bg-black/80 px-3 flex items-center justify-between text-[8px] text-slate-600 font-mono">
-                <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500/50 animate-pulse"></span>
-                        Terminal Session Active
-                    </span>
-                    <span>Channel: {activeChannel}</span>
-                </div>
-                <div className="italic">
-                    <span>nexus workstation cli v1.2.0</span>
-                </div>
-            </div>
         </div>
     );
 };

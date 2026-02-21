@@ -78,6 +78,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [activeTerminalChannel, setActiveTerminalChannel] = useState<TerminalChannel>('SYSTEM');
     const [problems, setProblems] = useState<Problem[]>([]);
     const [debugState, setDebugState] = useState<DebuggerState | null>(null);
+    const [debugArgs, setDebugArgs] = useState<number[]>([]);
     const debuggerRef = useRef<DebuggerService>(new DebuggerService());
 
     // Assistant State
@@ -591,7 +592,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         const result = compileCashScript(mainContractFile.content);
         if (result.success && result.artifact) {
             addLog('SYSTEM', `[Debug] Loaded ${result.artifact?.contractName} for simulation.`);
-            debuggerRef.current.load(result.artifact.bytecode);
+            const unlockingHex = debuggerRef.current.buildUnlockingFromNumbers(debugArgs);
+            await debuggerRef.current.load(result.artifact.bytecode, unlockingHex);
             setDebugState(debuggerRef.current.getState());
         } else {
             addLog('SYSTEM', `[Debug] Compile failed. Cannot start simulation.`);
@@ -614,6 +616,40 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             {!debugState ? (
                 <div className="p-4">
                     <div className="text-xs text-slate-500 mb-4">Execution Config</div>
+
+                    {/* NEW ARGS PANEL */}
+                    <div className="mb-4 bg-slate-800 p-2 rounded border border-slate-700">
+                        <div className="text-[10px] font-bold text-slate-400 mb-2 flex justify-between items-center">
+                            <span>FUNCTION ARGUMENTS</span>
+                            <div className="space-x-1">
+                                <button onClick={() => setDebugArgs([...debugArgs, 0])} className="px-1.5 py-0.5 bg-nexus-cyan/20 text-nexus-cyan rounded hover:bg-nexus-cyan/40">+</button>
+                                <button onClick={() => setDebugArgs(debugArgs.slice(0, -1))} disabled={debugArgs.length === 0} className="px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded hover:bg-red-500/40 disabled:opacity-50">-</button>
+                            </div>
+                        </div>
+                        {debugArgs.length === 0 ? (
+                            <div className="text-[10px] text-slate-500 italic">No arguments</div>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {debugArgs.map((arg, idx) => (
+                                    <input
+                                        key={idx}
+                                        type="number"
+                                        value={arg}
+                                        onChange={(e) => {
+                                            const newArgs = [...debugArgs];
+                                            newArgs[idx] = parseInt(e.target.value) || 0;
+                                            setDebugArgs(newArgs);
+                                        }}
+                                        className="w-12 bg-black/50 border border-slate-600 rounded px-1 text-xs text-white text-center focus:border-nexus-cyan outline-none"
+                                    />
+                                ))}
+                            </div>
+                        )}
+                        <div className="mt-2 text-[8px] font-mono text-slate-500 break-all">
+                            Unlocking Script: {debuggerRef.current.buildUnlockingFromNumbers(debugArgs) || 'Empty'}
+                        </div>
+                    </div>
+
                     <div className="space-y-4">
                         <div className="bg-slate-800 p-2 rounded border border-slate-700">
                             <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
@@ -783,58 +819,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         </div>
                     )}
                 </div>
-
-                {/* Status Footer */}
-                {activeFile && (
-                    <div className="h-6 shrink-0 bg-[#0d0d0f] border-t border-white/5 flex items-center justify-between px-3 text-[10px] text-slate-500 font-mono">
-                        <div className="flex items-center space-x-3">
-                            <span className="flex items-center gap-1.5 grayscale opacity-70">
-                                <GitMerge size={10} />
-                                Main
-                            </span>
-                            <span>UTF-8</span>
-                            {artifactData && <span className="text-nexus-cyan font-bold uppercase tracking-tighter bg-nexus-cyan/10 px-1.5 rounded">Artifact Mode</span>}
-                            {compareVersion && (
-                                <span className="flex items-center gap-2 text-nexus-warning animate-pulse">
-                                    <Cpu size={10} />
-                                    Comparing Snapshot...
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center space-x-3">
-                            {compareVersion ? (
-                                <div className="flex items-center border-l border-white/10 ml-2 pl-3 space-x-4">
-                                    <button
-                                        onClick={() => handleRestoreVersion(compareVersion)}
-                                        className="text-white hover:text-nexus-cyan font-bold transition-colors flex items-center gap-1.5"
-                                    >
-                                        <RotateCcw size={10} />
-                                        Use This Version
-                                    </button>
-                                    <button
-                                        onClick={() => setCompareVersion(null)}
-                                        className="text-slate-400 hover:text-white transition-colors"
-                                    >
-                                        Close Diff
-                                    </button>
-                                </div>
-                            ) : (
-                                <>
-                                    {unsavedChanges && <span className="text-nexus-warning flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-nexus-warning animate-pulse" />
-                                        Modified
-                                    </span>}
-                                    <button
-                                        onClick={() => handleSave()}
-                                        className="text-slate-400 hover:text-nexus-cyan transition-colors"
-                                    >
-                                        Save File
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
         );
     };
@@ -879,6 +863,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}
             problemsCount={problems.length}
+            statusBarState={{
+                activeFileName: activeFileName,
+                isModified: unsavedChanges,
+                activeChannel: activeTerminalChannel,
+                language: activeFileName?.endsWith('.cash') ? 'CashScript' :
+                    activeFileName?.endsWith('.json') ? 'JSON' :
+                        activeFileName?.endsWith('.md') ? 'Markdown' : 'Text',
+                isTerminalActive: true
+            }}
         />
     );
 };

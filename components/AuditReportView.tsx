@@ -60,7 +60,7 @@ export const AuditReportView: React.FC<AuditReportViewProps> = ({ report, onFix 
 
             {/* Vulnerabilities List */}
             <div className="divide-y divide-[#2a2a2a]">
-                {report.vulnerabilities.map((vuln, idx) => (
+                {[...report.vulnerabilities].reverse().map((vuln, idx) => (
                     <div key={idx} className="bg-[#0d0d0d]">
                         <div
                             className="flex items-center p-3 cursor-pointer hover:bg-[#151515] transition-colors"
