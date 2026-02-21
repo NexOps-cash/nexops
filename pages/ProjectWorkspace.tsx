@@ -1,18 +1,19 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
-import { NamedTaskTerminal } from '../components/NamedTaskTerminal';
+import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
 import { Project, ProjectFile, CodeVersion } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
     AlertTriangle, CheckCircle, Copy, GitMerge, RotateCcw,
     FileJson, MessageSquare, Send, User, Bot, Wand2, X,
-    FileCode
+    FileCode, Zap, Cpu
 } from 'lucide-react';
 import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../services/groqService';
+import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { walletConnectService } from '../services/walletConnectService';
@@ -29,6 +30,8 @@ interface ChatMessage {
     fileUpdates?: { name: string, content: string }[];
     isApplied?: boolean;
     auditReport?: AuditReport;
+    isProgress?: boolean;
+    stage?: string;
 }
 
 interface ProjectWorkspaceProps {
@@ -64,8 +67,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     // Tools State
     const [isAuditing, setIsAuditing] = useState(false);
-    const [deploymentLog, setDeploymentLog] = useState<string[]>([]);
-    const [activeBottomTab, setActiveBottomTab] = useState<'TERMINAL' | 'OUTPUT' | 'PROBLEMS'>('TERMINAL');
+    const [channelLogs, setChannelLogs] = useState<Record<TerminalChannel, string[]>>({
+        SYSTEM: ['[System] NexOps Workstation initialized.', '[System] Ready.'],
+        COMPILER: [],
+        AUDITOR: [],
+        PROBLEMS: []
+    });
+    const [activeTerminalChannel, setActiveTerminalChannel] = useState<TerminalChannel>('SYSTEM');
     const [problems, setProblems] = useState<Problem[]>([]);
     const [debugState, setDebugState] = useState<DebuggerState | null>(null);
     const debuggerRef = useRef<DebuggerService>(new DebuggerService());
@@ -84,10 +92,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(null);
     const [deployedAddress, setDeployedAddress] = useState<string>('');
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [useExternalGenerator, setUseExternalGenerator] = useState(false);
+    const [isWsConnected, setIsWsConnected] = useState(false);
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
-    const mainContractFile = project.files.find(f => f.name.endsWith('.cash'));
+    const mainContractFile = useMemo(() => {
+        if (activeFile?.name.endsWith('.cash')) return activeFile;
+        return project.files.find(f => f.name.endsWith('.cash'));
+    }, [project.files, activeFile]);
 
     // Fix: Deduplicate files reliably for UI rendering
     const uniqueFiles = project.files.reduce((acc: ProjectFile[], current) => {
@@ -106,10 +119,112 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         }
     }, [project.files, activeFileName]);
 
+    const addLog = (channel: TerminalChannel, message: string | string[]) => {
+        const timestamp = new Date().toLocaleTimeString();
+        const messages = Array.isArray(message) ? message : [message];
+        const formatted = messages.map(m => `[${timestamp}] ${m}`);
+
+        setChannelLogs(prev => ({
+            ...prev,
+            [channel]: [...prev[channel], ...formatted]
+        }));
+    };
+
     // Scroll chat to bottom
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatHistory]);
+
+    // WebSocket Setup
+    useEffect(() => {
+        const handleConnected = () => setIsWsConnected(true);
+        const handleDisconnected = () => setIsWsConnected(false);
+        const handleMessage = (data: any) => {
+            if (data.type === 'update') {
+                const progressText = `[${data.stage}] ${data.message} (Attempt: ${data.attempt || 1})`;
+
+                // Consolidate progress updates into a single overriding message
+                setChatHistory(prev => {
+                    const newHistory = [...prev];
+                    const lastMsg = newHistory[newHistory.length - 1];
+
+                    if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
+                        // Override previous update
+                        newHistory[newHistory.length - 1] = {
+                            ...lastMsg,
+                            text: progressText,
+                            stage: data.stage
+                        };
+                        return newHistory;
+                    } else {
+                        // Create first update message
+                        return [...prev, {
+                            role: 'model',
+                            text: progressText,
+                            isProgress: true,
+                            stage: data.stage
+                        }];
+                    }
+                });
+                addLog('SYSTEM', progressText);
+            } else if (data.type === 'success') {
+                const { code, contract_name, toll_gate } = data.data;
+                const fileName = `${contract_name || (activeFileName?.split('.')[0] || 'Generated')}.cash`;
+                console.log("✅ Synthesis Success Processing:", { fileName, codeLength: code.length });
+                addLog('SYSTEM', `✅ Synthesis Success: ${contract_name} (${(toll_gate.score * 100).toFixed(0)}%)`);
+
+                setChatHistory(prev => {
+                    const newHistory = [...prev];
+                    const lastMsg = newHistory[newHistory.length - 1];
+                    const successMsg: ChatMessage = {
+                        role: 'model',
+                        text: `✅ Synthesis Complete: ${contract_name}\nScore: ${(toll_gate.score * 100).toFixed(0)}%\n\nThe contract passed with the following features: ${data.data.intent_model.features.join(', ')}.`,
+                        fileUpdates: [{ name: fileName, content: code }]
+                    };
+
+                    if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
+                        // Replace progress with success
+                        newHistory[newHistory.length - 1] = successMsg;
+                        return newHistory;
+                    }
+                    return [...prev, successMsg];
+                });
+                setIsChatting(false);
+            } else if (data.type === 'error') {
+                const { code, message, details } = data.error;
+                setChatHistory(prev => {
+                    const newHistory = [...prev];
+                    const lastMsg = newHistory[newHistory.length - 1];
+                    const errorMsg: ChatMessage = {
+                        role: 'model',
+                        text: `❌ ERROR: ${code}\n${message}${details ? `\n\nDetails: ${details}` : ''}`
+                    };
+
+                    if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
+                        // Replace progress with error
+                        newHistory[newHistory.length - 1] = errorMsg;
+                        return newHistory;
+                    }
+                    return [...prev, errorMsg];
+                });
+                setIsChatting(false);
+            }
+        };
+
+        websocketService.on('connected', handleConnected);
+        websocketService.on('disconnected', handleDisconnected);
+        websocketService.on('message', handleMessage);
+
+        if (useExternalGenerator) {
+            websocketService.connect();
+        }
+
+        return () => {
+            websocketService.off('connected', handleConnected);
+            websocketService.off('disconnected', handleDisconnected);
+            websocketService.off('message', handleMessage);
+        };
+    }, [useExternalGenerator, activeFileName]);
 
     // -- Handlers --
 
@@ -123,7 +238,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             lastModified: Date.now()
         };
 
-        if (mainContractFile?.name === activeFileName) {
+        if (activeFileName.endsWith('.cash')) {
             updatedProject.contractCode = newContent;
         }
 
@@ -158,6 +273,24 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setChatHistory(prev => [...prev, { role: 'user', text: msgToSend }]);
         setIsChatting(true);
 
+        if (useExternalGenerator) {
+            if (!websocketService.isConnected()) {
+                websocketService.connect();
+                // We'll wait a bit or just fail fast
+                setTimeout(() => {
+                    if (websocketService.isConnected()) {
+                        websocketService.sendIntent(msgToSend, chatHistory.map(h => ({ role: h.role, content: h.text })));
+                    } else {
+                        setChatHistory(prev => [...prev, { role: 'model', text: "External Generator is not connected. Attempting to reconnect..." }]);
+                        setIsChatting(false);
+                    }
+                }, 1000);
+            } else {
+                websocketService.sendIntent(msgToSend, chatHistory.map(h => ({ role: h.role, content: h.text })));
+            }
+            return;
+        }
+
         try {
             const result = await chatWithAssistant(msgToSend, project.files, chatHistory);
             setChatHistory(prev => [...prev, {
@@ -173,6 +306,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const applyFileUpdates = (updates: { name: string, content: string }[], messageIndex: number) => {
+        console.log("📝 Applying File Updates:", updates);
         const updatedFiles = [...project.files];
 
         updates.forEach(update => {
@@ -220,15 +354,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const handleRunAudit = async () => {
         if (!mainContractFile) return;
         setIsAuditing(true);
-        setDeploymentLog(prev => [...prev, 'Starting Audit...']);
+        addLog('AUDITOR', 'Starting Security Audit...');
 
         // Show indicator in Chat
         setChatHistory(prev => [...prev, { role: 'user', text: 'Run Security Audit' }]);
 
         try {
-            const report = await auditSmartContract(mainContractFile.content);
+            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator);
             onUpdateProject({ ...project, auditReport: report });
-            setDeploymentLog(prev => [...prev, 'Audit Complete. Issues found: ' + report.vulnerabilities.length]);
+            addLog('AUDITOR', '✅ Audit Complete. Issues found: ' + report.vulnerabilities.length);
 
             // Push Report to Chat
             setChatHistory(prev => [...prev, {
@@ -240,9 +374,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             // Switch to Auditor view
             setActiveView('AUDITOR');
 
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            setDeploymentLog(prev => [...prev, 'Audit Failed.']);
+            addLog('AUDITOR', `❌ Audit Failed: ${e.message}`);
             setChatHistory(prev => [...prev, { role: 'model', text: "Audit Failed due to an internal error." }]);
         } finally {
             setIsAuditing(false);
@@ -253,11 +387,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         if (!mainContractFile) return;
         setIsChatting(true);
 
-        const prompt = `Fix this vulnerability:\nTitle: ${vuln.title}\nDescription: ${vuln.description}\nSuggestion: ${vuln.fixSuggestion}`;
+        const prompt = `Fix this vulnerability:\nTitle: ${vuln.title}\nDescription: ${vuln.description}\nRecommendation: ${vuln.recommendation}`;
         setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
 
         try {
-            const result = await fixSmartContract(mainContractFile.content, prompt);
+            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, vuln);
+
+            // Handle external repair failure (success: false)
+            if (useExternalGenerator && result.explanation.includes("AI Repair failed safety constraints")) {
+                // We'll show this in the chat, but also could use a toast if available.
+                // For now, appending to chat as per existing pattern.
+            }
+
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.explanation,
@@ -271,27 +412,22 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const handleDeploy = () => {
-        setDeploymentLog(prev => [...prev, 'Initiating Deployment Flow via WalletConnect...']);
+        addLog('SYSTEM', 'Initiating Deployment Flow via WalletConnect...');
         // The actual deployment logic is handled by the Deployment component now usually, 
         // but for this task bar we are just mocking the start of the process logs
     };
 
     const handleRunTask = async (task: string) => {
-        const timestamp = new Date().toLocaleTimeString();
-        setDeploymentLog(prev => [...prev, `[${timestamp}] Executing ${task}...`]);
-
         if (task === 'COMPILE') {
             if (!mainContractFile) {
-                setDeploymentLog(prev => [...prev, `[${timestamp}] Error: No .cash file found.`]);
+                addLog('SYSTEM', '❌ Error: No .cash file found.');
                 return;
             }
 
-            setDeploymentLog(prev => [...prev, `[${timestamp}] Compiling ${mainContractFile.name}...`]);
+            setActiveTerminalChannel('COMPILER');
+            addLog('COMPILER', `Compiling ${mainContractFile.name}...`);
 
             try {
-                // Verify cashc import and run compilation
-                await new Promise(resolve => setTimeout(resolve, 10));
-
                 const result = compileCashScript(mainContractFile.content);
 
                 if (result.success && result.artifact) {
@@ -317,25 +453,21 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
                     onUpdateProject({ ...project, files: updatedFiles });
 
-                    setDeploymentLog(prev => [
-                        ...prev,
-                        `[${timestamp}] ✅ Compile Success!`,
-                        `[${timestamp}]   - Contract: ${result.artifact.contractName}`,
-                        `[${timestamp}]   - Bytecode Size: ${bytes} bytes`,
-                        `[${timestamp}]   - Artifact: ${artifactFileName} saved to explorer.`
+                    addLog('COMPILER', [
+                        `✅ Compile Success!`,
+                        `  - Contract: ${result.artifact.contractName}`,
+                        `  - Bytecode Size: ${bytes} bytes`,
+                        `  - Artifact: ${artifactFileName} saved to explorer.`
                     ]);
-                    setProblems([]); // Clear problems on success
+                    setDeployedArtifact(result.artifact);
+                    setProblems([]);
 
                 } else {
-                    setDeploymentLog(prev => [
-                        ...prev,
-                        `[${timestamp}] ❌ Compile Failed:`,
-                        ...(result.errors.map(e => `[${timestamp}]   ${e}`))
-                    ]);
+                    addLog('COMPILER', '❌ Compile Failed:');
+                    result.errors.forEach(e => addLog('COMPILER', `  ${e}`));
 
                     // Parse Errors for Problems Tab
                     const newProblems: Problem[] = result.errors.map((err, idx) => {
-                        // Simple regex to find line number if present
                         const lineMatch = err.match(/line (\d+)/i);
                         const line = lineMatch ? parseInt(lineMatch[1]) : undefined;
                         return {
@@ -347,17 +479,19 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         };
                     });
                     setProblems(newProblems);
-                    setActiveBottomTab('PROBLEMS');
+                    setActiveTerminalChannel('PROBLEMS');
                 }
 
             } catch (e: any) {
-                setDeploymentLog(prev => [...prev, `[${timestamp}] Critical Error: ${e.message}`]);
+                addLog('COMPILER', `Critical Error: ${e.message}`);
                 console.error(e);
             }
 
         } else if (task === 'AUDIT') {
+            setActiveTerminalChannel('AUDITOR');
             handleRunAudit();
         } else if (task === 'DEPLOY') {
+            setActiveTerminalChannel('COMPILER');
             handleDeploy();
         }
     };
@@ -407,6 +541,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             onApply={applyFileUpdates}
             onFixVulnerability={handleFixVulnerability}
             draftInput={chatDraft}
+            useExternalGenerator={useExternalGenerator}
+            onToggleExternal={setUseExternalGenerator}
+            isWsConnected={isWsConnected}
         />
     );
 
@@ -416,11 +553,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         // Re-compile to get fresh bytecode
         const result = compileCashScript(mainContractFile.content);
         if (result.success && result.artifact) {
-            setDeploymentLog(prev => [...prev, `[Debug] Loaded ${result.artifact?.contractName} for simulation.`]);
+            addLog('SYSTEM', `[Debug] Loaded ${result.artifact?.contractName} for simulation.`);
             debuggerRef.current.load(result.artifact.bytecode);
             setDebugState(debuggerRef.current.getState());
         } else {
-            setDeploymentLog(prev => [...prev, `[Debug] Compile failed. Cannot start simulation.`]);
+            addLog('SYSTEM', `[Debug] Compile failed. Cannot start simulation.`);
+            setActiveTerminalChannel('COMPILER');
         }
     };
 
@@ -588,7 +726,24 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const renderBottomPanel = () => (
         <NamedTaskTerminal
             onRunTask={handleRunTask}
-            logs={deploymentLog}
+            channelLogs={channelLogs}
+            activeChannel={activeTerminalChannel}
+            onActiveChannelChange={setActiveTerminalChannel}
+            onClearLogs={(chn) => setChannelLogs(prev => ({ ...prev, [chn]: [] }))}
+            problemsCount={problems.length}
+            problemsContent={
+                <ProblemsPanel
+                    problems={problems}
+                    onNavigate={(file, line) => {
+                        setActiveFileName(file);
+                    }}
+                    onAskAI={(problem: Problem) => {
+                        const msg = `Explain this error in ${problem.file}${problem.line ? `:${problem.line}` : ''}: ${problem.message}`;
+                        setChatDraft(msg);
+                        setActiveView('AUDITOR');
+                    }}
+                />
+            }
         />
     );
 
@@ -605,24 +760,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}
-            activeBottomTab={activeBottomTab}
-            onTabChange={setActiveBottomTab}
             problemsCount={problems.length}
-            outputLogs={deploymentLog}
-            problemsContent={
-                <ProblemsPanel
-                    problems={problems}
-                    onNavigate={(file, line) => {
-                        setActiveFileName(file);
-                        // In a real implementation, we would also scroll to line using editor ref
-                    }}
-                    onAskAI={(problem: Problem) => {
-                        const msg = `Explain this error in ${problem.file}${problem.line ? `:${problem.line}` : ''}: ${problem.message}`;
-                        setChatDraft(msg);
-                        setActiveView('AUDITOR');
-                    }}
-                />
-            }
         />
     );
 };

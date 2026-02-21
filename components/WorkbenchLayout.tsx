@@ -11,11 +11,7 @@ interface WorkbenchLayoutProps {
     bottomPanelContent: ReactNode;
     activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT';
     onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT') => void;
-    activeBottomTab?: 'TERMINAL' | 'OUTPUT' | 'PROBLEMS';
-    onTabChange?: (tab: 'TERMINAL' | 'OUTPUT' | 'PROBLEMS') => void;
     problemsCount?: number;
-    problemsContent?: ReactNode;
-    outputLogs?: string[];
 }
 
 const ActivityBarItem = ({
@@ -48,11 +44,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
     bottomPanelContent,
     activeView,
     onViewChange,
-    activeBottomTab = 'TERMINAL', // Default
-    onTabChange,
     problemsCount = 0,
-    problemsContent,
-    outputLogs = []
 }) => {
     const [isBottomOpen, setIsBottomOpen] = useState(true);
 
@@ -134,56 +126,11 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
 
                             <PanelResizeHandle className="h-1 bg-slate-800 hover:bg-nexus-cyan/20 transition-colors" />
 
-                            {/* Bottom Panel (Terminal / Output) */}
+                            {/* Bottom Panel (Console) */}
                             {isBottomOpen && (
-                                <Panel defaultSize={30} minSize={10} className="bg-black/40 border-t border-slate-800">
-                                    <div className="h-full flex flex-col">
-                                        <div className="h-8 min-h-[32px] flex items-center px-4 border-b border-slate-800 bg-nexus-900/50 space-x-1">
-                                            <button
-                                                onClick={() => activeBottomTab !== 'TERMINAL' && onTabChange && onTabChange('TERMINAL')}
-                                                className={`text-[10px] font-bold uppercase tracking-wider h-full px-3 transition-colors border-b-2 flex items-center space-x-2 ${activeBottomTab === 'TERMINAL' ? 'text-nexus-cyan border-nexus-cyan' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
-                                            >
-                                                <TerminalSquare size={12} className="mr-1" />
-                                                <span>Terminal</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => activeBottomTab !== 'OUTPUT' && onTabChange && onTabChange('OUTPUT')}
-                                                className={`text-[10px] font-bold uppercase tracking-wider h-full px-3 transition-colors border-b-2 ${activeBottomTab === 'OUTPUT' ? 'text-nexus-cyan border-nexus-cyan' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
-                                            >
-                                                Output
-                                            </button>
-
-                                            <button
-                                                onClick={() => activeBottomTab !== 'PROBLEMS' && onTabChange && onTabChange('PROBLEMS')}
-                                                className={`text-[10px] font-bold uppercase tracking-wider h-full px-3 transition-colors border-b-2 flex items-center ${activeBottomTab === 'PROBLEMS' ? 'text-nexus-cyan border-nexus-cyan' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
-                                            >
-                                                Problems
-                                                {problemsCount > 0 && (
-                                                    <span className="ml-2 bg-nexus-warning text-nexus-900 px-1.5 py-0.5 rounded-full text-[9px]">{problemsCount}</span>
-                                                )}
-                                            </button>
-
-                                            <div className="flex-1" />
-                                            <button onClick={() => setIsBottomOpen(false)} className="text-slate-500 hover:text-white">
-                                                <TerminalSquare size={12} />
-                                            </button>
-                                        </div>
-                                        <div className="flex-1 p-0 overflow-hidden relative">
-                                            {activeBottomTab === 'TERMINAL' && bottomPanelContent}
-                                            {activeBottomTab === 'OUTPUT' && (
-                                                <div className="p-4 font-mono text-xs text-slate-400 h-full overflow-y-auto custom-scrollbar">
-                                                    {outputLogs && outputLogs.length > 0 ? (
-                                                        outputLogs.map((log, i) => (
-                                                            <div key={i} className="whitespace-pre-wrap mb-1">{log}</div>
-                                                        ))
-                                                    ) : (
-                                                        <div className="opacity-50">No output logs.</div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {activeBottomTab === 'PROBLEMS' && problemsContent}
-                                        </div>
+                                <Panel defaultSize={30} minSize={10} className="bg-[#0a0a0c] border-t border-slate-800/50">
+                                    <div className="h-full relative overflow-hidden">
+                                        {bottomPanelContent}
                                     </div>
                                 </Panel>
                             )}

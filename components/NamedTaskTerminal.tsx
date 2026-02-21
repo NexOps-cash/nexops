@@ -1,16 +1,30 @@
-
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { Play, ShieldCheck, Rocket, Terminal as TerminalIcon, XCircle, Eraser } from 'lucide-react';
+import { Play, ShieldCheck, Rocket, Terminal as TerminalIcon, XCircle, Eraser, Cpu, Activity, AlertCircle } from 'lucide-react';
+
+export type TerminalChannel = 'SYSTEM' | 'COMPILER' | 'AUDITOR' | 'PROBLEMS';
 
 interface NamedTaskTerminalProps {
     onRunTask: (taskName: string) => void;
-    logs: string[];
+    channelLogs: Record<TerminalChannel, string[]>;
+    activeChannel: TerminalChannel;
+    onActiveChannelChange: (channel: TerminalChannel) => void;
+    onClearLogs: (channel: TerminalChannel) => void;
+    problemsContent?: React.ReactNode;
+    problemsCount?: number;
 }
 
-export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask, logs }) => {
+export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
+    onRunTask,
+    channelLogs,
+    activeChannel,
+    onActiveChannelChange,
+    onClearLogs,
+    problemsContent,
+    problemsCount = 0
+}) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
@@ -19,16 +33,16 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
     // -- Initialize xterm --
     useEffect(() => {
         if (!terminalRef.current) return;
-        if (xtermRef.current) return; // Prevent double init
+        if (xtermRef.current) return;
 
         const term = new Terminal({
             cursorBlink: true,
             theme: {
-                background: '#0f172a', // slate-900 
-                foreground: '#94a3b8', // slate-400
+                background: '#0a0a0c', // Deep near-black
+                foreground: '#cbd5e1', // slate-300
                 cursor: '#06b6d4', // nexus-cyan
                 selectionBackground: 'rgba(6, 182, 212, 0.3)',
-                black: '#0f172a',
+                black: '#0a0a0c',
                 red: '#ef4444',
                 green: '#22c55e',
                 yellow: '#eab308',
@@ -38,43 +52,33 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
                 white: '#f8fafc',
             },
             fontFamily: 'JetBrains Mono, Menlo, monospace',
-            fontSize: 12,
-            lineHeight: 1.2,
+            fontSize: 11,
+            lineHeight: 1.4,
             disableStdin: true,
             allowProposedApi: true,
-            scrollback: 5000 // Allow scrolling back 5000 lines
+            scrollback: 5000
         });
 
         const fitAddon = new FitAddon();
         term.loadAddon(fitAddon);
-
         term.open(terminalRef.current);
 
         xtermRef.current = term;
         fitAddonRef.current = fitAddon;
 
-        // Initial fit - wrapped in timeout to ensure DOM layout is complete
         setTimeout(() => {
             try {
                 fitAddon.fit();
-            } catch (e) {
-                console.warn("Initial fit failed, retrying in observer", e);
-            }
+            } catch (e) { }
         }, 50);
-
-        term.writeln('\x1b[1;36m$ nexops-cli verified\x1b[0m');
-        term.writeln('Ready for tasks.');
 
         // Robust Resize Observer
         observerRef.current = new ResizeObserver(() => {
             try {
-                // Check if container has dimensions
                 if (terminalRef.current && terminalRef.current.clientWidth > 0) {
                     fitAddon.fit();
                 }
-            } catch (e) {
-                // Ignore transient fit errors during rapid resize
-            }
+            } catch (e) { }
         });
 
         observerRef.current.observe(terminalRef.current);
@@ -86,80 +90,128 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({ onRunTask,
         };
     }, []);
 
-    // -- Update Logs --
+    // -- Sync Logs for Active Channel --
     useEffect(() => {
-        if (!xtermRef.current) return;
+        if (!xtermRef.current || activeChannel === 'PROBLEMS') return;
+        const term = xtermRef.current;
 
-        xtermRef.current.clear();
-        xtermRef.current.writeln('\x1b[1;36m$ nexops-cli verified\x1b[0m');
-        xtermRef.current.writeln('Ready for tasks.');
+        term.clear();
+        term.writeln(`\x1b[1;36mλ nexops --channel=${activeChannel.toLowerCase()}\x1b[0m`);
 
+        const logs = channelLogs[activeChannel] || [];
         logs.forEach(log => {
-            if (log.toLowerCase().includes('error')) {
-                xtermRef.current?.writeln(`\x1b[31m${log}\x1b[0m`);
+            if (log.toLowerCase().includes('error') || log.toLowerCase().includes('failed')) {
+                term.writeln(`\x1b[31m${log}\x1b[0m`);
             } else if (log.toLowerCase().includes('success') || log.includes('Done') || log.includes('✅')) {
-                xtermRef.current?.writeln(`\x1b[32m${log}\x1b[0m`);
+                term.writeln(`\x1b[32m${log}\x1b[0m`);
+            } else if (log.startsWith('[System]') || log.startsWith('[Debug]')) {
+                term.writeln(`\x1b[34m${log}\x1b[0m`);
             } else {
-                xtermRef.current?.writeln(log);
+                term.writeln(log);
             }
         });
 
-        // Scroll to bottom after write with delay to ensure render
         setTimeout(() => {
-            xtermRef.current?.scrollToBottom();
-        }, 50);
+            fitAddonRef.current?.fit();
+            term.scrollToBottom();
+        }, 30);
 
-    }, [logs]);
+    }, [channelLogs, activeChannel]);
+
+    const channelConfig: { id: TerminalChannel; label: string; icon: any; count?: number }[] = [
+        { id: 'SYSTEM', label: 'System', icon: Activity },
+        { id: 'COMPILER', label: 'Compiler', icon: Cpu },
+        { id: 'AUDITOR', label: 'Auditor', icon: ShieldCheck },
+        { id: 'PROBLEMS', label: 'Problems', icon: AlertCircle, count: problemsCount },
+    ];
 
     return (
-        <div className="h-full flex flex-col bg-slate-900 border-t border-slate-800">
-            {/* Toolbar */}
-            <div className="flex items-center px-4 py-2 border-b border-slate-700/50 bg-slate-900/50 space-x-2">
-                <div className="flex items-center space-x-1 text-slate-400 text-[10px] uppercase font-bold tracking-wider mr-4">
-                    <TerminalIcon size={12} className="text-nexus-cyan" />
-                    <span>Tasks</span>
+        <div className="h-full flex flex-col bg-[#0a0a0c]">
+            {/* Extended Multi-Channel Toolbar */}
+            <div className="flex items-center bg-[#0d0d0f] border-b border-white/5 h-9 px-2">
+                <div className="flex items-center bg-black/40 rounded-md p-0.5 border border-white/5 mr-4">
+                    {channelConfig.map(chn => (
+                        <button
+                            key={chn.id}
+                            onClick={() => onActiveChannelChange(chn.id)}
+                            className={`
+                                flex items-center gap-1.5 px-3 py-1 rounded text-[10px] font-bold uppercase tracking-tight transition-all relative
+                                ${activeChannel === chn.id
+                                    ? 'bg-nexus-cyan/10 text-nexus-cyan shadow-[inset_0_0_10px_rgba(6,182,212,0.1)]'
+                                    : 'text-slate-500 hover:text-slate-300'
+                                }
+                            `}
+                        >
+                            <chn.icon size={12} strokeWidth={activeChannel === chn.id ? 2.5 : 1.5} />
+                            <span>{chn.label}</span>
+                            {chn.count && chn.count > 0 && (
+                                <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] text-white">
+                                    {chn.count}
+                                </span>
+                            )}
+                        </button>
+                    ))}
                 </div>
 
-                <div className="h-4 w-px bg-slate-700 mx-2" />
+                <div className="h-4 w-px bg-white/5 mx-2" />
 
-                <button
-                    onClick={() => onRunTask('COMPILE')}
-                    className="flex items-center space-x-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-400 rounded text-[10px] transition-colors"
-                >
-                    <Play size={10} />
-                    <span>Compile</span>
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => onRunTask('COMPILE')}
+                        className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-white/5 text-slate-400 hover:text-nexus-cyan rounded text-[10px] transition-colors"
+                        title="Compile active contract"
+                    >
+                        <Play size={10} />
+                        <span>Compile</span>
+                    </button>
 
-                <button
-                    onClick={() => onRunTask('AUDIT')}
-                    className="flex items-center space-x-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-400 rounded text-[10px] transition-colors"
-                >
-                    <ShieldCheck size={10} />
-                    <span>Audit</span>
-                </button>
-
-                <button
-                    onClick={() => onRunTask('DEPLOY')}
-                    className="flex items-center space-x-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-400 rounded text-[10px] transition-colors"
-                >
-                    <Rocket size={10} />
-                    <span>Deploy</span>
-                </button>
+                    <button
+                        onClick={() => onRunTask('AUDIT')}
+                        className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-white/5 text-slate-400 hover:text-nexus-cyan rounded text-[10px] transition-colors"
+                        title="Run Security Audit"
+                    >
+                        <ShieldCheck size={10} />
+                        <span>Audit</span>
+                    </button>
+                </div>
 
                 <div className="flex-1" />
 
                 <button
-                    onClick={() => { /* clear handled via logs prop in this simplistic version */ }}
-                    className="text-slate-500 hover:text-slate-300 transition-colors"
-                    title="Clear Terminal"
+                    onClick={() => onClearLogs(activeChannel)}
+                    className="p-1.5 text-slate-600 hover:text-red-400 transition-colors rounded hover:bg-red-400/5"
+                    title="Clear current channel"
                 >
-                    <Eraser size={12} />
+                    <Eraser size={14} />
                 </button>
             </div>
 
-            {/* XTerm Container - Fixed: Removed overflow-hidden to allow scrollbar */}
-            <div className="flex-1 relative bg-[#0f172a] min-h-0 pl-2">
-                <div ref={terminalRef} className="absolute inset-0 h-full w-full" />
+            {/* Container */}
+            <div className="flex-1 relative bg-[#0a0a0c] min-h-0">
+                {/* Problems View */}
+                {activeChannel === 'PROBLEMS' && problemsContent ? (
+                    <div className="absolute inset-0 overflow-auto no-scrollbar">
+                        {problemsContent}
+                    </div>
+                ) : (
+                    <div className="absolute inset-0 pl-2 pt-2">
+                        <div ref={terminalRef} className="h-full w-full" />
+                    </div>
+                )}
+            </div>
+
+            {/* Status Footer */}
+            <div className="h-5 bg-black/80 px-3 flex items-center justify-between text-[8px] text-slate-600 font-mono">
+                <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500/50 animate-pulse"></span>
+                        Terminal Session Active
+                    </span>
+                    <span>Channel: {activeChannel}</span>
+                </div>
+                <div className="italic">
+                    <span>nexus workstation cli v1.2.0</span>
+                </div>
             </div>
         </div>
     );
