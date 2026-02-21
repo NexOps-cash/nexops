@@ -23,6 +23,8 @@ import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
 import { AIPanel } from '../components/AIPanel';
 import { AuditReport, Vulnerability } from '../types';
+import { ArtifactInspector } from '../components/ArtifactInspector';
+import { FlowBuilder, FlowPalette } from '../components/flow/FlowBuilder';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -62,7 +64,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             walletConnectService.off('connection_status_changed', handleStatusChange);
         };
     }, []);
-    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'INTERACT'>('EXPLORER');
+    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW'>('EXPLORER');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
 
     // Tools State
@@ -247,12 +249,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const handleSave = (description: string = `Snapshot: ${new Date().toLocaleTimeString()}`) => {
-        if (!mainContractFile) return;
-
         const newVersion: CodeVersion = {
             id: Date.now().toString(),
             timestamp: Date.now(),
-            code: mainContractFile.content,
+            fileName: activeFileName,
+            code: activeFile?.content || '',
             description,
             author: 'USER'
         };
@@ -263,6 +264,22 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             lastModified: Date.now()
         });
         setUnsavedChanges(false);
+    };
+
+    const handleRestoreVersion = (version: CodeVersion) => {
+        const updatedFiles = project.files.map(f =>
+            f.name === version.fileName ? { ...f, content: version.code } : f
+        );
+
+        onUpdateProject({
+            ...project,
+            files: updatedFiles,
+            auditReport: undefined,
+            lastModified: Date.now()
+        });
+
+        setCompareVersion(null);
+        setUnsavedChanges(true);
     };
 
     const handleSendMessage = async (message?: string) => {
@@ -331,6 +348,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         const newVersion: CodeVersion = {
             id: Date.now().toString(),
             timestamp: Date.now(),
+            fileName: mainUpdate ? mainUpdate.name : (mainContractFile?.name || 'unknown.cash'),
             code: mainUpdate ? mainUpdate.content : (mainContractFile?.content || ''),
             description: 'AI Protocol Update applied',
             author: 'AI'
@@ -519,16 +537,35 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     </button>
                 ))}
             </div>
-            <div className="px-4 mt-6 mb-2">
+            <div className="px-4 mt-6 mb-2 flex items-center justify-between">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">History</span>
+                <span className="text-[9px] text-slate-600 font-mono italic truncate max-w-[80px]">{activeFileName}</span>
             </div>
             <div className="px-2 space-y-1">
-                {project.versions.slice(0, 5).map(v => (
-                    <div key={v.id} className="flex items-center text-[10px] text-slate-500 px-2 py-1 hover:text-slate-300 cursor-pointer" onClick={() => setCompareVersion(v)}>
-                        <History size={10} className="mr-2" />
-                        <span className="truncate">{new Date(v.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                ))}
+                {(() => {
+                    const fileVersions = project.versions.filter(v => v.fileName === activeFileName);
+                    return fileVersions.slice(0, 10).map((v, idx) => {
+                        const versionNumber = fileVersions.length - (fileVersions.indexOf(v));
+                        return (
+                            <div
+                                key={v.id}
+                                className={`flex items-center text-[10px] px-2 py-1.5 rounded cursor-pointer transition-colors ${compareVersion?.id === v.id
+                                    ? 'bg-nexus-cyan/20 text-nexus-cyan'
+                                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                                    }`}
+                                onClick={() => setCompareVersion(compareVersion?.id === v.id ? null : v)}
+                            >
+                                <History size={10} className="mr-2 shrink-0" />
+                                <span className="truncate font-mono">Version {versionNumber}</span>
+                                <span className="ml-2 text-[8px] opacity-40 truncate">{new Date(v.timestamp).toLocaleTimeString()}</span>
+                                {v.author === 'AI' && <span className="ml-auto text-[8px] bg-purple-500/20 text-purple-400 px-1 rounded">AI</span>}
+                            </div>
+                        );
+                    });
+                })()}
+                {project.versions.filter(v => v.fileName === activeFileName).length === 0 && (
+                    <div className="px-4 py-2 text-[9px] text-slate-600 italic">No snapshots for this file.</div>
+                )}
             </div>
         </div>
     );
@@ -658,70 +695,150 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         />
     );
 
-    const renderEditorArea = () => (
-        <div className="flex flex-col h-full">
-            {/* Tabs */}
-            <div className="h-9 flex items-center bg-nexus-900 border-b border-slate-800 px-0">
-                {uniqueFiles.map(file => (
-                    <button
-                        key={file.name}
-                        onClick={() => setActiveFileName(file.name)}
-                        className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-slate-800 transition-all ${activeFileName === file.name
-                            ? 'bg-nexus-800 text-white border-t-2 border-t-nexus-cyan'
-                            : 'text-slate-500 hover:bg-slate-800/50'
-                            }`}
-                    >
-                        <span>{getFileIcon(file.name)}</span>
-                        <span>{file.name}</span>
-                        {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning ml-1"></div>}
-                    </button>
-                ))}
-            </div>
+    const isArtifactFile = (file: ProjectFile) => {
+        if (!file.name.endsWith('.json')) return false;
+        try {
+            const content = JSON.parse(file.content);
+            return !!(content.contractName && content.bytecode && content.abi);
+        } catch (e) {
+            return false;
+        }
+    };
 
-            {/* Editor */}
-            <div className="flex-1 relative">
-                {compareVersion && activeFile ? (
-                    <MonacoEditorWrapper
-                        key={`${activeFile.name}-diff`}
-                        code={activeFile.content}
-                        originalCode={compareVersion.code}
-                        language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
-                        diffMode={true}
-                        onChange={() => { }}
-                        readOnly={true}
-                    />
-                ) : activeFile ? (
-                    <MonacoEditorWrapper
-                        key={activeFile.name}
-                        code={activeFile.content}
-                        language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
-                        onChange={(val) => handleFileChange(val || '')}
-                        readOnly={!!activeFile.readOnly}
-                        markers={problems.filter(p => p.file === activeFile.name)}
-                    />
-                ) : (
-                    <div className="flex items-center justify-center h-full text-slate-600 text-xs uppercase tracking-widest font-bold">
-                        No File Selected
+    const renderSidebarFlow = () => (
+        <div className="flex flex-col h-full overflow-hidden">
+            <FlowPalette onAddNode={(type) => {
+                // This will trigger the addNode inside FlowBuilder via a message or internal mechanism
+                // For now, we'll use a custom event as a simple way to bridge independent components
+                const event = new CustomEvent('nexops:flow:add-node', { detail: { type } });
+                window.dispatchEvent(event);
+            }} />
+            <div className="p-4 border-t border-white/5 bg-black/20">
+                <Button variant="primary" className="w-full text-xs font-bold uppercase tracking-widest py-2.5 h-auto">
+                    <Play size={14} className="mr-2" /> Execute Flow
+                </Button>
+            </div>
+        </div>
+    );
+
+    const renderEditorArea = () => {
+        const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : null;
+
+        return (
+            <div className="flex flex-col h-full overflow-hidden bg-[#0a0a0c]">
+                {/* Tabs */}
+                <div className="h-9 flex items-center bg-nexus-900 border-b border-white/5 px-0 shrink-0">
+                    {uniqueFiles.map(file => (
+                        <button
+                            key={file.name}
+                            onClick={() => setActiveFileName(file.name)}
+                            className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-white/5 transition-all ${activeFileName === file.name
+                                ? 'bg-nexus-800 text-white border-t-2 border-t-nexus-cyan'
+                                : 'text-slate-500 hover:bg-slate-800/50'
+                                }`}
+                        >
+                            <span className="shrink-0">{getFileIcon(file.name)}</span>
+                            <span className="truncate max-w-[120px]">{file.name}</span>
+                            {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning ml-1 shrink-0"></div>}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Editor Content */}
+                <div className="flex-1 relative min-h-0">
+                    {compareVersion && activeFile && (!compareVersion.fileName || compareVersion.fileName === activeFile.name) ? (
+                        <MonacoEditorWrapper
+                            key={`${activeFile.name}-diff`}
+                            code={activeFile.content}
+                            originalCode={compareVersion.code}
+                            language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                            diffMode={true}
+                            onChange={() => { }}
+                            readOnly={true}
+                        />
+                    ) : activeView === 'FLOW' ? (
+                        <FlowBuilder />
+                    ) : activeFile ? (
+                        artifactData ? (
+                            <ArtifactInspector
+                                artifact={artifactData}
+                                onDeploy={() => {
+                                    setDeployedArtifact(artifactData);
+                                    setActiveView('DEPLOY');
+                                }}
+                            />
+                        ) : (
+                            <MonacoEditorWrapper
+                                key={activeFile.name}
+                                code={activeFile.content}
+                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                                onChange={(val) => handleFileChange(val || '')}
+                                readOnly={!!activeFile.readOnly}
+                                markers={problems.filter(p => p.file === activeFile.name)}
+                            />
+                        )
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-slate-600 text-xs uppercase tracking-widest font-bold">
+                            No File Selected
+                        </div>
+                    )}
+                </div>
+
+                {/* Status Footer */}
+                {activeFile && (
+                    <div className="h-6 shrink-0 bg-[#0d0d0f] border-t border-white/5 flex items-center justify-between px-3 text-[10px] text-slate-500 font-mono">
+                        <div className="flex items-center space-x-3">
+                            <span className="flex items-center gap-1.5 grayscale opacity-70">
+                                <GitMerge size={10} />
+                                Main
+                            </span>
+                            <span>UTF-8</span>
+                            {artifactData && <span className="text-nexus-cyan font-bold uppercase tracking-tighter bg-nexus-cyan/10 px-1.5 rounded">Artifact Mode</span>}
+                            {compareVersion && (
+                                <span className="flex items-center gap-2 text-nexus-warning animate-pulse">
+                                    <Cpu size={10} />
+                                    Comparing Snapshot...
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center space-x-3">
+                            {compareVersion ? (
+                                <div className="flex items-center border-l border-white/10 ml-2 pl-3 space-x-4">
+                                    <button
+                                        onClick={() => handleRestoreVersion(compareVersion)}
+                                        className="text-white hover:text-nexus-cyan font-bold transition-colors flex items-center gap-1.5"
+                                    >
+                                        <RotateCcw size={10} />
+                                        Use This Version
+                                    </button>
+                                    <button
+                                        onClick={() => setCompareVersion(null)}
+                                        className="text-slate-400 hover:text-white transition-colors"
+                                    >
+                                        Close Diff
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    {unsavedChanges && <span className="text-nexus-warning flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-nexus-warning animate-pulse" />
+                                        Modified
+                                    </span>}
+                                    <button
+                                        onClick={() => handleSave()}
+                                        className="text-slate-400 hover:text-nexus-cyan transition-colors"
+                                    >
+                                        Save File
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
+        );
+    };
 
-            {/* Editor Actions / Footer */}
-            {activeFile && (
-                <div className="h-6 bg-nexus-cyan/5 border-t border-slate-800 flex items-center justify-between px-3">
-                    <div className="flex items-center space-x-3 text-[10px] text-slate-500 font-mono">
-                        <span>Master</span>
-                        <span>Ln 1, Col 1</span>
-                        <span>UTF-8</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        {unsavedChanges && <span className="text-[10px] text-nexus-warning animate-pulse">● Unsaved</span>}
-                        <button onClick={() => handleSave()} className="text-[10px] text-slate-400 hover:text-nexus-cyan hover:underline">Save</button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
 
     const renderBottomPanel = () => (
         <NamedTaskTerminal
@@ -756,7 +873,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     activeView === 'AUDITOR' ? renderSidebarAuditor() :
                         activeView === 'DEBUG' ? renderSidebarDebug() :
                             activeView === 'INTERACT' ? renderSidebarInteract() :
-                                renderSidebarDeploy()
+                                activeView === 'FLOW' ? renderSidebarFlow() :
+                                    renderSidebarDeploy()
             }
             editorContent={renderEditorArea()}
             bottomPanelContent={renderBottomPanel()}

@@ -168,7 +168,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     };
 
     const handleDeploy = async () => {
-        if (!walletConnectService.getSession() && !derivedAddress) return;
+        if (!isAuditPassed) {
+            alert(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
+            return;
+        }
+
         if (!derivedAddress) {
             alert("Address derivation failed. check inputs.");
             return;
@@ -669,16 +673,18 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                         ) : (
                                             <Button
                                                 onClick={handleDeploy}
-                                                disabled={isDeploying || deploymentStep === 4 || !derivedAddress || hasCriticalValidationErrors()}
+                                                disabled={isDeploying || deploymentStep === 4 || !derivedAddress || hasCriticalValidationErrors() || !isAuditPassed}
                                                 isLoading={isDeploying}
                                                 className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 icon={<Rocket className="w-4 h-4" />}
                                             >
                                                 {deploymentStep === 4
                                                     ? "Broadcasted"
-                                                    : hasCriticalValidationErrors()
-                                                        ? "Funding Blocked (Invalid Inputs)"
-                                                        : "Generate Funding Request"}
+                                                    : !isAuditPassed
+                                                        ? "Security Audit Required"
+                                                        : hasCriticalValidationErrors()
+                                                            ? "Funding Blocked (Invalid Inputs)"
+                                                            : "Generate Funding Request"}
                                             </Button>
                                         )}
                                     </>

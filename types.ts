@@ -33,6 +33,7 @@ export interface AuditReport {
 export interface CodeVersion {
   id: string;
   timestamp: number;
+  fileName: string;
   code: string;
   description: string;
   author: 'AI' | 'USER';

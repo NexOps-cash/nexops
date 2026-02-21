@@ -2,15 +2,15 @@ import React, { useState, ReactNode } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
     Files, ShieldCheck, BoxSelect, TerminalSquare,
-    Settings, Play, Bot, FileCode, Rocket
+    Settings, Play, Bot, FileCode, Rocket, GitBranch
 } from 'lucide-react';
 
 interface WorkbenchLayoutProps {
     sidebarContent: ReactNode;
     editorContent: ReactNode;
     bottomPanelContent: ReactNode;
-    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT';
-    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT') => void;
+    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW';
+    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW') => void;
     problemsCount?: number;
 }
 
@@ -83,6 +83,12 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         isActive={activeView === 'INTERACT'}
                         onClick={() => onViewChange('INTERACT')}
                     />
+                    <ActivityBarItem
+                        icon={GitBranch}
+                        label="Visual Flow Builder"
+                        isActive={activeView === 'FLOW'}
+                        onClick={() => onViewChange('FLOW')}
+                    />
                 </div>
                 <div className="pb-2">
                     <ActivityBarItem
@@ -107,6 +113,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                 {activeView === 'DEBUG' && 'Execution Trace'}
                                 {activeView === 'DEPLOY' && 'Deploy Contract'}
                                 {activeView === 'INTERACT' && 'Transaction Builder'}
+                                {activeView === 'FLOW' && 'Flow Palette'}
                             </span>
                         </div>
                         <div className="flex-1 overflow-hidden relative">

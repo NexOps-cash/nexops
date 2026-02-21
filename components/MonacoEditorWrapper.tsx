@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import Editor, { Monaco, OnMount } from '@monaco-editor/react';
+import Editor, { DiffEditor, Monaco, OnMount } from '@monaco-editor/react';
 import { Problem } from './ProblemsPanel';
 
 
@@ -161,6 +161,11 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
                 'editor.background': '#0f172a', // nexus-900
                 'editor.lineHighlightBackground': '#1e293b',
                 'editorCursor.foreground': '#00D8FF',
+                'diffEditor.insertedTextBackground': '#22c55e80', // 50% opacity
+                'diffEditor.removedTextBackground': '#ef444480',   // 50% opacity
+                'diffEditor.insertedLineBackground': '#22c55e4d', // 30% opacity
+                'diffEditor.removedLineBackground': '#ef44444d',   // 30% opacity
+                'diffEditor.diagonalFill': '#334155',             // Darker diagonal fill
             }
         });
 
@@ -211,7 +216,7 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
 
     if (diffMode) {
         return (
-            <Editor
+            <DiffEditor
                 height="100%"
                 language={language}
                 theme="nexops-dark"
