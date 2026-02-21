@@ -88,7 +88,7 @@ export const Auditor: React.FC<AuditorProps> = ({
                         severity: "HIGH",
                         title: "Compiler Error [CRITICAL]",
                         description: err,
-                        fixSuggestion: "Fix the syntax error reported by the compiler.",
+                        recommendation: "Fix the syntax error reported by the compiler.",
                         line: 0
                     })),
                     timestamp: Date.now()
@@ -164,8 +164,8 @@ export const Auditor: React.FC<AuditorProps> = ({
                     <button
                         onClick={() => setActiveTab('AUDIT')}
                         className={`px-4 py-2 text-sm font-bold rounded-md transition-all flex items-center ${activeTab === 'AUDIT'
-                                ? 'bg-nexus-cyan text-black shadow-lg shadow-nexus-cyan/20'
-                                : 'text-gray-400 hover:text-white'
+                            ? 'bg-nexus-cyan text-black shadow-lg shadow-nexus-cyan/20'
+                            : 'text-gray-400 hover:text-white'
                             }`}
                     >
                         <ShieldCheck className="w-4 h-4 mr-2" /> Auditor
@@ -174,8 +174,8 @@ export const Auditor: React.FC<AuditorProps> = ({
                         onClick={() => setActiveTab('INTERACT')}
                         disabled={!deployedAddress}
                         className={`px-4 py-2 text-sm font-bold rounded-md transition-all flex items-center ${activeTab === 'INTERACT'
-                                ? 'bg-nexus-blue text-white shadow-lg shadow-nexus-blue/20'
-                                : 'text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed'
+                            ? 'bg-nexus-blue text-white shadow-lg shadow-nexus-blue/20'
+                            : 'text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed'
                             }`}
                         title={!deployedAddress ? "Deploy contract first" : "Interact with smart contract"}
                     >
@@ -314,7 +314,7 @@ export const Auditor: React.FC<AuditorProps> = ({
                                             </div>
                                             <p className="text-xs text-gray-400 mb-2">{vuln.description}</p>
                                             <div className="text-xs bg-nexus-800 p-2 rounded text-nexus-cyan font-mono border border-nexus-700/50">
-                                                FIX: {vuln.fixSuggestion}
+                                                FIX: {vuln.recommendation}
                                             </div>
                                         </div>
                                     ))}

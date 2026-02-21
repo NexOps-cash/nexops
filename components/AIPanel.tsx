@@ -10,6 +10,8 @@ interface ChatMessage {
     fileUpdates?: { name: string, content: string }[];
     isApplied?: boolean;
     auditReport?: AuditReport;
+    isProgress?: boolean;
+    stage?: string;
 }
 
 interface AIPanelProps {
@@ -19,9 +21,15 @@ interface AIPanelProps {
     onApply: (updates: { name: string, content: string }[], index: number) => void;
     onFixVulnerability?: (vuln: Vulnerability) => void;
     draftInput?: string;
+    useExternalGenerator?: boolean;
+    onToggleExternal?: (val: boolean) => void;
+    isWsConnected?: boolean;
 }
 
-export const AIPanel: React.FC<AIPanelProps> = ({ history, onSend, isBusy, onApply, onFixVulnerability, draftInput }) => {
+export const AIPanel: React.FC<AIPanelProps> = ({
+    history, onSend, isBusy, onApply, onFixVulnerability, draftInput,
+    useExternalGenerator = false, onToggleExternal, isWsConnected = false
+}) => {
     const [input, setInput] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -60,8 +68,24 @@ export const AIPanel: React.FC<AIPanelProps> = ({ history, onSend, isBusy, onApp
                         <ChevronDown size={10} />
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    {/* Additional toolbar items can go here */}
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${useExternalGenerator ? (isWsConnected ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-red-500') : 'bg-slate-600'}`}></span>
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">
+                            {useExternalGenerator ? (isWsConnected ? 'MCP: ACTIVE' : 'MCP: ERROR') : 'INTERNAL RAG'}
+                        </span>
+                    </div>
+
+                    <button
+                        onClick={() => onToggleExternal && onToggleExternal(!useExternalGenerator)}
+                        className={`
+                            relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-1 focus:ring-nexus-cyan focus:ring-offset-1 focus:ring-offset-black
+                            ${useExternalGenerator ? 'bg-nexus-cyan/40' : 'bg-slate-800'}
+                        `}
+                        title={useExternalGenerator ? "Switch to Internal AI" : "Switch to External Generator"}
+                    >
+                        <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${useExternalGenerator ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                    </button>
                 </div>
             </div>
 
@@ -89,7 +113,22 @@ export const AIPanel: React.FC<AIPanelProps> = ({ history, onSend, isBusy, onApp
 
                                     {/* Content */}
                                     <div className="whitespace-pre-wrap leading-relaxed text-gray-300">
-                                        {msg.text}
+                                        {msg.isProgress ? (
+                                            <div className="flex items-center gap-3 bg-[#0a0a0a] border border-nexus-cyan/20 p-2.5 rounded border-l-2 border-l-nexus-cyan animate-pulse">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-nexus-cyan animate-ping"></div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                                                        <Terminal size={10} />
+                                                        {msg.stage || 'Generator'}
+                                                    </span>
+                                                    <span className="text-yellow-500/90 font-mono text-[11px] mt-0.5">
+                                                        {msg.text.split('] ')[1] || msg.text}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            msg.text
+                                        )}
                                     </div>
 
                                     {/* Actions for Model Responses */}

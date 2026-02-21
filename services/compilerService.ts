@@ -31,9 +31,27 @@ export const compileCashScript = (code: string): CompilationResult => {
         }
 
         const artifactRaw = compileString(code) as any;
+        console.log("🛠️ compilerService RAW output:", artifactRaw);
+
+        // Check for compiler errors in the returned object
+        if (artifactRaw.errors && artifactRaw.errors.length > 0) {
+            return {
+                success: false,
+                errors: artifactRaw.errors.map((e: any) =>
+                    typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+                )
+            };
+        }
+
+        // If bytecode is missing, it's not a valid compilation result
+        if (!artifactRaw.bytecode) {
+            return {
+                success: false,
+                errors: ["Compilation failed: No bytecode generated"]
+            };
+        }
 
         // map raw artifact to our clean interface
-        // Return the full artifact to ensure compatibility with cashscript Contract class
         const artifact: ContractArtifact = artifactRaw;
 
         return {

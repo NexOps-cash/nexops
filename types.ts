@@ -8,14 +8,26 @@ export interface Vulnerability {
   line?: number;
   title: string;
   description: string;
-  fixSuggestion: string;
+  recommendation: string;
+  rule_id?: string;
+  can_fix?: boolean;
 }
 
 export interface AuditReport {
   score: number;
-  vulnerabilities: Vulnerability[];
+  vulnerabilities: Vulnerability[]; // Map from issues
+  risk_level?: 'SAFE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   summary: string;
   timestamp: number;
+  metadata?: {
+    compile_success: boolean;
+    dsl_passed: boolean;
+    structural_score: number;
+    contract_hash: string;
+  };
+  total_high?: number;
+  total_medium?: number;
+  total_low?: number;
 }
 
 export interface CodeVersion {
