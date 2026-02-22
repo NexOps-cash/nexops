@@ -36,7 +36,7 @@ export interface CodeVersion {
   fileName: string;
   code: string;
   description: string;
-  author: 'AI' | 'USER';
+  author: 'AI' | 'USER' | 'SYSTEM';
 }
 
 export interface ProjectFile {

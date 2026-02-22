@@ -31,7 +31,7 @@ export const CreateProject: React.FC<CreateProjectProps> = ({ onNavigate, onCrea
         const mainFile = files.find(f => f.name.endsWith('.cash')) || files[0];
 
         const newProject: Project = {
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             name: name || 'Untitled Project',
             chain: chain,
             files: files,
@@ -39,6 +39,7 @@ export const CreateProject: React.FC<CreateProjectProps> = ({ onNavigate, onCrea
             versions: [{
                 id: 'init',
                 timestamp: Date.now(),
+                fileName: mainFile?.name || 'contract.cash',
                 code: mainFile?.content || '',
                 description: 'Initial Commit',
                 author: 'AI'

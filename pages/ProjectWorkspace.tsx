@@ -591,10 +591,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         // Re-compile to get fresh bytecode
         const result = compileCashScript(mainContractFile.content);
         if (result.success && result.artifact) {
-            addLog('SYSTEM', `[Debug] Loaded ${result.artifact?.contractName} for simulation.`);
-            const unlockingHex = debuggerRef.current.buildUnlockingFromNumbers(debugArgs);
-            await debuggerRef.current.load(result.artifact.bytecode, unlockingHex);
-            setDebugState(debuggerRef.current.getState());
+            try {
+                addLog('SYSTEM', `[Debug] Loaded ${result.artifact?.contractName} for simulation.`);
+                const unlockingHex = debuggerRef.current.buildUnlockingFromNumbers(debugArgs);
+                await debuggerRef.current.load(result.artifact.bytecode, unlockingHex);
+                setDebugState(debuggerRef.current.getState());
+            } catch (err: any) {
+                addLog('SYSTEM', `[Debug] Error starting simulation: ${err.message}`);
+                setActiveTerminalChannel('SYSTEM');
+            }
         } else {
             addLog('SYSTEM', `[Debug] Compile failed. Cannot start simulation.`);
             setActiveTerminalChannel('COMPILER');
@@ -646,7 +651,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             </div>
                         )}
                         <div className="mt-2 text-[8px] font-mono text-slate-500 break-all">
-                            Unlocking Script: {debuggerRef.current.buildUnlockingFromNumbers(debugArgs) || 'Empty'}
+                            Unlocking Script: {(() => {
+                                try {
+                                    return debuggerRef.current.buildUnlockingFromNumbers(debugArgs) || 'Empty';
+                                } catch (e: any) {
+                                    return <span className="text-red-400">{e.message}</span>;
+                                }
+                            })()}
                         </div>
                     </div>
 
