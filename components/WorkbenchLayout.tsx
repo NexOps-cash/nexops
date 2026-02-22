@@ -53,10 +53,10 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
     const [isBottomOpen, setIsBottomOpen] = useState(true);
 
     return (
-        <div className="flex flex-col h-full w-full bg-nexus-900 text-slate-300 overflow-hidden font-sans">
+        <div className="flex flex-col h-full w-full bg-[#050507] text-slate-300 overflow-hidden font-sans">
             <div className="flex flex-1 min-h-0 overflow-hidden">
-                {/* Activity Bar (Leftmost Strip) */}
-                <div className="w-12 h-full max-h-screen flex-shrink-0 flex flex-col border-r border-slate-800 bg-nexus-900 z-50">
+                {/* Activity Bar (Leftmost Strip) - Darkest Layer */}
+                <div className="w-12 h-full max-h-screen flex-shrink-0 flex flex-col border-r border-white/5 bg-[#050507] z-50">
                     <div className="flex-1 flex flex-col pt-2 space-y-2 overflow-y-auto no-scrollbar">
                         <ActivityBarItem
                             icon={Files}
@@ -109,9 +109,9 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                 <div className="flex-1 min-w-0 h-full">
                     <PanelGroup direction="horizontal">
 
-                        {/* Sidebar Panel */}
-                        <Panel defaultSize={25} minSize={20} maxSize={50} className="bg-nexus-800 border-r border-slate-800 flex flex-col">
-                            <div className="h-9 min-h-[36px] px-4 flex items-center border-b border-slate-800 bg-nexus-800/50">
+                        {/* Sidebar Panel - Middle Layer */}
+                        <Panel defaultSize={25} minSize={20} maxSize={50} className="bg-[#0a0a0c] border-r border-white/5 flex flex-col">
+                            <div className="h-9 min-h-[36px] px-4 flex items-center border-b border-white/5 bg-black/20">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                     {activeView === 'EXPLORER' && 'Project Contracts'}
                                     {activeView === 'AUDITOR' && 'AI Security Agent'}
@@ -131,16 +131,16 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         {/* Editor & Bottom Panel Group */}
                         <Panel minSize={30}>
                             <PanelGroup direction="vertical">
-                                {/* Editor Area */}
-                                <Panel defaultSize={70} minSize={30} className="bg-nexus-900 flex flex-col">
+                                {/* Editor Area - Lightest Layer */}
+                                <Panel defaultSize={70} minSize={30} className="bg-[#0f172a] flex flex-col shadow-2xl relative z-10">
                                     {editorContent}
                                 </Panel>
 
-                                <PanelResizeHandle className="h-1 bg-slate-800 hover:bg-nexus-cyan/20 transition-colors" />
+                                <PanelResizeHandle className="h-px bg-white/5 hover:bg-nexus-cyan/20 transition-colors" />
 
                                 {/* Bottom Panel (Console) */}
                                 {isBottomOpen && (
-                                    <Panel defaultSize={30} minSize={10} className="bg-[#0a0a0c] border-t border-slate-800/50">
+                                    <Panel defaultSize={30} minSize={10} className="bg-[#050507] border-t border-white/5">
                                         <div className="h-full relative overflow-hidden">
                                             {bottomPanelContent}
                                         </div>

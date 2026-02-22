@@ -10,6 +10,7 @@ import { RegistryPage } from './pages/RegistryPage';
 import { WizardPage } from './pages/WizardPage';
 import { PublishModal } from './components/PublishModal';
 import { TopNav } from './components/TopNav';
+import { WorkspaceHeader } from './components/WorkspaceHeader';
 
 type ViewState = 'home' | 'creator' | 'workspace' | 'wizard' | 'registry';
 
@@ -268,17 +269,19 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-nexus-900">
-      <TopNav
-        activeView={currentView}
-        onNavigate={(view) => {
-          if (view === 'workspace') {
-            if (activeProjectId) setCurrentView('workspace');
-            else setCurrentView('creator');
-          } else {
-            setCurrentView(view);
-          }
-        }}
-      />
+      {currentView !== 'workspace' && (
+        <TopNav
+          activeView={currentView}
+          onNavigate={(view) => {
+            if (view === 'workspace') {
+              if (activeProjectId) setCurrentView('workspace');
+              else setCurrentView('creator');
+            } else {
+              setCurrentView(view);
+            }
+          }}
+        />
+      )}
 
       {currentView === 'workspace' && activeProject && (
         <TopMenuBar
@@ -313,6 +316,7 @@ const App: React.FC = () => {
             onUpdateProject={handleUpdateProject}
             walletConnected={walletConnected}
             onConnectWallet={() => setWalletConnected(!walletConnected)}
+            onNavigateHome={handleNavigateHome}
           />
         )}
 

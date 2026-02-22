@@ -41,9 +41,10 @@ interface ProjectWorkspaceProps {
     onUpdateProject: (p: Project) => void;
     walletConnected: boolean;
     onConnectWallet: () => void;
+    onNavigateHome: () => void;
 }
 
-export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet }) => {
+export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet, onNavigateHome }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
     const [wcSession, setWcSession] = useState<any>(null);
@@ -517,55 +518,69 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     // -- Render Helpers --
 
+
     const renderSidebarExplorer = () => (
-        <div className="flex-1 overflow-y-auto no-scrollbar py-2">
-            <div className="px-4 mb-2">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{project.name}</span>
+        <div className="flex-1 overflow-y-auto no-scrollbar py-0">
+            <div className="px-4 py-3 bg-black/20 border-b border-white/5 mb-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{project.name}</span>
             </div>
-            <div className="space-y-px">
-                {uniqueFiles.map(file => (
-                    <button
-                        key={file.name}
-                        onClick={() => setActiveFileName(file.name)}
-                        className={`w-full flex items-center space-x-3 px-4 py-2 text-xs transition-all relative truncate ${activeFileName === file.name
-                            ? 'text-white bg-nexus-cyan/10 font-bold'
-                            : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-                            }`}
-                    >
-                        {activeFileName === file.name && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-nexus-cyan"></div>}
-                        <div className="flex-shrink-0">{getFileIcon(file.name)}</div>
-                        <span className="truncate">{file.name}</span>
-                    </button>
-                ))}
+            <div className="space-y-0.5">
+                {uniqueFiles.map(file => {
+                    const isCashFile = file.name.endsWith('.cash');
+                    const isActive = activeFileName === file.name;
+                    return (
+                        <button
+                            key={file.name}
+                            onClick={() => setActiveFileName(file.name)}
+                            className={`w-full flex items-center space-x-3 px-4 py-2 text-xs transition-all relative truncate group ${isActive
+                                ? 'text-white bg-nexus-cyan/5 font-bold'
+                                : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
+                                }`}
+                        >
+                            {isActive && (
+                                <div className="absolute left-0 top-1 bottom-1 w-[3px] bg-nexus-cyan rounded-r shadow-[0_0_10px_rgba(6,182,212,0.4)]"></div>
+                            )}
+                            <div className={`flex-shrink-0 transition-colors ${isActive ? 'text-nexus-cyan' : 'group-hover:text-slate-400'}`}>
+                                {getFileIcon(file.name)}
+                            </div>
+                            <span className={`truncate ${isCashFile ? 'font-mono tracking-tight' : ''}`}>
+                                {file.name}
+                            </span>
+                        </button>
+                    );
+                })}
             </div>
-            <div className="px-4 mt-6 mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">History</span>
-                <span className="text-[9px] text-slate-600 font-mono italic truncate max-w-[80px]">{activeFileName}</span>
+
+            <div className="h-px bg-white/5 my-4" />
+
+            <div className="px-4 mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">History Archives</span>
             </div>
-            <div className="px-2 space-y-1">
+            <div className="px-2 space-y-0.5">
                 {(() => {
                     const fileVersions = project.versions.filter(v => v.fileName === activeFileName);
                     return fileVersions.slice(0, 10).map((v, idx) => {
                         const versionNumber = fileVersions.length - (fileVersions.indexOf(v));
+                        const isSelected = compareVersion?.id === v.id;
                         return (
                             <div
                                 key={v.id}
-                                className={`flex items-center text-[10px] px-2 py-1.5 rounded cursor-pointer transition-colors ${compareVersion?.id === v.id
+                                className={`flex items-center text-[9px] px-2 py-1.5 rounded cursor-pointer transition-colors ${isSelected
                                     ? 'bg-nexus-cyan/20 text-nexus-cyan'
-                                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                                    : 'text-slate-600 hover:text-slate-300 hover:bg-white/5'
                                     }`}
-                                onClick={() => setCompareVersion(compareVersion?.id === v.id ? null : v)}
+                                onClick={() => setCompareVersion(isSelected ? null : v)}
                             >
-                                <History size={10} className="mr-2 shrink-0" />
-                                <span className="truncate font-mono">Version {versionNumber}</span>
-                                <span className="ml-2 text-[8px] opacity-40 truncate">{new Date(v.timestamp).toLocaleTimeString()}</span>
-                                {v.author === 'AI' && <span className="ml-auto text-[8px] bg-purple-500/20 text-purple-400 px-1 rounded">AI</span>}
+                                <History size={10} className="mr-2 shrink-0 opacity-60" />
+                                <span className="truncate font-mono opacity-80">Snapshot v{versionNumber}</span>
+                                <span className="ml-2 text-[8px] opacity-30 truncate">{new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {v.author === 'AI' && <span className="ml-auto text-[7px] border border-purple-500/30 text-purple-400 px-1 rounded uppercase font-black">AI</span>}
                             </div>
                         );
                     });
                 })()}
                 {project.versions.filter(v => v.fileName === activeFileName).length === 0 && (
-                    <div className="px-4 py-2 text-[9px] text-slate-600 italic">No snapshots for this file.</div>
+                    <div className="px-4 py-2 text-[9px] text-slate-700 italic">No historical traces available.</div>
                 )}
             </div>
         </div>
@@ -770,22 +785,28 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     const renderEditorArea = () => {
         const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : null;
+        const auditScore = project.auditReport?.score || 0;
+        const auditStatus = auditScore > 0.8 ? 'CLEAN' : auditScore > 0.5 ? 'WARNINGS' : project.auditReport ? 'CRITICAL' : 'UNAUDITED';
+        const auditColor = auditStatus === 'CLEAN' ? 'text-green-500 border-green-500/30' : auditStatus === 'WARNINGS' ? 'text-yellow-500 border-yellow-500/30' : auditStatus === 'CRITICAL' ? 'text-red-500 border-red-500/30' : 'text-slate-600 border-white/5';
 
         return (
-            <div className="flex flex-col h-full overflow-hidden bg-[#0a0a0c]">
+            <div className="flex flex-col h-full overflow-hidden bg-[#0f172a]">
+
+
                 {/* Tabs */}
-                <div className="h-9 flex items-center bg-nexus-900 border-b border-white/5 px-0 shrink-0">
+                <div className="h-9 flex items-center bg-[#0d1425] border-b border-white/5 px-0 shrink-0">
                     {uniqueFiles.map(file => (
                         <button
                             key={file.name}
                             onClick={() => setActiveFileName(file.name)}
-                            className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-white/5 transition-all ${activeFileName === file.name
-                                ? 'bg-nexus-800 text-white border-t-2 border-t-nexus-cyan'
-                                : 'text-slate-500 hover:bg-slate-800/50'
+                            className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-white/5 transition-all relative ${activeFileName === file.name
+                                ? 'bg-[#0f172a] text-white'
+                                : 'text-slate-500 hover:bg-white/5'
                                 }`}
                         >
+                            {activeFileName === file.name && <div className="absolute top-0 left-0 right-0 h-0.5 bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)]" />}
                             <span className="shrink-0">{getFileIcon(file.name)}</span>
-                            <span className="truncate max-w-[120px]">{file.name}</span>
+                            <span className={`truncate max-w-[120px] ${file.name.endsWith('.cash') ? 'font-mono text-[10px]' : ''}`}>{file.name}</span>
                             {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning ml-1 shrink-0"></div>}
                         </button>
                     ))}
@@ -825,8 +846,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             />
                         )
                     ) : (
-                        <div className="flex items-center justify-center h-full text-slate-600 text-xs uppercase tracking-widest font-bold">
-                            No File Selected
+                        <div className="flex flex-col items-center justify-center h-full text-slate-700 font-mono space-y-2 select-none opacity-40">
+                            <ShieldCheck className="w-12 h-12 mb-4 opacity-20" />
+                            <div className="text-[10px] tracking-widest uppercase font-black">Secure Workspace Initialized</div>
+                            <div className="flex flex-col items-start space-y-1 text-[9px]">
+                                <span>// Network: BCH Mainnet</span>
+                                <span>// Deterministic Execution: Enabled</span>
+                                <span>// Audit Engine: TollGate v0.3</span>
+                            </div>
                         </div>
                     )}
                 </div>

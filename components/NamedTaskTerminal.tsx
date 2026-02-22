@@ -125,14 +125,20 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
         const logs = [...(channelLogs[activeChannel] || [])].reverse();
         // Write logs
         logs.forEach(log => {
-            if (log.toLowerCase().includes('error') || log.toLowerCase().includes('failed')) {
-                term.writeln(`\x1b[31m${log}\x1b[0m`);
-            } else if (log.toLowerCase().includes('success') || log.includes('Done') || log.includes('✅')) {
-                term.writeln(`\x1b[32m${log}\x1b[0m`);
-            } else if (log.startsWith('[System]') || log.startsWith('[Debug]')) {
-                term.writeln(`\x1b[34m${log}\x1b[0m`);
+            const lowLog = log.toLowerCase();
+            if (lowLog.includes('error') || lowLog.includes('critical') || lowLog.includes('failed')) {
+                term.writeln(`\x1b[31m[ERROR] ${log}\x1b[0m`);
+            } else if (lowLog.includes('warning')) {
+                term.writeln(`\x1b[33m[WARNING] ${log}\x1b[0m`);
+            } else if (lowLog.includes('success') || lowLog.includes('✅') || lowLog.includes('passed')) {
+                // Subtle green glow for audit success
+                term.writeln(`\x1b[1;32m[AUDIT] ${log}\x1b[0m`);
+            } else if (log.startsWith('[System]')) {
+                term.writeln(`\x1b[1;36m[SYSTEM] ${log.replace('[System]', '')}\x1b[0m`);
+            } else if (log.startsWith('[Debug]')) {
+                term.writeln(`\x1b[34m[DEBUG] ${log.replace('[Debug]', '')}\x1b[0m`);
             } else {
-                term.writeln(log);
+                term.writeln(`\x1b[2m[TRACE]\x1b[0m ${log}`);
             }
         });
 
@@ -165,9 +171,21 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
     ];
 
     return (
-        <div className="h-full flex flex-col bg-[#0a0a0c]">
+        <div className="h-full flex flex-col bg-[#050507]">
+            {/* Secure Label Bar */}
+            <div className="bg-[#0a0a0c] px-3 py-1 flex items-center justify-between border-b border-white/5">
+                <div className="flex items-center space-x-2">
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Secure Execution Console</span>
+                    <div className="w-4 h-px bg-slate-800" />
+                </div>
+                <div className="flex items-center space-x-1.5 opacity-40">
+                    <Activity size={10} className="text-nexus-cyan" />
+                    <span className="text-[8px] font-mono text-slate-500 uppercase">Telemetry Hook: Standard-v1</span>
+                </div>
+            </div>
+
             {/* Extended Multi-Channel Toolbar */}
-            <div className="flex items-center bg-[#0d0d0f] border-b border-white/5 h-9 px-2">
+            <div className="flex items-center bg-[#050507] border-b border-white/5 h-9 px-2">
                 <div className="flex items-center bg-black/40 rounded-md p-0.5 border border-white/5 mr-4">
                     {channelConfig.map(chn => (
                         <button
@@ -194,23 +212,23 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
 
                 <div className="h-4 w-px bg-white/5 mx-2" />
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                     <button
                         onClick={() => onRunTask('COMPILE')}
-                        className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-white/5 text-slate-400 hover:text-nexus-cyan rounded text-[10px] transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1 bg-[#1a1a1e] border border-white/10 hover:border-nexus-cyan/40 text-slate-400 hover:text-nexus-cyan rounded text-[10px] uppercase font-black tracking-tight transition-all active:scale-95 group shadow-lg"
                         title="Compile active contract"
                     >
-                        <Play size={10} />
+                        <Cpu size={10} className="group-hover:drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]" />
                         <span>Compile</span>
                     </button>
 
                     <button
                         onClick={() => onRunTask('AUDIT')}
-                        className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-white/5 text-slate-400 hover:text-nexus-cyan rounded text-[10px] transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1 bg-[#1a1a1e] border border-white/10 hover:border-green-500/40 text-slate-400 hover:text-green-500 rounded text-[10px] uppercase font-black tracking-tight transition-all active:scale-95 group shadow-lg"
                         title="Run Security Audit"
                     >
-                        <ShieldCheck size={10} />
-                        <span>Audit</span>
+                        <ShieldCheck size={10} className="group-hover:drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]" />
+                        <span>Audit Registry</span>
                     </button>
                 </div>
 
