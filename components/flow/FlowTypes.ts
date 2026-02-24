@@ -1,7 +1,10 @@
 export type FlowNodeType =
     | "contract"
     | "function"
-    | "result";
+    | "condition"
+    | "success"
+    | "failure"
+    | "validation";
 
 export interface FlowNode {
     id: string;
@@ -18,6 +21,7 @@ export interface FlowEdge {
 export interface ExecutionStep {
     id: string;
     order: number;
+    depth: number;
     type: FlowNodeType;
     label: string;
 }

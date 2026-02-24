@@ -659,10 +659,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const renderSidebarDebug = () => {
         const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : null;
 
+        let sourceCode = '';
+        if (artifactData && artifactData.contractName) {
+            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+            if (srcFile) sourceCode = srcFile.content;
+            else {
+                const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
+                if (fallback) sourceCode = fallback.content;
+            }
+        }
+
         return (
             <div className="flex flex-col h-full bg-[#0d1425]">
                 {artifactData ? (
-                    <ExecutionPreview artifact={artifactData} securityScore={project.auditReport?.score} />
+                    <ExecutionPreview artifact={artifactData} sourceCode={sourceCode} securityScore={project.auditReport?.score} />
                 ) : (
                     <div className="flex flex-col items-center justify-center p-8 text-center text-slate-500 h-full">
                         <Wand2 className="w-8 h-8 opacity-20 mb-3" />
@@ -743,6 +753,19 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const renderEditorArea = () => {
         const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
         const artifactData = artifactFile ? JSON.parse(artifactFile.content) : null;
+
+        let sourceCode = '';
+        if (artifactData && artifactData.contractName) {
+            // Find the source file that generated this artifact
+            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+            if (srcFile) sourceCode = srcFile.content;
+            else {
+                // Fallback to active file or first cash file
+                const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
+                if (fallback) sourceCode = fallback.content;
+            }
+        }
+
         const auditScore = project.auditReport?.score || 0;
         const auditStatus = auditScore > 0.8 ? 'CLEAN' : auditScore > 0.5 ? 'WARNINGS' : project.auditReport ? 'CRITICAL' : 'UNAUDITED';
         const auditColor = auditStatus === 'CLEAN' ? 'text-green-500 border-green-500/30' : auditStatus === 'WARNINGS' ? 'text-yellow-500 border-yellow-500/30' : auditStatus === 'CRITICAL' ? 'text-red-500 border-red-500/30' : 'text-slate-600 border-white/5';
@@ -868,7 +891,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         </>
                     ) : activeView === 'FLOW' ? (
                         artifactData ? (
-                            <FlowGraph artifact={artifactData} />
+                            <FlowGraph artifact={artifactData} sourceCode={sourceCode} />
                         ) : (
                             <div className="flex items-center justify-center p-8 text-center text-slate-500 h-full">
                                 <Wand2 className="w-8 h-8 opacity-20 mb-3" />

@@ -5,12 +5,71 @@ import { useContractFlow } from './useContractFlow';
 
 interface FlowGraphProps {
     artifact: any;
+    sourceCode: string;
 }
 
-export const FlowGraph: React.FC<FlowGraphProps> = ({ artifact }) => {
-    const { nodes: rawNodes, edges: rawEdges } = useContractFlow(artifact);
+export const FlowGraph: React.FC<FlowGraphProps> = ({ artifact, sourceCode }) => {
+    const { nodes: rawNodes, edges: rawEdges } = useContractFlow(artifact, sourceCode);
 
-    const initialNodes: Node[] = useMemo(() => rawNodes.map((n, index) => {
+    // Compute topological levels and simple horizontal positioning
+    const { nodeLevels, nodeX } = useMemo(() => {
+        const levels: Record<string, number> = {};
+        const xs: Record<string, number> = {};
+
+        const root = rawNodes.find(n => n.type === 'contract');
+
+        let changed = true;
+        if (root) {
+            levels[root.id] = 0;
+            xs[root.id] = 250;
+        }
+
+        while (changed) {
+            changed = false;
+            rawEdges.forEach(e => {
+                if (levels[e.source] !== undefined) {
+                    const targetLevel = levels[e.source] + 1;
+                    if (levels[e.target] === undefined || levels[e.target] < targetLevel) {
+                        levels[e.target] = targetLevel;
+                        changed = true;
+                    }
+                }
+            });
+        }
+
+        const childrenMap: Record<string, string[]> = {};
+        rawEdges.forEach(e => {
+            if (!childrenMap[e.source]) childrenMap[e.source] = [];
+            childrenMap[e.source].push(e.target);
+        });
+
+        // BFS for centered X positioning
+        if (root) {
+            const queue: string[] = [root.id];
+
+            while (queue.length > 0) {
+                const current = queue.shift()!;
+                const children = childrenMap[current] || [];
+
+                if (children.length > 0) {
+                    const spacing = 200;
+                    const parentX = xs[current] || 250;
+                    const startX = parentX - (spacing * (children.length - 1)) / 2;
+
+                    children.forEach((childId, index) => {
+                        if (xs[childId] === undefined) {
+                            xs[childId] = startX + index * spacing;
+                            queue.push(childId);
+                        }
+                    });
+                }
+            }
+        }
+
+        return { nodeLevels: levels, nodeX: xs };
+    }, [rawNodes, rawEdges]);
+
+    const initialNodes: Node[] = useMemo(() => rawNodes.map((n) => {
         let style: React.CSSProperties = {
             padding: '10px 20px',
             borderRadius: '6px',
@@ -25,20 +84,37 @@ export const FlowGraph: React.FC<FlowGraphProps> = ({ artifact }) => {
 
         if (n.type === 'contract') {
             style.backgroundColor = '#0f172a';
-            style.border = '2px solid #06b6d4'; // nexus-cyan
+            style.border = '2px solid #06b6d4'; // cyan
             style.fontSize = '14px';
-        } else if (n.type === 'result') {
+        } else if (n.type === 'function') {
             style.backgroundColor = '#1e293b';
+            style.border = '2px solid #475569'; // gray
+        } else if (n.type === 'condition') {
+            style.backgroundColor = '#1e3a8a';
+            style.border = '2px solid #3b82f6'; // blue
+            style.borderRadius = '20px'; // pill shape
+        } else if (n.type === 'success') {
+            style.backgroundColor = '#052e16';
             style.border = '2px solid #22c55e'; // green
+        } else if (n.type === 'failure') {
+            style.backgroundColor = '#450a0a';
+            style.border = '2px solid #ef4444'; // red
+        } else if (n.type === 'validation') {
+            style.backgroundColor = '#7c2d12';
+            style.border = '2px solid #f97316'; // orange
         }
+
+        const verticalSpacing = 160;
+        const y = (nodeLevels[n.id] || 0) * verticalSpacing;
+        const x = nodeX[n.id] || 250;
 
         return {
             id: n.id,
-            position: { x: 250, y: index * 140 },
+            position: { x, y },
             data: { label: n.label },
             style
         };
-    }), [rawNodes]);
+    }), [rawNodes, nodeLevels, nodeX]);
 
     const initialEdges: Edge[] = useMemo(() => rawEdges.map(e => ({
         id: e.id,

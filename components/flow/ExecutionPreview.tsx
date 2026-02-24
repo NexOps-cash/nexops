@@ -4,11 +4,12 @@ import { CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface ExecutionPreviewProps {
     artifact: any;
+    sourceCode: string;
     securityScore?: number;
 }
 
-export const ExecutionPreview: React.FC<ExecutionPreviewProps> = ({ artifact, securityScore = 1.0 }) => {
-    const { orderedSteps } = useContractFlow(artifact);
+export const ExecutionPreview: React.FC<ExecutionPreviewProps> = ({ artifact, sourceCode, securityScore = 1.0 }) => {
+    const { orderedSteps } = useContractFlow(artifact, sourceCode);
 
     const isSecure = securityScore >= 0.9;
 
@@ -35,24 +36,34 @@ export const ExecutionPreview: React.FC<ExecutionPreviewProps> = ({ artifact, se
             {/* List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs">
                 {orderedSteps.map((step) => {
-                    let indent = 'ml-0';
                     let bgColor = 'bg-slate-800/80';
                     let textColor = 'text-slate-300';
 
-                    if (step.type === 'function') {
-                        indent = 'ml-4';
-                        bgColor = 'bg-slate-800/50';
-                    } else if (step.type === 'result') {
-                        indent = 'ml-8';
-                        bgColor = 'bg-green-500/10 border border-green-500/30';
-                        textColor = 'text-green-400';
-                    } else if (step.type === 'contract') {
+                    if (step.type === 'contract') {
                         textColor = 'text-nexus-cyan font-bold';
                         bgColor = 'bg-nexus-cyan/10 border border-nexus-cyan/30';
+                    } else if (step.type === 'function') {
+                        bgColor = 'bg-slate-800/50 border border-slate-700/50';
+                    } else if (step.type === 'condition') {
+                        textColor = 'text-blue-400';
+                        bgColor = 'bg-blue-900/20 border border-blue-500/30';
+                    } else if (step.type === 'success') {
+                        bgColor = 'bg-green-900/20 border border-green-500/30';
+                        textColor = 'text-green-400 font-bold';
+                    } else if (step.type === 'failure') {
+                        bgColor = 'bg-red-900/20 border border-red-500/30';
+                        textColor = 'text-red-400 font-bold';
+                    } else if (step.type === 'validation') {
+                        bgColor = 'bg-orange-900/20 border border-orange-500/30';
+                        textColor = 'text-orange-400';
                     }
 
                     return (
-                        <div key={step.id} className={`flex items-start space-x-3 p-2 rounded ${indent} ${bgColor}`}>
+                        <div
+                            key={step.id}
+                            style={{ marginLeft: `${step.depth * 1.5}rem` }}
+                            className={`flex items-start space-x-3 p-2 rounded ${bgColor}`}
+                        >
                             <span className="opacity-40 select-none min-w-[20px] text-right">
                                 {step.order}
                             </span>
