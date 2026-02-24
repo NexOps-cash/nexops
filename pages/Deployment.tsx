@@ -19,10 +19,11 @@ interface DeploymentProps {
     onUpdateProject: (p: Project) => void;
     onNavigate?: (view: any) => void;
     onDeployed?: (address: string, artifact: ContractArtifact, args: string[]) => void;
+    onArtifactsGenerated?: (address: string, artifact: ContractArtifact, args: string[]) => void;
     compact?: boolean;
 }
 
-export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, onDeployed, compact = false }) => {
+export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, onDeployed, onArtifactsGenerated, compact = false }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0);
@@ -155,7 +156,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const handleConnectWC = async () => {
         setIsConnecting(true);
         try {
-            const chainId = 'bch:chipnet';
+            const chainId = 'bch:testnet';
             await walletConnectService.connect(chainId);
         } catch (e) {
             console.error(e);
@@ -256,7 +257,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
         try {
             if (constructorArgs.length === artifact.constructorInputs.length) {
-                const addr = deriveContractAddress(artifact, constructorArgs, Network.CHIPNET);
+                const addr = deriveContractAddress(artifact, constructorArgs, Network.TESTNET3);
                 setDerivedAddress(addr);
                 // setShowSuccessModal(true); // removed to avoid auto-popup on every keystroke, user clicks confirm in modal
             } else {
@@ -310,7 +311,12 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                         <Button
                             onClick={() => {
                                 setShowConstructorModal(false);
-                                if (derivedAddress) setShowSuccessModal(true);
+                                if (derivedAddress && artifact) {
+                                    if (onArtifactsGenerated) {
+                                        onArtifactsGenerated(derivedAddress, artifact, constructorArgs);
+                                    }
+                                    setShowSuccessModal(true);
+                                }
                             }}
                             disabled={!derivedAddress || hasCriticalValidationErrors()}
                         >
@@ -332,7 +338,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     </div>
                     <h4 className="text-xl font-bold text-white">Contract Optimized</h4>
                     <p className="text-gray-400 text-sm">
-                        Your contract has been compiled and is ready for funding on Chipnet.
+                        Your contract has been compiled and is ready for funding on Testnet.
                     </p>
 
                     <div className="bg-nexus-900 p-3 rounded border border-nexus-700 text-left">
@@ -373,7 +379,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                         <div>
                             <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Target Network</label>
                             <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
-                                Bitcoin Cash (Chipnet)
+                                Bitcoin Cash (Testnet)
                             </div>
                         </div>
                         <div>
@@ -523,7 +529,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                     // Initial State
                                     <>
                                         <Wallet className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                                        <p className="text-sm text-gray-300 mb-4">Connect Mobile Wallet (Chipnet)</p>
+                                        <p className="text-sm text-gray-300 mb-4">Connect Mobile Wallet (Testnet)</p>
                                         <Button
                                             onClick={handleConnectWC}
                                             className="w-full bg-nexus-blue hover:bg-nexus-blue/80"
@@ -573,7 +579,7 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                             </h4>
                                             <div className="flex items-center mt-1 space-x-2">
                                                 <Badge variant="neutral" className="text-[10px] py-0 px-1.5 h-4">
-                                                    Chipnet
+                                                    Testnet
                                                 </Badge>
                                                 <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
                                                     {walletAddress}

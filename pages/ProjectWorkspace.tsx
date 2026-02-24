@@ -679,7 +679,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     <div className="space-y-4">
                         <div className="bg-slate-800 p-2 rounded border border-slate-700">
                             <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
-                            <div className="text-nexus-cyan text-xs">Chipnet (Testnet)</div>
+                            <div className="text-nexus-cyan text-xs">Testnet</div>
                         </div>
                         <Button className="w-full text-xs" icon={<Play size={12} />} onClick={handleStartDebug}>
                             Run Simulation
@@ -735,6 +735,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     deployedAddress={deployedAddress}
                     constructorArgs={constructorArgs}
                     wcSession={walletConnectService.getSession()}
+                    network={project.chain === 'BCH Testnet' ? 'testnet' : 'mainnet'}
                 />
             )}
         </div>
@@ -747,11 +748,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
+            onArtifactsGenerated={(addr, artifact, args) => {
+                setDeployedAddress(addr);
+                setDeployedArtifact(artifact);
+                setConstructorArgs(args);
+                // We DON'T auto-navigate here, let them finish the success modal flow or fund
+            }}
             onDeployed={(addr, artifact, args) => {
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
                 setConstructorArgs(args);
-                setActiveView('INTERACT'); // Auto-navigate to Interact
+                setActiveView('INTERACT'); // Auto-navigate to Interact ONLY on confirmed funding
             }}
             onNavigate={(view) => setActiveView(view)}
         />

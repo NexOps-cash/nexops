@@ -114,6 +114,7 @@ export const Auditor: React.FC<AuditorProps> = ({
                     versions: [{
                         id: Date.now().toString(),
                         timestamp: Date.now(),
+                        fileName: 'AuditedContract.cash',
                         code: localCode,
                         description: "Initial Manual Audit",
                         author: 'USER'
