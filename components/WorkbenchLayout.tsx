@@ -80,12 +80,12 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                             isActive={activeView === 'AUDITOR'}
                             onClick={() => onViewChange('AUDITOR')}
                         />
-                        <ActivityBarItem
+                        {/* <ActivityBarItem
                             icon={Play}
                             label="Contract Flow"
                             isActive={activeView === 'DEBUG'}
                             onClick={() => onViewChange('DEBUG')}
-                        />
+                        /> */}
                         <ActivityBarItem
                             icon={Rocket}
                             label="Deploy Panel"

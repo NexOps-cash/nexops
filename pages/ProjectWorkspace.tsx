@@ -12,7 +12,7 @@ import {
     FileJson, MessageSquare, Send, User, Bot, Wand2, X,
     FileCode, Zap, Cpu, Loader2
 } from 'lucide-react';
-import { auditSmartContract, fixSmartContract, chatWithAssistant } from '../services/groqService';
+import { auditSmartContract, fixSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
@@ -27,6 +27,7 @@ import { ArtifactInspector } from '../components/ArtifactInspector';
 import { FlowBuilder, FlowPalette } from '../components/flow/FlowBuilder';
 import { FlowGraph } from '../components/flow/FlowGraph';
 import { ExecutionPreview } from '../components/flow/ExecutionPreview';
+import { extractFlow } from '../components/flow/FlowExtractor';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -541,75 +542,179 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         }
     };
 
+    const handleExplainContract = async () => {
+        const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : project.files.find(f => isArtifactFile(f)) ? JSON.parse(project.files.find(f => isArtifactFile(f))!.content) : null;
+        let sourceCode = '';
+        if (artifactData && artifactData.contractName) {
+            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+            if (srcFile) sourceCode = srcFile.content;
+            else {
+                const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
+                if (fallback) sourceCode = fallback.content;
+            }
+        } else if (activeFile?.name.endsWith('.cash')) {
+            sourceCode = activeFile.content;
+        }
+
+        if (!sourceCode) {
+            addLog('SYSTEM', 'Cannot explain: No contract source code found.');
+            return;
+        }
+
+        setActiveView('AUDITOR');
+
+        const progressMsg: ChatMessage = {
+            role: 'model',
+            text: '[Progress] Executing semantic analysis...',
+            isProgress: true,
+            stage: 'Analyzer'
+        };
+        setChatHistory(prev => [...prev, progressMsg]);
+        setIsChatting(true);
+
+        try {
+            const explanation = await explainSmartContract(sourceCode);
+            setChatHistory(prev => {
+                const newHistory = [...prev];
+                newHistory.pop(); // remove progress
+                newHistory.push({
+                    role: 'model',
+                    text: 'Analysis generated successfully.',
+                    explanationData: explanation
+                });
+                return newHistory;
+            });
+        } catch (e: any) {
+            setChatHistory(prev => {
+                const newHistory = [...prev];
+                newHistory.pop();
+                newHistory.push({
+                    role: 'model',
+                    text: `Error analyzing contract: ${e.message}`
+                });
+                return newHistory;
+            });
+            addLog('SYSTEM', `Explain Error: ${e.message}`);
+        } finally {
+            setIsChatting(false);
+        }
+    };
+
     // -- Render Helpers --
 
 
-    const renderSidebarExplorer = () => (
-        <div className="flex-1 overflow-y-auto no-scrollbar py-0">
-            <div className="px-4 py-3 bg-black/20 border-b border-white/5 mb-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{project.name}</span>
-            </div>
-            <div className="space-y-0.5">
-                {uniqueFiles.map(file => {
-                    const isCashFile = file.name.endsWith('.cash');
-                    const isActive = activeFileName === file.name;
-                    return (
-                        <button
-                            key={file.name}
-                            onClick={() => setActiveFileName(file.name)}
-                            className={`w-full flex items-center space-x-3 px-4 py-2 text-xs transition-all relative truncate group ${isActive
-                                ? 'text-white bg-nexus-cyan/5 font-bold'
-                                : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
-                                }`}
-                        >
-                            {isActive && (
-                                <div className="absolute left-0 top-1 bottom-1 w-[3px] bg-nexus-cyan rounded-r shadow-[0_0_10px_rgba(6,182,212,0.4)]"></div>
-                            )}
-                            <div className={`flex-shrink-0 transition-colors ${isActive ? 'text-nexus-cyan' : 'group-hover:text-slate-400'}`}>
-                                {getFileIcon(file.name)}
-                            </div>
-                            <span className={`truncate ${isCashFile ? 'font-mono tracking-tight' : ''}`}>
-                                {file.name}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
+    const renderSidebarExplorer = () => {
+        const contractFiles = uniqueFiles.filter(f => f.name.endsWith('.cash'));
+        const artifactFiles = uniqueFiles.filter(f => f.name.endsWith('.json'));
+        const docFiles = uniqueFiles.filter(f => !f.name.endsWith('.cash') && !f.name.endsWith('.json'));
 
-            <div className="h-px bg-white/5 my-4" />
+        const renderFileItem = (file: ProjectFile) => {
+            const isCashFile = file.name.endsWith('.cash');
+            const isActive = activeFileName === file.name;
+            return (
+                <button
+                    key={file.name}
+                    onClick={() => setActiveFileName(file.name)}
+                    className={`w-full flex items-center space-x-3 pl-8 pr-4 py-1.5 text-xs transition-all relative truncate group ${isActive
+                        ? 'text-white bg-nexus-cyan/5 font-bold'
+                        : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                >
+                    {isActive && (
+                        <div className="absolute left-0 top-1 bottom-1 w-[3px] bg-nexus-cyan rounded-r shadow-[0_0_10px_rgba(6,182,212,0.4)]"></div>
+                    )}
+                    <div className={`flex-shrink-0 transition-colors ${isActive ? 'text-nexus-cyan' : 'group-hover:text-slate-400'}`}>
+                        {getFileIcon(file.name)}
+                    </div>
+                    <span className={`truncate ${isCashFile ? 'font-mono tracking-tight' : ''}`}>
+                        {file.name}
+                    </span>
+                </button>
+            );
+        };
 
-            <div className="px-4 mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">History Archives</span>
-            </div>
-            <div className="px-2 space-y-0.5">
-                {(() => {
-                    const fileVersions = project.versions.filter(v => v.fileName === activeFileName);
-                    return fileVersions.slice(0, 10).map((v, idx) => {
-                        const versionNumber = fileVersions.length - (fileVersions.indexOf(v));
-                        const isSelected = compareVersion?.id === v.id;
-                        return (
-                            <div
-                                key={v.id}
-                                className={`flex items-center text-[9px] px-2 py-1.5 rounded cursor-pointer transition-colors ${isSelected
-                                    ? 'bg-nexus-cyan/20 text-nexus-cyan'
-                                    : 'text-slate-600 hover:text-slate-300 hover:bg-white/5'
-                                    }`}
-                                onClick={() => setCompareVersion(isSelected ? null : v)}
-                            >
-                                <History size={10} className="mr-2 shrink-0 opacity-60" />
-                                <span className="truncate font-mono opacity-80">Snapshot v{versionNumber}</span>
-                                <span className="ml-2 text-[8px] opacity-30 truncate">{new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                {v.author === 'AI' && <span className="ml-auto text-[7px] border border-purple-500/30 text-purple-400 px-1 rounded uppercase font-black">AI</span>}
+        return (
+            <div className="flex-1 overflow-y-auto no-scrollbar py-0">
+                <div className="px-4 py-3 bg-black/20 border-b border-white/5 mb-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{project.name}</span>
+                </div>
+
+                <div className="flex flex-col">
+                    {contractFiles.length > 0 && (
+                        <details open className="group/folder relative">
+                            <summary className="flex items-center space-x-2 px-4 py-2 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest cursor-pointer hover:bg-white/5 transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+                                <ChevronRight size={12} className="transition-transform group-open/folder:rotate-90 -ml-1 text-slate-600 group-hover/folder:text-slate-400" />
+                                <Folder size={12} className="opacity-80 text-blue-500" />
+                                <span>Contracts</span>
+                            </summary>
+                            <div className="space-y-[1px] pb-1">
+                                {contractFiles.map(renderFileItem)}
                             </div>
-                        );
-                    });
-                })()}
-                {project.versions.filter(v => v.fileName === activeFileName).length === 0 && (
-                    <div className="px-4 py-2 text-[9px] text-slate-700 italic">No historical traces available.</div>
-                )}
+                        </details>
+                    )}
+
+                    {artifactFiles.length > 0 && (
+                        <details open className="group/folder relative">
+                            <summary className="flex items-center space-x-2 px-4 py-2 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest cursor-pointer hover:bg-white/5 transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+                                <ChevronRight size={12} className="transition-transform group-open/folder:rotate-90 -ml-1 text-slate-600 group-hover/folder:text-slate-400" />
+                                <Folder size={12} className="opacity-80 text-yellow-500" />
+                                <span>Artifacts</span>
+                            </summary>
+                            <div className="space-y-[1px] pb-1">
+                                {artifactFiles.map(renderFileItem)}
+                            </div>
+                        </details>
+                    )}
+
+                    {docFiles.length > 0 && (
+                        <details open className="group/folder relative">
+                            <summary className="flex items-center space-x-2 px-4 py-2 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest cursor-pointer hover:bg-white/5 transition-colors select-none list-none [&::-webkit-details-marker]:hidden">
+                                <ChevronRight size={12} className="transition-transform group-open/folder:rotate-90 -ml-1 text-slate-600 group-hover/folder:text-slate-400" />
+                                <Folder size={12} className="opacity-80 text-purple-400" />
+                                <span>Docs</span>
+                            </summary>
+                            <div className="space-y-[1px] pb-1">
+                                {docFiles.map(renderFileItem)}
+                            </div>
+                        </details>
+                    )}
+                </div>
+
+                <div className="h-px bg-white/5 my-4" />
+
+                <div className="px-4 mb-3 flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">History Archives</span>
+                </div>
+                <div className="px-3 space-y-2">
+                    {(() => {
+                        const fileVersions = project.versions.filter(v => v.fileName === activeFileName);
+                        return fileVersions.slice(0, 10).map((v, idx) => {
+                            const versionNumber = fileVersions.length - (fileVersions.indexOf(v));
+                            const isSelected = compareVersion?.id === v.id;
+                            return (
+                                <div
+                                    key={v.id}
+                                    className={`flex items-center text-[11px] px-3 py-2.5 rounded-md cursor-pointer transition-all border ${isSelected
+                                        ? 'bg-nexus-cyan/10 border-nexus-cyan/30 text-nexus-cyan shadow-sm'
+                                        : 'bg-[#151a24] border-white/5 text-slate-300 hover:text-white hover:bg-[#1c2331] hover:border-white/10'
+                                        }`}
+                                    onClick={() => setCompareVersion(isSelected ? null : v)}
+                                >
+                                    <History size={12} className={`mr-2.5 shrink-0 ${isSelected ? 'text-nexus-cyan' : 'text-slate-500'}`} />
+                                    <span className="truncate font-mono font-semibold">Snapshot v{versionNumber}</span>
+                                    <span className="ml-[auto] text-[9px] text-slate-500 truncate mx-2">{new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    {v.author === 'AI' && <span className="text-[8px] bg-purple-500/10 border border-purple-500/30 text-purple-400 px-1.5 py-0.5 rounded uppercase font-black tracking-widest">AI</span>}
+                                </div>
+                            );
+                        });
+                    })()}
+                    {project.versions.filter(v => v.fileName === activeFileName).length === 0 && (
+                        <div className="px-4 py-2 text-[9px] text-slate-700 italic">No historical traces available.</div>
+                    )}
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderSidebarAuditor = () => (
         <AIPanel
@@ -737,18 +842,79 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         }
     };
 
-    const renderSidebarFlow = () => (
-        <div className="flex flex-col h-full overflow-hidden">
-            <div className="p-4 bg-black/20">
-                <Button variant="primary" className="w-full text-xs font-bold uppercase tracking-widest py-2.5 h-auto">
-                    <Play size={14} className="mr-2" /> Visualize Contract Structure
-                </Button>
+    const renderSidebarFlow = () => {
+        const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
+        const artifactData = artifactFile ? JSON.parse(artifactFile.content) : null;
+
+        let sourceCode = '';
+        if (artifactData && artifactData.contractName) {
+            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+            if (srcFile) sourceCode = srcFile.content;
+            else {
+                const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
+                if (fallback) sourceCode = fallback.content;
+            }
+        }
+
+        // We need to re-extract briefly just to get the stats
+        // For simplicity and speed in this component slice, we re-run the pure function extractor here.
+        const { orderedSteps, nodes } = extractFlow(artifactData, sourceCode);
+
+        const contractName = artifactData?.contractName || 'Unknown';
+        const functionsCount = nodes.filter((n: any) => n.type === 'function').length;
+        const conditionCount = nodes.filter((n: any) => n.type === 'condition').length;
+        const terminalCount = nodes.filter((n: any) => ['success', 'failure', 'validation'].includes(n.type)).length;
+        const maxDepth = Math.max(0, ...orderedSteps.map((s: any) => s.depth));
+
+        // Arbitrary complexity formula that scales nicely
+        const complexityRaw = (conditionCount * 1.5) + (terminalCount * 0.8) + (maxDepth * 1.2);
+        const complexityScore = (Math.min(10, Math.max(0.1, complexityRaw))).toFixed(1);
+
+        return (
+            <div className="flex flex-col h-full bg-[#0d1425] border-r border-white/5 text-slate-300">
+                <div className="p-4 border-b border-white/5 bg-[#0f172a]">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-[#06b6d4] mb-1 flex items-center">
+                        <Zap size={14} className="mr-2" />
+                        Contract Structure
+                    </h3>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                        {contractName}
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Functions</span>
+                            <span className="font-mono font-bold text-slate-200">{functionsCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Conditions</span>
+                            <span className="font-mono font-bold text-blue-400">{conditionCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Execution Paths</span>
+                            <span className="font-mono font-bold text-green-400">{terminalCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Max Depth</span>
+                            <span className="font-mono font-bold text-orange-400">{maxDepth}</span>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-white/5">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                            Complexity Index
+                        </div>
+                        <div className="flex items-end space-x-2">
+                            <span className="text-3xl font-bold text-nexus-cyan font-mono leading-none">{complexityScore}</span>
+                            <span className="text-xs text-slate-500 font-mono mb-1">/ 10</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div className="flex-1 p-4 text-xs text-slate-400">
-                <p>Clicking the button above will render the deterministic structure based on the artifact ABI.</p>
-            </div>
-        </div>
-    );
+        );
+    };
 
     const renderEditorArea = () => {
         const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
@@ -836,6 +1002,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             >
                                 {isDeploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} className="group-active:scale-90 transition-transform" />}
                                 <span>Deploy</span>
+                            </button>
+                            <button
+                                onClick={handleExplainContract}
+                                disabled={isChatting}
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md transition-all text-[11px] font-bold text-[#00E5FF] bg-[#1a2235] hover:bg-[#232c43] border border-[#00E5FF]/20 ml-2 shadow-sm ${isChatting ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                                <Wand2 size={14} className="active:scale-90 transition-transform" />
+                                <span>Explain contract</span>
                             </button>
                             <div className="flex-1" />
                             <button

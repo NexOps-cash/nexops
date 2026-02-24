@@ -416,3 +416,64 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
         throw error;
     }
 };
+
+export interface ContractExplanation {
+    summary: string;
+    roles: { name: string; description: string }[];
+    functions: { name: string; description: string; conditions: string[]; result: string }[];
+    risks: { level: 'LOW' | 'MEDIUM' | 'HIGH'; description: string }[];
+}
+
+export const explainSmartContract = async (code: string): Promise<ContractExplanation> => {
+    const systemInstruction = `You are a CashScript static analysis assistant.
+Analyze the compiled contract and return structured JSON.
+
+Return strictly in this format:
+{
+  "summary": "...",
+  "roles": [
+    { "name": "...", "description": "..." }
+  ],
+  "functions": [
+    {
+      "name": "...",
+      "description": "...",
+      "conditions": ["..."],
+      "result": "..."
+    }
+  ],
+  "risks": [
+    {
+      "level": "LOW",
+      "description": "..."
+    }
+  ]
+}
+
+Keep explanations concise.
+Do not produce paragraphs.
+Do not include filler text.
+
+CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE.`;
+
+    try {
+        const completion = await groq.chat.completions.create({
+            messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: `Explain this contract:\n\n${code}` }
+            ],
+            model: MODEL_AUDIT,
+            max_tokens: 1500,
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+        });
+
+        const text = completion.choices[0]?.message?.content;
+        if (!text) throw new Error("No response from AI");
+
+        return JSON.parse(text) as ContractExplanation;
+    } catch (error) {
+        console.error("Groq Explain Error:", error);
+        throw error;
+    }
+};

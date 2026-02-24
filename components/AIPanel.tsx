@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Loader2, Play, Copy, Terminal, ChevronDown, Plus } from 'lucide-react';
 import { Button } from './UI';
 import { AuditReportView } from './AuditReportView';
+import { ExplainPanelView } from './ExplainPanelView';
+import { ContractExplanation } from '../services/groqService';
 import { AuditReport, Vulnerability } from '../types';
 
 interface ChatMessage {
@@ -12,6 +14,7 @@ interface ChatMessage {
     auditReport?: AuditReport;
     isProgress?: boolean;
     stage?: string;
+    explanationData?: ContractExplanation;
 }
 
 interface AIPanelProps {
@@ -134,6 +137,9 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                                     {/* Actions for Model Responses */}
                                     {msg.role === 'model' && (
                                         <div className="mt-3 flex flex-col gap-2">
+                                            {msg.explanationData && (
+                                                <ExplainPanelView data={msg.explanationData} />
+                                            )}
                                             {msg.auditReport && (
                                                 <AuditReportView
                                                     report={msg.auditReport}
