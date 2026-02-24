@@ -82,7 +82,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         />
                         <ActivityBarItem
                             icon={Play}
-                            label="Execution Trace"
+                            label="Contract Flow"
                             isActive={activeView === 'DEBUG'}
                             onClick={() => onViewChange('DEBUG')}
                         />
@@ -125,7 +125,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                     {activeView === 'EXPLORER' && 'Project Contracts'}
                                     {activeView === 'AUDITOR' && 'AI Security Agent'}
-                                    {activeView === 'DEBUG' && 'Execution Trace'}
+                                    {activeView === 'DEBUG' && 'Contract Flow'}
                                     {activeView === 'DEPLOY' && 'Deploy Contract'}
                                     {activeView === 'INTERACT' && 'Transaction Builder'}
                                     {activeView === 'FLOW' && 'Flow Palette'}

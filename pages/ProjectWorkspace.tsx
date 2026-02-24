@@ -25,6 +25,8 @@ import { AIPanel } from '../components/AIPanel';
 import { AuditReport, Vulnerability } from '../types';
 import { ArtifactInspector } from '../components/ArtifactInspector';
 import { FlowBuilder, FlowPalette } from '../components/flow/FlowBuilder';
+import { FlowGraph } from '../components/flow/FlowGraph';
+import { ExecutionPreview } from '../components/flow/ExecutionPreview';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -654,95 +656,23 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setDebugState(debuggerRef.current.getState());
     };
 
-    const renderSidebarDebug = () => (
-        <div className="flex flex-col h-full">
-            {!debugState ? (
-                <div className="p-4">
-                    <div className="text-xs text-slate-500 mb-4">Execution Config</div>
+    const renderSidebarDebug = () => {
+        const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : null;
 
-                    {/* NEW ARGS PANEL */}
-                    <div className="mb-4 bg-slate-800 p-2 rounded border border-slate-700">
-                        <div className="text-[10px] font-bold text-slate-400 mb-2 flex justify-between items-center">
-                            <span>FUNCTION ARGUMENTS</span>
-                            <div className="space-x-1">
-                                <button onClick={() => setDebugArgs([...debugArgs, 0])} className="px-1.5 py-0.5 bg-nexus-cyan/20 text-nexus-cyan rounded hover:bg-nexus-cyan/40">+</button>
-                                <button onClick={() => setDebugArgs(debugArgs.slice(0, -1))} disabled={debugArgs.length === 0} className="px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded hover:bg-red-500/40 disabled:opacity-50">-</button>
-                            </div>
-                        </div>
-                        {debugArgs.length === 0 ? (
-                            <div className="text-[10px] text-slate-500 italic">No arguments</div>
-                        ) : (
-                            <div className="flex flex-wrap gap-2">
-                                {debugArgs.map((arg, idx) => (
-                                    <input
-                                        key={idx}
-                                        type="number"
-                                        value={arg}
-                                        onChange={(e) => {
-                                            const newArgs = [...debugArgs];
-                                            newArgs[idx] = parseInt(e.target.value) || 0;
-                                            setDebugArgs(newArgs);
-                                        }}
-                                        className="w-12 bg-black/50 border border-slate-600 rounded px-1 text-xs text-white text-center focus:border-nexus-cyan outline-none"
-                                    />
-                                ))}
-                            </div>
-                        )}
-                        <div className="mt-2 text-[8px] font-mono text-slate-500 break-all">
-                            Unlocking Script: {(() => {
-                                try {
-                                    return debuggerRef.current.buildUnlockingFromNumbers(debugArgs) || 'Empty';
-                                } catch (e: any) {
-                                    return <span className="text-red-400">{e.message}</span>;
-                                }
-                            })()}
-                        </div>
+        return (
+            <div className="flex flex-col h-full bg-[#0d1425]">
+                {artifactData ? (
+                    <ExecutionPreview artifact={artifactData} securityScore={project.auditReport?.score} />
+                ) : (
+                    <div className="flex flex-col items-center justify-center p-8 text-center text-slate-500 h-full">
+                        <Wand2 className="w-8 h-8 opacity-20 mb-3" />
+                        <span className="text-xs uppercase tracking-widest font-black">No Compilation Artifact</span>
+                        <p className="text-[10px] mt-2 opacity-60">Compile a contract to view its deterministic structure.</p>
                     </div>
-
-                    <div className="space-y-4">
-                        <div className="bg-slate-800 p-2 rounded border border-slate-700">
-                            <div className="text-[10px] font-bold text-slate-400 mb-1">NETWORK</div>
-                            <div className="text-nexus-cyan text-xs">Testnet</div>
-                        </div>
-                        <Button className="w-full text-xs" icon={<Play size={12} />} onClick={handleStartDebug}>
-                            Run Simulation
-                        </Button>
-                    </div>
-                </div>
-            ) : (
-                <div className="flex flex-col h-full bg-[#0f172a]">
-                    {/* Controls */}
-                    <div className="p-2 border-b border-slate-700 bg-slate-800/50 flex items-center justify-between">
-                        <div className="flex items-center space-x-1">
-                            <button onClick={handleDebugStep} disabled={debugState.isHalting} className="p-1.5 hover:bg-slate-700 rounded text-nexus-cyan disabled:opacity-50 disabled:cursor-not-allowed transition-colors" title="Step">
-                                <Play size={14} className="fill-current" />
-                            </button>
-                            <button onClick={handleDebugReset} className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors" title="Reset">
-                                <RotateCcw size={14} />
-                            </button>
-                        </div>
-                        <div className="text-[10px] mono text-slate-500 font-medium">
-                            PC: {debugState.programCounter.toString(16).toUpperCase().padStart(2, '0')} | <span className="text-nexus-cyan">{debugState.nextOpcode}</span>
-                        </div>
-                    </div>
-
-                    {/* Visualizer */}
-                    <div className="flex-1 overflow-hidden relative">
-                        <DebugStackVisualizer stack={debugState.stack} altStack={debugState.altStack} />
-                    </div>
-
-                    {/* Opcode History (Logs style) */}
-                    <div className="h-1/3 border-t border-slate-700 bg-black/40 p-2 overflow-y-auto font-mono text-[10px] text-slate-400 custom-scrollbar">
-                        <div className="text-slate-500 font-bold mb-1 text-[9px] uppercase tracking-wider">Opcode History</div>
-                        {debugState.opcodeHistory.slice().reverse().map((op, i) => (
-                            <div key={i} className="opacity-75 hover:opacity-100">{op}</div>
-                        ))}
-                        {debugState.isHalting && <div className="text-nexus-warning mt-2 font-bold">-- END OF EXECUTION --</div>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+                )}
+            </div>
+        );
+    };
 
     const renderSidebarInteract = () => (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
@@ -799,22 +729,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     const renderSidebarFlow = () => (
         <div className="flex flex-col h-full overflow-hidden">
-            <FlowPalette onAddNode={(type) => {
-                // This will trigger the addNode inside FlowBuilder via a message or internal mechanism
-                // For now, we'll use a custom event as a simple way to bridge independent components
-                const event = new CustomEvent('nexops:flow:add-node', { detail: { type } });
-                window.dispatchEvent(event);
-            }} />
-            <div className="p-4 border-t border-white/5 bg-black/20">
+            <div className="p-4 bg-black/20">
                 <Button variant="primary" className="w-full text-xs font-bold uppercase tracking-widest py-2.5 h-auto">
-                    <Play size={14} className="mr-2" /> Execute Flow
+                    <Play size={14} className="mr-2" /> Visualize Contract Structure
                 </Button>
+            </div>
+            <div className="flex-1 p-4 text-xs text-slate-400">
+                <p>Clicking the button above will render the deterministic structure based on the artifact ABI.</p>
             </div>
         </div>
     );
 
     const renderEditorArea = () => {
-        const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : null;
+        const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
+        const artifactData = artifactFile ? JSON.parse(artifactFile.content) : null;
         const auditScore = project.auditReport?.score || 0;
         const auditStatus = auditScore > 0.8 ? 'CLEAN' : auditScore > 0.5 ? 'WARNINGS' : project.auditReport ? 'CRITICAL' : 'UNAUDITED';
         const auditColor = auditStatus === 'CLEAN' ? 'text-green-500 border-green-500/30' : auditStatus === 'WARNINGS' ? 'text-yellow-500 border-yellow-500/30' : auditStatus === 'CRITICAL' ? 'text-red-500 border-red-500/30' : 'text-slate-600 border-white/5';
@@ -939,13 +867,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             />
                         </>
                     ) : activeView === 'FLOW' ? (
-                        <FlowBuilder />
-                    ) : activeFile ? (
                         artifactData ? (
+                            <FlowGraph artifact={artifactData} />
+                        ) : (
+                            <div className="flex items-center justify-center p-8 text-center text-slate-500 h-full">
+                                <Wand2 className="w-8 h-8 opacity-20 mb-3" />
+                                <span className="text-xs uppercase tracking-widest font-black">No Compilation Artifact</span>
+                            </div>
+                        )
+                    ) : activeFile ? (
+                        (activeFile && isArtifactFile(activeFile)) ? (
                             <ArtifactInspector
-                                artifact={artifactData}
+                                artifact={JSON.parse(activeFile.content)}
                                 onDeploy={() => {
-                                    setDeployedArtifact(artifactData);
+                                    setDeployedArtifact(JSON.parse(activeFile.content));
                                     setActiveView('DEPLOY');
                                 }}
                             />
