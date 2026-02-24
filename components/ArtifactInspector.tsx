@@ -146,7 +146,7 @@ export const ArtifactInspector: React.FC<ArtifactInspectorProps> = ({ artifact, 
                                 <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Target Network</h3>
                                 <div className="bg-white/5 rounded-lg p-4 border border-white/5 flex items-center justify-between">
                                     <span className="text-xs text-slate-400">Default</span>
-                                    <span className="text-xs font-bold text-nexus-cyan">CHIPNET</span>
+                                    <span className="text-xs font-bold text-nexus-cyan">TESTNET</span>
                                 </div>
                             </section>
                         </div>

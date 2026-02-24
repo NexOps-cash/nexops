@@ -110,7 +110,7 @@ export const ContractSafetyPanel: React.FC<ContractSafetyPanelProps> = ({
                     <div>
                         <div className="text-[10px] text-gray-400 mb-1">Network</div>
                         <div className="inline-block px-2 py-0.5 bg-nexus-cyan/20 border border-nexus-cyan/30 rounded text-nexus-cyan text-[10px] font-bold">
-                            CHIPNET
+                            TESTNET
                         </div>
                     </div>
                 </div>

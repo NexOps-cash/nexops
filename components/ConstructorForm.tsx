@@ -62,6 +62,12 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, o
         onChange(orderedArgs, fieldValidations);
     };
 
+    // Use effect to propagate changes when fields or validations update from user input
+    React.useEffect(() => {
+        const orderedArgs = inputs.map(inp => fieldValues[inp.name] || '');
+        onChange(orderedArgs, fieldValidations);
+    }, [fieldValues, fieldValidations]); // removed onChange and inputs from dependency array to prevent infinite loops if they aren't memoized
+
     const validateField = (name: string, val: string, type: string) => {
         if (!val) {
             setFieldValidations(prev => ({ ...prev, [name]: { isValid: true, severity: 'info', message: '' } }));
@@ -73,8 +79,10 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, o
     };
 
     const onInputChange = (name: string, val: string, type: string) => {
+        const newValidation = val ? validateConstructorArg(val, type, name) : { isValid: true, severity: 'info', message: '' };
+
         setFieldValues(prev => ({ ...prev, [name]: val }));
-        validateField(name, val, type);
+        setFieldValidations(prev => ({ ...prev, [name]: newValidation as ValidationResult }));
     };
 
     if (inputs.length === 0) return null;
@@ -145,12 +153,6 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, o
                         </div>
                     );
                 })}
-                <button
-                    onClick={handleApply}
-                    className="w-full py-2 bg-nexus-cyan/20 border border-nexus-cyan text-nexus-cyan text-xs font-bold uppercase tracking-wider rounded hover:bg-nexus-cyan/30 transition-colors"
-                >
-                    Apply Parameters ↵
-                </button>
             </div>
         </div>
     );
