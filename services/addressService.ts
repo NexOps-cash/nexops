@@ -4,7 +4,7 @@ import { ContractArtifact } from './compilerService';
 export function deriveContractAddress(
     artifact: ContractArtifact,
     args: string[],
-    network: Network = Network.CHIPNET
+    network: Network = Network.TESTNET3
 ): string {
     console.log('🔍 [addressService] DERIVATION START');
     console.log('🔍 [addressService] Artifact:', {

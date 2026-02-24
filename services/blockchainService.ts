@@ -1,5 +1,5 @@
 /**
- * Blockchain Service - UTXO Monitoring for BCH Chipnet
+ * Blockchain Service - UTXO Monitoring for BCH Testnet
  * Uses Electrum Cash Network (Reliable UTXO detection)
  */
 import { ElectrumClient } from '@electrum-cash/network';
@@ -21,7 +21,7 @@ export interface FundingStatus {
     error?: string;
 }
 
-const CHIPNET_EXPLORER = 'https://chipnet.chaingraph.cash';
+const TESTNET_EXPLORER = 'https://testnet.chaingraph.cash';
 
 // --- Pure Utilities ---
 
@@ -65,11 +65,11 @@ class ElectrumManager {
         // 3. Start new connection
         this.connectionPromise = (async () => {
             try {
-                console.log('[ElectrumManager] Initializing connection to Chipnet...');
+                console.log('[ElectrumManager] Initializing connection to Testnet...');
 
                 // USER REQUIREMENT: Pass hostname ONLY. No protocol, no port.
                 // The library interprets this and manages the transport.
-                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'chipnet.imaginary.cash');
+                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'testnet.imaginary.cash');
 
                 await client.connect();
                 console.log('[ElectrumManager] Connected successfully.');
@@ -100,7 +100,7 @@ class ElectrumManager {
 /**
  * Fetch UTXOs for a specific address using the shared connection.
  */
-async function fetchUTXOs(address: string): Promise<UTXO[]> {
+export async function fetchUTXOs(address: string): Promise<UTXO[]> {
     try {
         const client = await ElectrumManager.getClient();
         const scriptHash = addressToScriptHash(address);
@@ -138,7 +138,7 @@ class FundingWatcher {
 
     async start() {
         const startTime = Date.now();
-        const pollInterval = 3000;
+        const pollInterval = 1500;
 
         const poll = async () => {
             if (!this.active) return;
@@ -157,20 +157,30 @@ class FundingWatcher {
             try {
                 // Fetch using singleton
                 const utxos = await fetchUTXOs(this.address);
-                const totalValue = utxos.reduce((sum, u) => sum + u.value, 0);
 
-                console.log(`[Watcher] ${this.address.slice(0, 8)}... | ${utxos.length} UTXOs | ${totalValue}/${this.requiredAmount}`);
+                const confirmedUtxos = utxos.filter(u => u.height > 0);
+                const unconfirmedUtxos = utxos.filter(u => u.height === 0);
+
+                const confirmedValue = confirmedUtxos.reduce((sum, u) => sum + u.value, 0);
+                const unconfirmedValue = unconfirmedUtxos.reduce((sum, u) => sum + u.value, 0);
+                const totalValue = confirmedValue + unconfirmedValue;
+
+                console.log(`[Watcher] ${this.address.slice(0, 8)}... | ${utxos.length} UTXOs | ${totalValue}/${this.requiredAmount} (C:${confirmedValue} U:${unconfirmedValue})`);
 
                 // Check status
-                if (utxos.length > 0 && totalValue >= this.requiredAmount) {
-                    console.log('[Watcher] Funding Confirmed! UTXOs found:', utxos);
+                if (totalValue >= this.requiredAmount) {
+                    console.log('[Watcher] Funding Detected! UTXOs found:', utxos);
                     this.emit({
-                        status: 'confirmed',
+                        status: confirmedValue >= this.requiredAmount ? 'confirmed' : 'monitoring',
                         utxos,
                         totalValue,
-                        txid: utxos[0].txid
+                        txid: utxos[0]?.txid
                     });
-                    return; // Stop polling
+
+                    if (confirmedValue >= this.requiredAmount) {
+                        return; // Stop polling only if fully confirmed
+                    }
+                    return; // Stop polling since we have enough total funds (Demo UX accepts unconfirmed)
                 } else {
                     this.emit({
                         status: 'monitoring',
@@ -237,9 +247,43 @@ export async function pollForFunding(
 }
 
 /**
- * Wrapper for the Explorer Link
+ * Subscribe to address changes using Electrum scripthash.subscribe.
+ * Calls the callback whenever there is a change.
  */
+export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO[]) => void): Promise<() => void> {
+    const client = await ElectrumManager.getClient();
+    const scriptHash = addressToScriptHash(address);
 
+    const handleUpdate = async (update: any) => {
+        // Electrum library passes { scripthash, status } or similar depending on version
+        // We fetch fresh UTXOs on any status change
+        console.log(`[Subscription] Change detected for ${address.slice(0, 8)}...`);
+        const utxos = await fetchUTXOs(address);
+        onUpdate(utxos);
+    };
+
+    try {
+        // 1. Initial Fetch
+        const initialUtxos = await fetchUTXOs(address);
+        onUpdate(initialUtxos);
+
+        // 2. Subscribe
+        await client.subscribe('blockchain.scripthash.subscribe', scriptHash);
+
+        // 3. Listen for changes
+        // The @electrum-cash/network library emits update events
+        client.on('blockchain.scripthash.subscribe', handleUpdate);
+
+        // Return unsubscribe function
+        return () => {
+            console.log(`[Subscription] Unsubscribing from ${address.slice(0, 8)}...`);
+            client.off('blockchain.scripthash.subscribe', handleUpdate);
+        };
+    } catch (e) {
+        console.error('[Subscription] Failure:', e);
+        return () => { };
+    }
+}
 
 /**
  * Wrapper for the Explorer Link
@@ -247,7 +291,7 @@ export async function pollForFunding(
  */
 export function getExplorerLink(value: string): string {
     if (value.startsWith('bchtest:') || value.startsWith('bitcoincash:')) {
-        return `${CHIPNET_EXPLORER}/address/${value}`;
+        return `${TESTNET_EXPLORER}/address/${value}`;
     }
-    return `${CHIPNET_EXPLORER}/tx/${value}`;
+    return `${TESTNET_EXPLORER}/tx/${value}`;
 }
