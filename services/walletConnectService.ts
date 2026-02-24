@@ -18,8 +18,8 @@ const PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 const CHAIN_NAMESPACES = {
     bch: {
-        methods: ['bch_signTransaction', 'bch_signMessage'],
-        events: ['chainChanged', 'accountsChanged']
+        methods: ['bch_signTransaction', 'bch_signMessage', 'bch_getAddresses'],
+        events: ['addressesChanged', 'chainChanged', 'accountsChanged']
     }
 };
 
@@ -118,12 +118,21 @@ class WalletConnectService extends EventEmitter {
 
                 // Validate session is still active
                 try {
-                    // Ping to check if peer is reachable
-                    await this.client.ping({ topic: lastSession.topic });
+                    // Ping to check if peer is reachable - wrap in a timeout to avoid long waits
+                    const pingPromise = this.client.ping({ topic: lastSession.topic });
+
+                    // Create a timeout promise
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Ping timeout')), 5000)
+                    );
+
+                    await Promise.race([pingPromise, timeoutPromise]);
+
                     this.updateConnectionStatus(ConnectionStatus.CONNECTED);
                     console.log('Session rehydrated and validated:', lastSession.topic);
                 } catch (e) {
-                    console.warn('Restored session is expired or unreachable:', e);
+                    console.warn('[WalletConnect] Restored session is unreachable or stale:', e);
+                    // If ping fails, we mark as expired. The user will need to reconnect.
                     this.updateConnectionStatus(ConnectionStatus.EXPIRED);
                 }
             } else {
@@ -143,18 +152,30 @@ class WalletConnectService extends EventEmitter {
         if (!this.client) await this.init();
         if (!this.client) throw new Error('WalletConnect Client not initialized');
 
-        // unique chain required 
+        // WalletConnect chains mapped to namespaces. 
+        // Wallets commonly support 'bch:mainnet' or 'bch:testnet'.
+        const normalizedChainId = validChainId;
+
         const requiredNamespaces = {
+            bch: {
+                methods: ['bch_signTransaction'], // Minimum required
+                events: ['addressesChanged'],
+                chains: [normalizedChainId]
+            }
+        };
+
+        const optionalNamespaces = {
             bch: {
                 methods: CHAIN_NAMESPACES.bch.methods,
                 events: CHAIN_NAMESPACES.bch.events,
-                chains: [validChainId]
+                chains: [normalizedChainId]
             }
         };
 
         try {
             const { uri, approval } = await this.client.connect({
-                requiredNamespaces: requiredNamespaces
+                requiredNamespaces: requiredNamespaces,
+                optionalNamespaces: optionalNamespaces
             });
 
             if (uri) {
@@ -192,7 +213,7 @@ class WalletConnectService extends EventEmitter {
         const method = 'bch_signTransaction';
 
         // Fix: Derive chainId from the specific session namespace approval
-        // Wallets often return 'bch:testnet' even if we asked for 'bch:chipnet' (or vice versa)
+        // We MUST use the chainId that is present in the session namespaces.
         // We MUST use the chainId that is present in the session namespaces.
         console.log("DEBUG: WC Session Namespaces:", JSON.stringify(this.session.namespaces, null, 2));
 
@@ -229,7 +250,7 @@ class WalletConnectService extends EventEmitter {
             for (const [nsKey, ns] of allNamespaces) {
                 const bchAccount = ns.accounts?.find(a => a.includes('bch:'));
                 if (bchAccount) {
-                    // Extract chain from account string (format: "bch:chipnet:address")
+                    // Extract chain from account string (format: "bch:testnet:address")
                     const parts = bchAccount.split(':');
                     if (parts.length >= 2) {
                         approvedChainId = `${parts[0]}:${parts[1]}`;
@@ -245,17 +266,16 @@ class WalletConnectService extends EventEmitter {
             throw new Error('No approved BCH chain found in session namespaces.');
         }
 
-        console.log(`DEBUG: Requesting signature on approved chain: ${approvedChainId} (Requested was: ${requestedChainId})`);
+        console.log(`DEBUG: Requesting signature on approved chain: ${approvedChainId} (Requested was: ${requestedChainId}, ignored)`);
 
         const topic = this.session.topic;
 
-        // Even though we might have asked for 'chipnet', we must use the chain string the wallet understands/approved.
-        // The payload usually still needs the functional chain details, but the WC request wrapper needs strict matching.
+        // We MUST use the chain string the wallet understands/approved `approvedChainId`.
         const payload = {
             txHex,
-            // We pass the *approved* chainId to the wallet logic so it matches the request wrapper context
+            // STRICT REQUIREMENT: Only pass the approved chainId to the wallet logic
             chainId: approvedChainId,
-            description: "Deploy CashScript contract via NexOps"
+            description: "Interact with NexOps Smart Contract"
         };
 
         try {
@@ -270,11 +290,23 @@ class WalletConnectService extends EventEmitter {
                     method,
                     params: [payload]
                 }
-            });
+            }) as any;
 
-            // Result depends on wallet, usually { signedTransaction: hex } or just hex string
-            // Paytaca usually returns the full transaction hex
-            return result as string;
+            console.log("DEBUG: WC Signing Result Type:", typeof result);
+            console.log("DEBUG: WC Signing Result Value:", JSON.stringify(result));
+
+            // Result depends on wallet, usually { signedTransaction: hex } (Paytaca) or just hex string
+            // We need to return the raw hex string for broadcasting
+            if (typeof result === 'string') {
+                return result;
+            } else if (result && typeof result === 'object') {
+                const hex = result.signedTransaction || result.transaction || result.hex || result.result;
+                if (hex && typeof hex === 'string') {
+                    return hex;
+                }
+            }
+
+            throw new Error('Unable to extract signed transaction hex from wallet response');
         } catch (e) {
             console.error('Signing failed', e);
             throw e;
@@ -302,7 +334,21 @@ class WalletConnectService extends EventEmitter {
     }
 
     public getAccount() {
-        return this.session?.namespaces['bch']?.accounts[0] || null;
+        if (!this.session) return null;
+
+        // Search 'bch' namespace first
+        const bchNamespace = this.session.namespaces['bch'];
+        if (bchNamespace?.accounts?.[0]) {
+            return bchNamespace.accounts[0];
+        }
+
+        // Search all namespaces for any account starting with 'bch:'
+        for (const ns of Object.values(this.session.namespaces)) {
+            const bchAcc = ns.accounts?.find(acc => acc.startsWith('bch:'));
+            if (bchAcc) return bchAcc;
+        }
+
+        return null;
     }
 
     private setupEventListeners() {
