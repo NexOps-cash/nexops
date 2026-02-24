@@ -45,8 +45,13 @@ export const ExecutionPreview: React.FC<ExecutionPreviewProps> = ({ artifact, so
                     } else if (step.type === 'function') {
                         bgColor = 'bg-slate-800/50 border border-slate-700/50';
                     } else if (step.type === 'condition') {
-                        textColor = 'text-blue-400';
-                        bgColor = 'bg-blue-900/20 border border-blue-500/30';
+                        if (step.label.includes('&&')) {
+                            textColor = 'text-blue-300';
+                            bgColor = 'bg-blue-950/40 border border-blue-600/30';
+                        } else {
+                            textColor = 'text-blue-400';
+                            bgColor = 'bg-blue-900/20 border border-blue-500/30';
+                        }
                     } else if (step.type === 'success') {
                         bgColor = 'bg-green-900/20 border border-green-500/30';
                         textColor = 'text-green-400 font-bold';

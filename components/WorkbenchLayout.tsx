@@ -149,7 +149,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                 <PanelResizeHandle className="h-px bg-white/5 hover:bg-nexus-cyan/20 transition-colors" />
 
                                 {/* Bottom Panel (Console) */}
-                                {isBottomOpen && (
+                                {isBottomOpen && activeView !== 'FLOW' && (
                                     <Panel defaultSize={30} minSize={10} className="bg-[#050507] border-t border-white/5">
                                         <div className="h-full relative overflow-hidden">
                                             {bottomPanelContent}

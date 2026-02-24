@@ -1,4 +1,4 @@
-import { FlowNode, FlowEdge, ExecutionStep } from './FlowTypes';
+import { FlowNode, FlowEdge, ExecutionStep, FlowNodeType } from './FlowTypes';
 
 export function extractFlow(artifact: any, sourceCode: string): { nodes: FlowNode[], edges: FlowEdge[], orderedSteps: ExecutionStep[] } {
     const nodes: FlowNode[] = [];
@@ -68,7 +68,7 @@ export function extractFlow(artifact: any, sourceCode: string): { nodes: FlowNod
                     label = expr;
                 } else if (text.startsWith('else')) {
                     type = 'else';
-                    label = 'Fallback Path';
+                    label = 'Else';
                 } else if (text.startsWith('require')) {
                     const expr = text.replace(/^require\s*\(/, '').replace(/\)\s*;$/, '').trim();
                     if (expr === 'true') {
@@ -89,7 +89,8 @@ export function extractFlow(artifact: any, sourceCode: string): { nodes: FlowNod
                     nodes.push({ id: condId, type: 'condition', label });
                     orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth, type: 'condition', label });
 
-                    edges.push({ id: `edge-${currentParent}-${condId}`, source: currentParent, target: condId });
+                    const edgeLabel = currentParent.startsWith('cond') ? 'True' : undefined;
+                    edges.push({ id: `edge-${currentParent}-${condId}`, source: currentParent, target: condId, label: edgeLabel });
 
                     lastConditionId = condId;
                     currentParent = condId;
@@ -99,7 +100,7 @@ export function extractFlow(artifact: any, sourceCode: string): { nodes: FlowNod
                     nodes.push({ id: condId, type: 'condition', label });
                     orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth, type: 'condition', label });
 
-                    edges.push({ id: `edge-${lastConditionId}-${condId}`, source: lastConditionId, target: condId });
+                    edges.push({ id: `edge-${lastConditionId}-${condId}`, source: lastConditionId, target: condId, label: 'False' });
 
                     lastConditionId = condId;
                     currentParent = condId;
@@ -109,17 +110,60 @@ export function extractFlow(artifact: any, sourceCode: string): { nodes: FlowNod
                     nodes.push({ id: condId, type: 'condition', label });
                     orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth, type: 'condition', label });
 
-                    edges.push({ id: `edge-${lastConditionId}-${condId}`, source: lastConditionId, target: condId });
+                    edges.push({ id: `edge-${lastConditionId}-${condId}`, source: lastConditionId, target: condId, label: 'False' });
 
                     lastConditionId = condId;
                     currentParent = condId;
                 }
-                else if (type === 'success' || type === 'failure' || type === 'validation') {
+                else if (type === 'validation' && lastConditionId && nodes.find(n => n.id === currentParent)?.type === 'condition') {
+                    // Collapse: Condition -> True -> Validation
+                    const termId = `term-${index}-${nodeCounter++}`;
+                    nodes.push({ id: termId, type: type as FlowNodeType, label });
+                    orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth + 1, type: type as FlowNodeType, label });
+                    edges.push({ id: `edge-${currentParent}-${termId}`, source: currentParent, target: termId, label: 'True' });
+                    hasTerminal = true;
+                } else if (type === 'success' && currentParent.startsWith('cond')) {
+                    // Success directly under condition = True branch
+                    const termId = `term-${index}-${nodeCounter++}`;
+                    nodes.push({ id: termId, type: type as FlowNodeType, label });
+                    orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth + 1, type: type as FlowNodeType, label });
+                    edges.push({ id: `edge-${currentParent}-${termId}`, source: currentParent, target: termId, label: 'True' });
+                    hasTerminal = true;
+                } else if (type === 'failure' && currentParent.startsWith('cond') && nodes.find(n => n.id === currentParent)?.label === 'Else') {
+                    // Collapse Else -> Failure into Condition -> False -> Failure
+                    const prevCond = edges.find(e => e.target === currentParent);
+                    if (prevCond) {
+                        // Remove the empty Else node entirely
+                        const elseNodeIdx = nodes.findIndex(n => n.id === currentParent);
+                        if (elseNodeIdx > -1) nodes.splice(elseNodeIdx, 1);
+
+                        const elseStepIdx = orderedSteps.findIndex(s => s.id === `step-${stepOrder - 1}`);
+                        if (elseStepIdx > -1) orderedSteps.splice(elseStepIdx, 1);
+
+                        const elseEdgeIdx = edges.findIndex(e => e.target === currentParent);
+                        if (elseEdgeIdx > -1) edges.splice(elseEdgeIdx, 1);
+
+                        const termId = `term-${index}-${nodeCounter++}`;
+                        nodes.push({ id: termId, type: type as FlowNodeType, label });
+                        orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth, type: type as FlowNodeType, label });
+                        edges.push({ id: `edge-${prevCond.source}-${termId}`, source: prevCond.source, target: termId, label: 'False' });
+                        hasTerminal = true;
+                        // Reset parent
+                        currentParent = prevCond.source;
+                    } else {
+                        const termId = `term-${index}-${nodeCounter++}`;
+                        nodes.push({ id: termId, type: type as FlowNodeType, label });
+                        orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth + 1, type: type as FlowNodeType, label });
+                        edges.push({ id: `edge-${currentParent}-${termId}`, source: currentParent, target: termId, label: currentParent.startsWith('cond') ? 'True' : undefined });
+                        hasTerminal = true;
+                    }
+                } else if (type === 'success' || type === 'failure' || type === 'validation') {
                     const termId = `term-${index}-${nodeCounter++}`;
                     nodes.push({ id: termId, type: type as FlowNodeType, label });
                     orderedSteps.push({ id: `step-${stepOrder}`, order: stepOrder++, depth: currentDepth + 1, type: type as FlowNodeType, label });
 
-                    edges.push({ id: `edge-${currentParent}-${termId}`, source: currentParent, target: termId });
+                    const edgeLabel = currentParent.startsWith('cond') ? 'True' : undefined;
+                    edges.push({ id: `edge-${currentParent}-${termId}`, source: currentParent, target: termId, label: edgeLabel });
                     hasTerminal = true;
                 }
             }
