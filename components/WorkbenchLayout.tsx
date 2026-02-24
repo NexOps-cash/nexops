@@ -20,25 +20,33 @@ interface WorkbenchLayoutProps {
 const ActivityBarItem = ({
     icon: Icon,
     label,
+    shortcut,
     isActive,
     onClick
 }: {
     icon: any,
     label: string,
+    shortcut?: string,
     isActive: boolean,
     onClick: () => void
 }) => (
-    <button
-        onClick={onClick}
-        className={`p-3 w-12 flex justify-center items-center transition-colors relative group ${isActive ? 'text-nexus-cyan' : 'text-slate-500 hover:text-slate-300'
-            }`}
-        title={label}
-    >
-        <Icon size={24} strokeWidth={isActive ? 2 : 1.5} />
-        {isActive && (
-            <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-nexus-cyan shadow-[0_0_10px_rgba(0,216,255,0.5)]"></div>
-        )}
-    </button>
+    <div className="relative group flex justify-center">
+        <button
+            onClick={onClick}
+            className={`p-3 w-12 flex justify-center items-center transition-colors relative ${isActive ? 'text-nexus-cyan' : 'text-slate-500 hover:text-slate-300'
+                }`}
+        >
+            <Icon size={24} strokeWidth={isActive ? 2 : 1.5} />
+            {isActive && (
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-nexus-cyan shadow-[0_0_10px_rgba(0,216,255,0.5)]"></div>
+            )}
+        </button>
+        {/* Custom Tooltip */}
+        <div className="absolute left-14 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded shadow-xl whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center space-x-2 border border-slate-700">
+            <span>{label}</span>
+            {shortcut && <span className="text-[9px] text-slate-400 bg-black/40 px-1 rounded border border-white/10">{shortcut}</span>}
+        </div>
+    </div>
 );
 
 export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
@@ -61,12 +69,14 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         <ActivityBarItem
                             icon={Files}
                             label="Contracts (Explorer)"
+                            shortcut="Ctrl+E"
                             isActive={activeView === 'EXPLORER'}
                             onClick={() => onViewChange('EXPLORER')}
                         />
                         <ActivityBarItem
                             icon={ShieldCheck}
                             label="AI / Auditor"
+                            shortcut="Ctrl+K"
                             isActive={activeView === 'AUDITOR'}
                             onClick={() => onViewChange('AUDITOR')}
                         />
@@ -78,7 +88,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         />
                         <ActivityBarItem
                             icon={Rocket}
-                            label="Deploy Contract"
+                            label="Deploy Panel"
                             isActive={activeView === 'DEPLOY'}
                             onClick={() => onViewChange('DEPLOY')}
                         />
