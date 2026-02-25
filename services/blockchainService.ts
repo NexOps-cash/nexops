@@ -21,7 +21,7 @@ export interface FundingStatus {
     error?: string;
 }
 
-const TESTNET_EXPLORER = 'https://testnet.chaingraph.cash';
+const TESTNET_EXPLORER = 'https://chipnet.chaingraph.cash';
 
 // --- Pure Utilities ---
 
@@ -65,11 +65,12 @@ class ElectrumManager {
         // 3. Start new connection
         this.connectionPromise = (async () => {
             try {
-                console.log('[ElectrumManager] Initializing connection to Testnet...');
+                console.log('[ElectrumManager] Initializing connection to Chipnet...');
 
                 // USER REQUIREMENT: Pass hostname ONLY. No protocol, no port.
                 // The library interprets this and manages the transport.
-                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'testnet.imaginary.cash');
+                // Switching to Chipnet (Testnet4) as it is the current standard for BCH development.
+                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'chipnet.imaginary.cash');
 
                 await client.connect();
                 console.log('[ElectrumManager] Connected successfully.');

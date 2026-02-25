@@ -4,7 +4,7 @@ import { Button, Badge, Modal, Input, Card } from './UI';
 import {
     Play, Terminal, Activity, CheckCircle,
     ArrowRight, Wallet, ChevronRight, AlertCircle,
-    Cpu, Hash, ArrowLeft, Loader2
+    Cpu, Hash, ArrowLeft, Loader2, ShieldAlert
 } from 'lucide-react';
 import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
@@ -18,7 +18,8 @@ interface TransactionBuilderProps {
     deployedAddress: string;
     constructorArgs: string[];
     wcSession: any;
-    network?: string; // Optional network prop
+    network?: string;
+    initialUtxo?: any;
 }
 
 interface FunctionInput {
@@ -32,7 +33,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     deployedAddress,
     constructorArgs,
     wcSession,
-    network = 'testnet' // Default to testnet
+    network = 'chipnet',
+    initialUtxo
 }) => {
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,11 +59,11 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const [isFundingBurner, setIsFundingBurner] = useState<boolean>(false);
 
     // UTXO State
-    const [contractUtxos, setContractUtxos] = useState<any[] | null>(null);
+    const [contractUtxos, setContractUtxos] = useState<any[] | null>(initialUtxo ? [initialUtxo] : null);
     const [isFetchingUtxos, setIsFetchingUtxos] = useState(false);
 
     // Balance tracking
-    const [totalBalance, setTotalBalance] = useState<number>(0);
+    const [totalBalance, setTotalBalance] = useState<number>(initialUtxo?.value || 0);
     const [unconfirmedContractBalance, setUnconfirmedContractBalance] = useState<number>(0);
 
     const [burnerBalance, setBurnerBalance] = useState<number>(0);
@@ -124,10 +126,18 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         };
     }, []);
 
-    // Fetch UTXOs when modal opens or step changes to 3
+    // Sync initialUtxo to state when it changes
+    useEffect(() => {
+        if (initialUtxo) {
+            setContractUtxos([initialUtxo]);
+            setTotalBalance(initialUtxo.value);
+        }
+    }, [initialUtxo]);
+
+    // Fetch UTXOs when component mounts or address changes
     // Monitor addresses using subscriptions for "instant" updates
     useEffect(() => {
-        if (!isModalOpen) return;
+        if (!deployedAddress) return;
 
         let unsubs: (() => void)[] = [];
 
@@ -170,7 +180,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         return () => {
             unsubs.forEach(unsub => unsub());
         };
-    }, [isModalOpen, deployedAddress, burnerAddress]);
+    }, [deployedAddress, burnerAddress]);
 
     const loadUtxos = async () => {
         if (!deployedAddress) return;
@@ -1039,20 +1049,62 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
     // -- Main Render --
     return (
-        <div className="p-4">
-            {/* Primary Trigger */}
-            <Card className="bg-nexus-900/50 border-nexus-700 flex flex-col items-center justify-center p-8 space-y-4">
-                <Terminal className="w-12 h-12 text-nexus-cyan/50" />
-                <div className="text-center">
-                    <h3 className="text-lg font-bold text-white">Interact with Contract</h3>
-                    <p className="text-sm text-gray-500 mt-1 max-w-sm mx-auto">
-                        Execute functions on the deployed contract. Requires a connected wallet for signing.
-                    </p>
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b border-white/5 bg-black/20">
+                <div className="flex justify-between items-center mb-1">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center">
+                        <Terminal className="w-3 h-3 mr-2 text-nexus-cyan" />
+                        Available Actions
+                    </h3>
+                    {totalBalance > 0 ? (
+                        <Badge variant="success" className="text-[9px] py-0 h-4 shadow-[0_0_10px_rgba(34,197,94,0.3)]">Funded: {totalBalance.toLocaleString()} sats</Badge>
+                    ) : (
+                        <Badge variant="warning" className="text-[9px] py-0 h-4">Awaiting Funding</Badge>
+                    )}
                 </div>
-                <Button onClick={openModal} className="px-8 py-3" icon={<Play className="w-4 h-4" />}>
-                    Call Function
-                </Button>
-            </Card>
+                <p className="text-[10px] text-slate-500 font-medium">Select a function to build an execution transaction.</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                {functions.length === 0 ? (
+                    <div className="text-center py-10 opacity-30">
+                        <ShieldAlert className="w-10 h-10 mx-auto mb-3" />
+                        <p className="text-xs uppercase font-bold">No Public Functions</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-2.5">
+                        {functions.map(func => (
+                            <button
+                                key={func.name}
+                                onClick={() => handleFunctionSelect(func.name)}
+                                className="flex items-center justify-between w-full p-3.5 bg-nexus-900/40 border border-white/5 hover:border-nexus-cyan/40 hover:bg-nexus-cyan/5 rounded-xl transition-all group text-left relative overflow-hidden"
+                            >
+                                <div className="relative z-10">
+                                    <div className="font-mono text-nexus-cyan font-black text-sm group-hover:text-white transition-colors">{func.name}</div>
+                                    <div className="flex items-center mt-1 space-x-2">
+                                        <span className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">Arguments:</span>
+                                        <span className="text-[10px] text-slate-300 font-mono italic">{func.inputs.length > 0 ? func.inputs.map(i => i.type).join(', ') : 'none'}</span>
+                                    </div>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-slate-700 group-hover:text-nexus-cyan group-hover:translate-x-0.5 transition-all relative z-10" />
+                                <div className="absolute inset-0 bg-gradient-to-r from-nexus-cyan/0 via-nexus-cyan/0 to-nexus-cyan/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {totalBalance === 0 && (
+                    <div className="mt-6 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-2">
+                        <div className="flex items-center text-yellow-500 text-[11px] font-black uppercase tracking-wider">
+                            <AlertCircle className="w-3 h-3 mr-2" />
+                            Funding Required
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-relaxed">
+                            To interact with this contract, you must first send funds to the contract address found in the <span className="text-slate-200">Deploy</span> tab.
+                        </p>
+                    </div>
+                )}
+            </div>
 
             {/* Wizard Modal */}
             <Modal

@@ -1,6 +1,6 @@
 
 export enum ChainType {
-  BCH_TESTNET = 'BCH Testnet',
+  BCH_TESTNET = 'BCH Chipnet',
 }
 
 export interface Vulnerability {

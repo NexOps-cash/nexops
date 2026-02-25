@@ -18,6 +18,7 @@ import { getExplorerLink } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
+import { UTXO } from '../services/blockchainService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { walletConnectService } from '../services/walletConnectService';
 import { TransactionBuilder } from '../components/TransactionBuilder';
@@ -108,6 +109,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [lastCompiledSource, setLastCompiledSource] = useState<string>('');
     const [deployedAddress, setDeployedAddress] = useState<string>('');
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [fundingUtxo, setFundingUtxo] = useState<UTXO | null>(null);
     const [showLiveModal, setShowLiveModal] = useState(false);
     const [useExternalGenerator, setUseExternalGenerator] = useState(false);
     const [isWsConnected, setIsWsConnected] = useState(false);
@@ -1106,7 +1108,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     deployedAddress={deployedAddress}
                     constructorArgs={constructorArgs}
                     wcSession={walletConnectService.getSession()}
-                    network={project.chain === 'BCH Testnet' ? 'testnet' : 'mainnet'}
+                    network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
+                    initialUtxo={fundingUtxo}
                 />
             )}
         </div>
@@ -1125,10 +1128,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 setConstructorArgs(args);
                 // We DON'T auto-navigate here, let them finish the success modal flow or fund
             }}
-            onDeployed={(addr, artifact, args) => {
+            onDeployed={(addr, artifact, args, utxo) => {
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
                 setConstructorArgs(args);
+                if (utxo) setFundingUtxo(utxo);
 
                 // Update project state with deployed address for persistence
                 onUpdateProject({
@@ -1498,7 +1502,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         activeView === 'AUDITOR' ? renderSidebarAuditor() :
                             activeView === 'DEBUG' ? renderSidebarDebug() :
                                 activeView === 'FLOW' ? renderSidebarFlow() :
-                                    renderSidebarDeploy()
+                                    activeView === 'INTERACT' ? renderSidebarInteract() :
+                                        renderSidebarDeploy()
                 }
                 editorContent={renderEditorArea()}
                 bottomPanelContent={renderBottomPanel()}
@@ -1571,11 +1576,32 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     <div className="space-y-2">
                         <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Your Contract is Live!</h4>
                         <p className="text-slate-400 text-sm max-w-[300px] mx-auto">
-                            The funding has been detected and your contract is now active on the Bitcoin Cash Testnet.
+                            The funding has been detected and your contract is now active on the Bitcoin Cash Chipnet.
                         </p>
                     </div>
 
-                    <div className="bg-black/40 p-4 rounded-xl border border-white/5 text-left space-y-3">
+                    <div className="bg-black/40 p-4 rounded-xl border border-white/5 text-left space-y-4">
+                        {fundingUtxo && (
+                            <div className="grid grid-cols-2 gap-3 pb-3 border-b border-white/5">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest block">Value Detected</span>
+                                    <span className="text-white font-mono text-sm">{fundingUtxo.value.toLocaleString()} sats</span>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest block">Block Height</span>
+                                    <span className="text-white font-mono text-sm">{fundingUtxo.height || 'Mempool'}</span>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest block">Confirmations</span>
+                                    <span className="text-nexus-cyan font-black text-sm">{fundingUtxo.confirmations}</span>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest block">TXID</span>
+                                    <span className="text-nexus-cyan font-mono text-[9px] truncate block w-20">{fundingUtxo.txid.slice(0, 8)}...</span>
+                                </div>
+                            </div>
+                        )}
+
                         <div>
                             <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-1">Contract Address</label>
                             <div className="flex items-center justify-between bg-nexus-900/80 p-2.5 rounded border border-white/5">
@@ -1595,19 +1621,23 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
                     <div className="flex flex-col gap-2 pt-2">
                         <Button
-                            variant="secondary"
-                            className="w-full py-3 h-auto text-sm font-bold uppercase tracking-widest"
-                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
-                            icon={<ExternalLink className="w-4 h-4" />}
+                            variant="primary"
+                            className="w-full py-3 h-auto text-sm font-bold uppercase tracking-widest shadow-[0_0_20px_rgba(0,229,255,0.3)] hover:shadow-[0_0_30px_rgba(0,229,255,0.5)]"
+                            onClick={() => {
+                                setShowLiveModal(false);
+                                setActiveView('INTERACT');
+                            }}
+                            icon={<Play className="w-4 h-4" />}
                         >
-                            View on Explorer
+                            Transaction Builder
                         </Button>
                         <Button
-                            variant="glass"
-                            className="w-full opacity-60 hover:opacity-100"
-                            onClick={() => setShowLiveModal(false)}
+                            variant="secondary"
+                            className="w-full h-10 text-xs font-bold uppercase tracking-widest opacity-80 hover:opacity-100"
+                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
+                            icon={<ExternalLink className="w-3 h-3" />}
                         >
-                            Continue Working
+                            View on Explorer
                         </Button>
                     </div>
                 </div>
