@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
-import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
+import { Button, Tabs, getFileIcon, Badge, Modal } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
@@ -10,9 +10,11 @@ import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
     AlertTriangle, CheckCircle, Copy, GitMerge, RotateCcw,
-    FileJson, MessageSquare, Send, User, Bot, Wand2, X,
-    FileCode, Zap, Cpu, Loader2
+    FileJson, MessageSquare, Send, User, Bot, Wand2, X, Trash2,
+    FileCode, Zap, Cpu, Loader2, ExternalLink
 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { getExplorerLink } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
@@ -106,9 +108,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [lastCompiledSource, setLastCompiledSource] = useState<string>('');
     const [deployedAddress, setDeployedAddress] = useState<string>('');
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [showLiveModal, setShowLiveModal] = useState(false);
     const [useExternalGenerator, setUseExternalGenerator] = useState(false);
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [lastGeneratedIntent, setLastGeneratedIntent] = useState<string>('');
+    const [openFileNames, setOpenFileNames] = useState<string[]>(project.files.map(f => f.name));
+    const [fileToDelete, setFileToDelete] = useState<string | null>(null);
+    const [fileToClose, setFileToClose] = useState<string | null>(null);
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
@@ -118,21 +124,27 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     }, [project.files, activeFile]);
 
     // Fix: Deduplicate files reliably for UI rendering
-    const uniqueFiles = project.files.reduce((acc: ProjectFile[], current) => {
-        const x = acc.find(item => item.name === current.name);
-        if (!x) {
-            return acc.concat([current]);
-        } else {
-            return acc;
-        }
-    }, []);
+    const allUniqueFiles = useMemo(() => {
+        return project.files.reduce((acc: ProjectFile[], current) => {
+            const x = acc.find(item => item.name === current.name);
+            if (!x) {
+                return acc.concat([current]);
+            } else {
+                return acc;
+            }
+        }, []);
+    }, [project.files]);
 
-    // Sync active file if it becomes missing
+    const openFiles = useMemo(() => {
+        return allUniqueFiles.filter(f => openFileNames.includes(f.name));
+    }, [allUniqueFiles, openFileNames]);
+
+    // Sync active file if it becomes missing (closes deleted or removed files)
     useEffect(() => {
-        if (!project.files.find(f => f.name === activeFileName)) {
-            setActiveFileName(project.files[0]?.name || '');
+        if (!project.files.find(f => f.name === activeFileName) || !openFileNames.includes(activeFileName)) {
+            setActiveFileName(openFileNames[0] || (project.files[0]?.name && openFileNames.includes(project.files[0].name) ? project.files[0].name : ''));
         }
-    }, [project.files, activeFileName]);
+    }, [project.files, activeFileName, openFileNames]);
 
     const addLog = (channel: TerminalChannel, message: string | string[]) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -158,6 +170,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const hasAutoLoadedRef = useRef(false);
 
     // WebSocket Setup
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && document.fullscreenElement) {
+                document.exitFullscreen().catch(err => console.error(err));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     useEffect(() => {
         const handleConnected = () => setIsWsConnected(true);
         const handleDisconnected = () => setIsWsConnected(false);
@@ -222,6 +246,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         files: updatedFiles,
                         contractCode: code,
                         lastModified: Date.now()
+                    });
+                    setOpenFileNames(prev => {
+                        if (!prev.includes(fileName)) return [...prev, fileName];
+                        return prev;
                     });
                     setActiveFileName(fileName);
                 }
@@ -374,6 +402,32 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         URL.revokeObjectURL(url);
     };
 
+    const handleCloseFile = (fileName: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setFileToClose(fileName);
+    };
+
+    const handleConfirmClose = () => {
+        if (!fileToClose) return;
+        setOpenFileNames(prev => prev.filter(name => name !== fileToClose));
+        setFileToClose(null);
+    };
+
+    const confirmDelete = (fileName: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setFileToDelete(fileName);
+    };
+
+    const handleDeleteFile = () => {
+        if (!fileToDelete) return;
+
+        const updatedFiles = project.files.filter(f => f.name !== fileToDelete);
+        onUpdateProject({ ...project, files: updatedFiles });
+        setOpenFileNames(prev => prev.filter(name => name !== fileToDelete));
+        setFileToDelete(null);
+        addLog('SYSTEM', `File ${fileToDelete} deleted.`);
+    };
+
     const handleRestoreVersion = (version: CodeVersion) => {
         const updatedFiles = project.files.map(f =>
             f.name === version.fileName ? { ...f, content: version.code } : f
@@ -474,6 +528,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
         if (updates.length > 0) {
             setActiveFileName(updates[0].name);
+            setOpenFileNames(prev => {
+                const newOpen = [...prev];
+                updates.forEach(u => {
+                    if (!newOpen.includes(u.name)) newOpen.push(u.name);
+                });
+                return newOpen;
+            });
         }
 
         const newHistory = [...chatHistory];
@@ -682,6 +743,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     }
 
                     onUpdateProject({ ...project, files: updatedFiles });
+                    setOpenFileNames(prev => {
+                        if (!prev.includes(artifactFileName)) return [...prev, artifactFileName];
+                        return prev;
+                    });
 
                     addLog('COMPILER', [
                         `✅ Compile Success!`,
@@ -817,32 +882,48 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
 
     const renderSidebarExplorer = () => {
-        const contractFiles = uniqueFiles.filter(f => f.name.endsWith('.cash'));
-        const artifactFiles = uniqueFiles.filter(f => f.name.endsWith('.json'));
-        const docFiles = uniqueFiles.filter(f => !f.name.endsWith('.cash') && !f.name.endsWith('.json'));
+        const contractFiles = allUniqueFiles.filter(f => f.name.endsWith('.cash'));
+        const artifactFiles = allUniqueFiles.filter(f => f.name.endsWith('.json'));
+        const docFiles = allUniqueFiles.filter(f => !f.name.endsWith('.cash') && !f.name.endsWith('.json'));
 
         const renderFileItem = (file: ProjectFile) => {
             const isCashFile = file.name.endsWith('.cash');
             const isActive = activeFileName === file.name;
             return (
-                <button
+                <div
                     key={file.name}
-                    onClick={() => setActiveFileName(file.name)}
-                    className={`w-full flex items-center space-x-3 pl-8 pr-4 py-1.5 text-xs transition-all relative truncate group ${isActive
-                        ? 'text-white bg-nexus-cyan/5 font-bold'
-                        : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
-                        }`}
+                    className="group flex items-center relative"
                 >
-                    {isActive && (
-                        <div className="absolute left-0 top-1 bottom-1 w-[3px] bg-nexus-cyan rounded-r shadow-[0_0_10px_rgba(6,182,212,0.4)]"></div>
-                    )}
-                    <div className={`flex-shrink-0 transition-colors ${isActive ? 'text-nexus-cyan' : 'group-hover:text-slate-400'}`}>
-                        {getFileIcon(file.name)}
-                    </div>
-                    <span className={`truncate ${isCashFile ? 'font-mono tracking-tight' : ''}`}>
-                        {file.name}
-                    </span>
-                </button>
+                    <button
+                        onClick={() => {
+                            if (!openFileNames.includes(file.name)) {
+                                setOpenFileNames(prev => [...prev, file.name]);
+                            }
+                            setActiveFileName(file.name);
+                        }}
+                        className={`flex-1 flex items-center space-x-3 pl-8 pr-10 py-1.5 text-xs transition-all relative truncate ${isActive
+                            ? 'text-white bg-nexus-cyan/5 font-bold'
+                            : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
+                            }`}
+                    >
+                        {isActive && (
+                            <div className="absolute left-0 top-1 bottom-1 w-[3px] bg-nexus-cyan rounded-r shadow-[0_0_10px_rgba(6,182,212,0.4)]"></div>
+                        )}
+                        <div className={`flex-shrink-0 transition-colors ${isActive ? 'text-nexus-cyan' : 'group-hover:text-slate-400'}`}>
+                            {getFileIcon(file.name)}
+                        </div>
+                        <span className={`truncate ${isCashFile ? 'font-mono tracking-tight' : ''}`}>
+                            {file.name}
+                        </span>
+                    </button>
+                    <button
+                        onClick={(e) => confirmDelete(file.name, e)}
+                        className="absolute right-2 p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all z-10"
+                        title="Delete File"
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                </div>
             );
         };
 
@@ -905,10 +986,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 <div className="px-4 mb-3 flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">History Archives</span>
                 </div>
-                <div className="px-3 space-y-2">
+                <div className="px-3 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pb-4">
                     {(() => {
                         const fileVersions = project.versions.filter(v => v.fileName === activeFileName);
-                        return fileVersions.slice(0, 10).map((v, idx) => {
+                        return fileVersions.slice(0, 50).map((v, idx) => {
                             const versionNumber = fileVersions.length - (fileVersions.indexOf(v));
                             const isSelected = compareVersion?.id === v.id;
                             return (
@@ -1048,7 +1129,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
                 setConstructorArgs(args);
-                setActiveView('INTERACT'); // Auto-navigate to Interact ONLY on confirmed funding
+
+                // Update project state with deployed address for persistence
+                onUpdateProject({
+                    ...project,
+                    deployedAddress: addr,
+                    lastModified: Date.now()
+                });
+
+                setShowLiveModal(true);
             }}
             onNavigate={(view) => setActiveView(view)}
         />
@@ -1177,11 +1266,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 {activeView !== 'FLOW' && (
                     <>
                         <div className="h-9 flex items-center bg-[#0d1425] border-b border-white/5 px-0 shrink-0">
-                            {uniqueFiles.map(file => (
+                            {openFiles.map(file => (
                                 <button
                                     key={file.name}
                                     onClick={() => setActiveFileName(file.name)}
-                                    className={`flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-white/5 transition-all relative ${activeFileName === file.name
+                                    className={`group flex items-center space-x-2 px-3 h-full text-[11px] font-medium border-r border-white/5 transition-all relative ${activeFileName === file.name
                                         ? 'bg-[#0f172a] text-white'
                                         : 'text-slate-500 hover:bg-white/5'
                                         }`}
@@ -1190,6 +1279,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                                     <span className="shrink-0">{getFileIcon(file.name)}</span>
                                     <span className={`truncate max-w-[120px] ${file.name.endsWith('.cash') ? 'font-mono text-[10px]' : ''}`}>{file.name}</span>
                                     {unsavedChanges && activeFileName === file.name && <div className="w-1.5 h-1.5 rounded-full bg-nexus-warning ml-1 shrink-0"></div>}
+                                    <span
+                                        className="ml-2 p-0.5 rounded-sm hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={(e) => handleCloseFile(file.name, e)}
+                                    >
+                                        <X size={10} />
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -1387,30 +1482,136 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     );
 
     return (
-        <WorkbenchLayout
-            activeView={activeView}
-            onViewChange={setActiveView}
-            sidebarContent={
-                activeView === 'EXPLORER' ? renderSidebarExplorer() :
-                    activeView === 'AUDITOR' ? renderSidebarAuditor() :
-                        activeView === 'DEBUG' ? renderSidebarDebug() :
-                            activeView === 'INTERACT' ? renderSidebarInteract() :
+        <div className="h-screen w-screen overflow-hidden animate-in fade-in duration-700 ease-out fill-mode-forwards opacity-0" style={{ animation: 'fadeIn 0.8s ease-out forwards' }}>
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: scale(1.01); filter: blur(4px); }
+                    to { opacity: 1; transform: scale(1); filter: blur(0); }
+                }
+            `}} />
+            <WorkbenchLayout
+                activeView={activeView}
+                onViewChange={setActiveView}
+                sidebarContent={
+                    activeView === 'EXPLORER' ? renderSidebarExplorer() :
+                        activeView === 'AUDITOR' ? renderSidebarAuditor() :
+                            activeView === 'DEBUG' ? renderSidebarDebug() :
                                 activeView === 'FLOW' ? renderSidebarFlow() :
                                     renderSidebarDeploy()
-            }
-            editorContent={renderEditorArea()}
-            bottomPanelContent={renderBottomPanel()}
-            problemsCount={problems.length}
-            statusBarState={{
-                activeFileName: activeFileName,
-                isModified: unsavedChanges,
-                activeChannel: activeTerminalChannel,
-                language: activeFileName?.endsWith('.cash') ? 'CashScript' :
-                    activeFileName?.endsWith('.json') ? 'JSON' :
-                        activeFileName?.endsWith('.md') ? 'Markdown' : 'Text',
-                isTerminalActive: true
-            }}
-            onNavigateHome={onNavigateHome}
-        />
+                }
+                editorContent={renderEditorArea()}
+                bottomPanelContent={renderBottomPanel()}
+                problemsCount={problems.length}
+                statusBarState={{
+                    activeFileName: activeFileName,
+                    isModified: unsavedChanges,
+                    activeChannel: activeTerminalChannel,
+                    language: activeFileName?.endsWith('.cash') ? 'CashScript' :
+                        activeFileName?.endsWith('.json') ? 'JSON' :
+                            activeFileName?.endsWith('.md') ? 'Markdown' : 'Text',
+                    isTerminalActive: true
+                }}
+                onNavigateHome={onNavigateHome}
+            />
+
+            {/* Deletion Confirmation Modal */}
+            <Modal
+                isOpen={!!fileToDelete}
+                onClose={() => setFileToDelete(null)}
+                title="Confirm Deletion"
+            >
+                <div className="space-y-4">
+                    <div className="flex items-center space-x-3 text-nexus-warning">
+                        <AlertTriangle size={20} />
+                        <p className="text-sm font-medium">Warning: This action cannot be undone.</p>
+                    </div>
+                    <p className="text-slate-300 text-sm">
+                        Are you sure you want to permanently delete <span className="text-white font-mono">{fileToDelete}</span>?
+                        This will remove the file from the project.
+                    </p>
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <Button variant="ghost" onClick={() => setFileToDelete(null)}>Cancel</Button>
+                        <Button variant="danger" onClick={handleDeleteFile}>Delete File</Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Close Confirmation Modal */}
+            <Modal
+                isOpen={!!fileToClose}
+                onClose={() => setFileToClose(null)}
+                title="Close Tab"
+            >
+                <div className="space-y-4">
+                    <p className="text-slate-300 text-sm">
+                        Are you sure you want to close the tab for <span className="text-white font-mono">{fileToClose}</span>?
+                    </p>
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <Button variant="ghost" onClick={() => setFileToClose(null)}>Cancel</Button>
+                        <Button variant="primary" onClick={handleConfirmClose}>Close Tab</Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* MODAL: Contract is Live */}
+            <Modal
+                isOpen={showLiveModal}
+                onClose={() => setShowLiveModal(false)}
+                title="Contract Published Successfully"
+            >
+                <div className="space-y-6 py-4 text-center">
+                    <div className="mx-auto w-20 h-20 bg-green-900/20 rounded-full flex items-center justify-center border border-green-500/50 mb-2 relative">
+                        <Rocket className="w-10 h-10 text-green-500" />
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center animate-bounce">
+                            <CheckCircle className="w-4 h-4 text-black" />
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Your Contract is Live!</h4>
+                        <p className="text-slate-400 text-sm max-w-[300px] mx-auto">
+                            The funding has been detected and your contract is now active on the Bitcoin Cash Testnet.
+                        </p>
+                    </div>
+
+                    <div className="bg-black/40 p-4 rounded-xl border border-white/5 text-left space-y-3">
+                        <div>
+                            <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest block mb-1">Contract Address</label>
+                            <div className="flex items-center justify-between bg-nexus-900/80 p-2.5 rounded border border-white/5">
+                                <span className="font-mono text-nexus-cyan text-xs truncate mr-2">{deployedAddress}</span>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(deployedAddress);
+                                        toast.success("Copied!");
+                                    }}
+                                    className="p-1 hover:text-white transition-colors"
+                                >
+                                    <Copy className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2">
+                        <Button
+                            variant="secondary"
+                            className="w-full py-3 h-auto text-sm font-bold uppercase tracking-widest"
+                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
+                            icon={<ExternalLink className="w-4 h-4" />}
+                        >
+                            View on Explorer
+                        </Button>
+                        <Button
+                            variant="glass"
+                            className="w-full opacity-60 hover:opacity-100"
+                            onClick={() => setShowLiveModal(false)}
+                        >
+                            Continue Working
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+        </div>
     );
 };

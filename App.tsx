@@ -11,6 +11,7 @@ import { WizardPage } from './pages/WizardPage';
 import { PublishModal } from './components/PublishModal';
 import { TopNav } from './components/TopNav';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
+import { Toaster } from 'react-hot-toast';
 
 type ViewState = 'home' | 'creator' | 'workspace' | 'wizard' | 'registry';
 
@@ -33,23 +34,27 @@ const App: React.FC = () => {
   const [walletConnected, setWalletConnected] = useState(false);
   const { user } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublishingReg, setIsPublishingReg] = useState(false);
 
   // Load projects from Supabase when user logs in
   useEffect(() => {
     async function loadProjects() {
-      if (!user) {
-        // Fallback to local storage if not logged in
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          setProjects(JSON.parse(saved));
-        } else {
-          setProjects([]);
-          setActiveProjectId(null);
+      setSyncError(null);
+
+      // Always start with local storage for instant perceived performance
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const localProjects = JSON.parse(saved);
+          if (localProjects.length > 0) setProjects(localProjects);
+        } catch (e) {
+          console.error("Local cache corrupt", e);
         }
-        return;
       }
+
+      if (!user) return;
 
       try {
         const { data, error } = await supabase
@@ -60,8 +65,7 @@ const App: React.FC = () => {
 
         if (error) throw error;
 
-        // Map database row to Project type
-        if (data) {
+        if (data && data.length > 0) {
           const mappedProjects: Project[] = data.map(row => ({
             id: row.id,
             name: row.name,
@@ -73,11 +77,15 @@ const App: React.FC = () => {
             deployedAddress: row.deployed_address,
             lastModified: row.last_modified
           }));
+
+          // Merge logic: Supabase wins if newer, or if local is empty
           setProjects(mappedProjects);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(mappedProjects)); // Update cache
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mappedProjects));
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load projects from Supabase", err);
+        setSyncError(err.message || 'Connection Timeout');
+        // We already loaded local storage at the start, so we just show the error
       }
     }
 
@@ -90,15 +98,14 @@ const App: React.FC = () => {
 
     async function syncToSupabase() {
       if (!user || projects.length === 0 || isSyncing) return;
+      setSyncError(null);
 
-      // Only sync the active project to avoid overwhelming the DB
-      const p = projects.find(p => p.id === activeProjectId);
+      const p = projects.find(row => row.id === activeProjectId);
       if (!p) return;
 
-      // Ensure valid UUID (Postgres will crash on timestamp strings)
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id);
       if (!isUUID) {
-        console.warn(`Skipping sync for legacy project ID: ${p.id}. Please recreate the project.`);
+        console.warn(`Skipping sync for legacy project ID: ${p.id}.`);
         return;
       }
 
@@ -116,19 +123,19 @@ const App: React.FC = () => {
             versions: p.versions,
             audit_report: p.auditReport,
             deployed_address: p.deployedAddress,
-            last_modified: Date.now()
+            last_modified: new Date().toISOString()
           }, { onConflict: 'id' });
 
         if (error) throw error;
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to sync project to Supabase", err);
+        setSyncError(err.message || 'Sync Error');
       } finally {
         setIsSyncing(false);
       }
     }
 
-    // Debounce the sync slightly
-    const timeout = setTimeout(syncToSupabase, 1000);
+    const timeout = setTimeout(syncToSupabase, 1500);
     return () => clearTimeout(timeout);
   }, [projects, user, activeProjectId]);
 
@@ -146,11 +153,23 @@ const App: React.FC = () => {
   };
 
   const handleSelectProject = (projectId: string) => {
+    // Request fullscreen on user gesture
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Silently fail if blocked
+      });
+    }
     setActiveProjectId(projectId);
     setCurrentView('workspace');
   };
 
   const handleCreateProject = (project: Project) => {
+    // Request fullscreen on user gesture
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Silently fail if blocked
+      });
+    }
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
     setCurrentView('workspace');
@@ -271,6 +290,8 @@ const App: React.FC = () => {
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-nexus-900">
       {currentView !== 'workspace' && (
         <TopNav
+          isSyncing={isSyncing}
+          syncError={syncError}
           activeView={currentView}
           onNavigate={(view) => {
             if (view === 'workspace') {
@@ -285,6 +306,8 @@ const App: React.FC = () => {
 
       {currentView === 'workspace' && activeProject && (
         <TopMenuBar
+          isSyncing={isSyncing}
+          syncError={syncError}
           activeProject={activeProject}
           onAction={handleMenuAction}
         />
@@ -341,6 +364,13 @@ const App: React.FC = () => {
           />
         )}
       </div>
+      <Toaster position="bottom-right" toastOptions={{
+        style: {
+          background: '#0a0a0c',
+          color: '#fff',
+          border: '1px solid rgba(255,255,255,0.1)',
+        },
+      }} />
     </div>
   );
 };

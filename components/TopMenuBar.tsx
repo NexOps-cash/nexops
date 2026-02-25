@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 interface TopMenuBarProps {
     activeProject: Project | null;
     onAction: (action: string) => void;
+    isSyncing?: boolean;
+    syncError?: string | null;
 }
 
 interface MenuItem {
@@ -23,7 +25,7 @@ const menus: MenuItem[] = [
     { label: 'Help', items: ['Documentation', 'About NexOps'] },
 ];
 
-export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction }) => {
+export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction, isSyncing, syncError }) => {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const { user, signInWithGithub, signInWithGoogle, signOut } = useAuth();
 
@@ -86,6 +88,18 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction 
 
             {/* Right: Project Name & Auth */}
             <div className="flex items-center space-x-4">
+                {isSyncing && (
+                    <div className="flex items-center space-x-1.5 text-nexus-cyan/40 animate-pulse">
+                        <div className="w-1 h-1 rounded-full bg-nexus-cyan animate-bounce [animation-delay:-0.3s]"></div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Syncing</span>
+                    </div>
+                )}
+                {syncError && (
+                    <div className="flex items-center space-x-1 text-red-500/60" title={syncError}>
+                        <div className="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]"></div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Offline</span>
+                    </div>
+                )}
                 <div className="text-xs text-slate-500 font-mono hidden md:block">
                     {activeProject ? activeProject.name : 'No Project'}
                 </div>

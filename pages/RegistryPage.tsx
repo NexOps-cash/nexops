@@ -11,6 +11,7 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
     const [searchQuery, setSearchQuery] = useState('');
     const [contracts, setContracts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -19,16 +20,18 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
 
     const fetchContracts = async () => {
         setLoading(true);
+        setError(null);
         try {
-            const { data, error } = await supabase
+            const { data, error: sbError } = await supabase
                 .from('contracts_registry')
                 .select('*')
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (sbError) throw sbError;
             setContracts(data || []);
-        } catch (error) {
-            console.error('Error fetching registry:', error);
+        } catch (err: any) {
+            console.error('Error fetching registry:', err);
+            setError(err.message || 'Failed to connect to Supabase. Your project might be paused or there is a network issue.');
         } finally {
             setLoading(false);
         }
@@ -92,8 +95,8 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                             <button
                                 key={filter}
                                 className={`px-4 py-1.5 rounded-full text-[11px] uppercase tracking-[0.15em] transition-all transform active:scale-95 border ${filter === 'All'
-                                        ? 'bg-nexus-cyan/15 border-nexus-cyan/40 text-nexus-cyan font-black shadow-[0_0_15px_rgba(34,211,238,0.15)]'
-                                        : 'bg-white/5 border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 hover:scale-105'
+                                    ? 'bg-nexus-cyan/15 border-nexus-cyan/40 text-nexus-cyan font-black shadow-[0_0_15px_rgba(34,211,238,0.15)]'
+                                    : 'bg-white/5 border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 hover:scale-105'
                                     }`}
                             >
                                 {filter}
@@ -127,7 +130,23 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500 space-y-4">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-nexus-cyan"></div>
-                            <p>Loading Registry...</p>
+                            <p className="text-[10px] uppercase font-bold tracking-[0.2em]">Authenticating with Registry...</p>
+                        </div>
+                    ) : error ? (
+                        <div className="text-center py-20 bg-red-500/5 rounded-xl border border-red-500/20 max-w-2xl mx-auto">
+                            <FileWarning className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                            <h3 className="text-white font-bold mb-2">Connection Failure</h3>
+                            <p className="text-slate-400 text-sm mb-6 px-8">
+                                {error}
+                                <br />
+                                <span className="text-[10px] opacity-60 mt-2 block italic">Tip: Check if your Supabase project is paused in the dashboard.</span>
+                            </p>
+                            <button
+                                onClick={fetchContracts}
+                                className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg text-sm font-bold transition-all"
+                            >
+                                Retry Connection
+                            </button>
                         </div>
                     ) : filteredContracts.length === 0 ? (
                         <div className="text-center py-20 bg-nexus-800/50 rounded-xl border border-dashed border-slate-700">

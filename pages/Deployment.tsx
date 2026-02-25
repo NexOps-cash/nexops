@@ -54,6 +54,12 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [isConnecting, setIsConnecting] = useState(false);
 
     useEffect(() => {
+        // If project already has a deployed address, set success state
+        if (project?.deployedAddress) {
+            setDeploymentStep(4);
+            setDerivedAddress(project.deployedAddress);
+        }
+
         // Sync local session state with service
         const session = walletConnectService.getSession();
         if (session) {
@@ -203,22 +209,12 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     setFundingStatus(status);
 
                     if (status.status === 'confirmed') {
+                        setDeploymentStep(4); // Success
+                        setTxHash(status.txid || 'Unknown');
+
                         // Success Callback
                         if (onDeployed && artifact) {
                             onDeployed(derivedAddress, artifact, constructorArgs);
-                        }
-
-                        // Delay transition to show "Funded" state
-                        if (onNavigate) {
-                            setTimeout(() => {
-                                setDeploymentStep(4); // Success
-                                setTxHash(status.txid || 'Unknown');
-                                onNavigate('AUDITOR');
-                            }, 2000);
-                        } else {
-                            // Fallback if no navigation (e.g. standalone)
-                            setDeploymentStep(4);
-                            setTxHash(status.txid || 'Unknown');
                         }
                     }
                 },
@@ -714,12 +710,41 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                         {deploymentStep >= 3 && <p className="text-nexus-cyan">&gt; Broadcasting signed transaction...</p>}
 
                         {deploymentStep >= 4 && (
-                            <div className="mt-4 p-4 border border-green-900/50 bg-green-900/10 rounded">
-                                <p className="text-green-400 flex items-center font-bold mb-2"><CheckCircle className="w-4 h-4 mr-2" /> Contract Deployed!</p>
-                                <p className="text-gray-400">Transaction Hash:</p>
-                                <div className="flex items-center space-x-2 mt-1">
-                                    <span className="text-white bg-nexus-800 px-2 py-1 rounded text-xs">{txHash}</span>
-                                    <Copy className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white" />
+                            <div className="mt-4 p-4 border border-green-900/50 bg-green-900/10 rounded animate-in zoom-in duration-500">
+                                <p className="text-green-400 flex items-center font-bold mb-2"><CheckCircle className="w-4 h-4 mr-2" /> Contract Live on Testnet</p>
+                                <p className="text-gray-400 text-xs mb-1">Deployment Address:</p>
+                                <div className="flex items-center space-x-2 mt-1 mb-4">
+                                    <span className="text-nexus-cyan bg-nexus-900 border border-nexus-700 px-3 py-1.5 rounded font-mono text-xs flex-1 truncate">{derivedAddress || project.deployedAddress}</span>
+                                    <Button
+                                        variant="glass"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(derivedAddress || project.deployedAddress || '');
+                                            alert("Address copied to clipboard!");
+                                        }}
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                    </Button>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="secondary"
+                                        className="flex-1 text-[10px]"
+                                        size="sm"
+                                        onClick={() => window.open(getExplorerLink(derivedAddress || project.deployedAddress || ''), '_blank')}
+                                        icon={<Server className="w-3 h-3" />}
+                                    >
+                                        Explorer
+                                    </Button>
+                                    <Button
+                                        variant="glass"
+                                        className="flex-1 text-[10px] border-nexus-cyan/20"
+                                        size="sm"
+                                        onClick={() => setDeploymentStep(0)}
+                                    >
+                                        Redeploy
+                                    </Button>
                                 </div>
                             </div>
                         )}

@@ -103,12 +103,6 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                             onClick={() => onViewChange('DEPLOY')}
                         />
                         <ActivityBarItem
-                            icon={BoxSelect}
-                            label="Interact (Builder)"
-                            isActive={activeView === 'INTERACT'}
-                            onClick={() => onViewChange('INTERACT')}
-                        />
-                        <ActivityBarItem
                             icon={GitBranch}
                             label="Visual Flow Builder"
                             isActive={activeView === 'FLOW'}
