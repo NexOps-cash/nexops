@@ -102,6 +102,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
     // Deployment State
     const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(null);
+    const [lastCompiledSource, setLastCompiledSource] = useState<string>('');
     const [deployedAddress, setDeployedAddress] = useState<string>('');
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
     const [useExternalGenerator, setUseExternalGenerator] = useState(false);
@@ -322,6 +323,28 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         });
         setUnsavedChanges(false);
         return newVersion;
+    };
+
+    const handleDownloadCash = () => {
+        if (!activeFile) return;
+
+        const content = activeFile.content;
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        // Ensure name ends with .cash for the downloaded file
+        const baseName = activeFile.name.includes('.')
+            ? activeFile.name.substring(0, activeFile.name.lastIndexOf('.'))
+            : activeFile.name;
+        const fileName = `${baseName}.cash`;
+
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     const handleRestoreVersion = (version: CodeVersion) => {
@@ -640,6 +663,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         `  - Artifact: ${artifactFileName} saved to explorer.`
                     ]);
                     setDeployedArtifact(result.artifact);
+                    setLastCompiledSource(mainContractFile.content);
                     setProblems([]);
                     setTimeout(() => setIsBuilding(false), 800);
 
@@ -693,17 +717,29 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const handleExplainContract = async () => {
-        const artifactData = activeFile && isArtifactFile(activeFile) ? JSON.parse(activeFile.content) : project.files.find(f => isArtifactFile(f)) ? JSON.parse(project.files.find(f => isArtifactFile(f))!.content) : null;
-        let sourceCode = '';
-        if (artifactData && artifactData.contractName) {
-            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
-            if (srcFile) sourceCode = srcFile.content;
-            else {
-                const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
-                if (fallback) sourceCode = fallback.content;
+        // Prioritize the most recently compiled artifact + its source code
+        let artifactData: any = deployedArtifact;
+        let sourceCode = lastCompiledSource;
+
+        // If no compile has happened, fall back to file-based resolution
+        if (!artifactData) {
+            artifactData = (activeFile && isArtifactFile(activeFile))
+                ? JSON.parse(activeFile.content)
+                : project.files.find(f => isArtifactFile(f))
+                    ? JSON.parse(project.files.find(f => isArtifactFile(f))!.content)
+                    : null;
+        }
+        if (!sourceCode) {
+            if (artifactData?.contractName) {
+                const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+                if (srcFile) sourceCode = srcFile.content;
+                else {
+                    const fallback = (activeFile && activeFile.name.endsWith('.cash')) ? activeFile : project.files.find(f => f.name.endsWith('.cash'));
+                    if (fallback) sourceCode = fallback.content;
+                }
+            } else if (activeFile?.name.endsWith('.cash')) {
+                sourceCode = activeFile.content;
             }
-        } else if (activeFile?.name.endsWith('.cash')) {
-            sourceCode = activeFile.content;
         }
 
         if (!sourceCode) {
@@ -995,11 +1031,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const renderSidebarFlow = () => {
-        const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
-        const artifactData = artifactFile ? JSON.parse(artifactFile.content) : null;
+        // Prioritize deployedArtifact (most recently compiled) over stale file searches
+        const artifactData = deployedArtifact
+            ?? (() => {
+                const f = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
+                return f ? JSON.parse(f.content) : null;
+            })();
 
-        let sourceCode = '';
-        if (artifactData && artifactData.contractName) {
+        let sourceCode = lastCompiledSource;
+        if (!sourceCode && artifactData?.contractName) {
             const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
             if (srcFile) sourceCode = srcFile.content;
             else {
@@ -1069,11 +1109,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     };
 
     const renderEditorArea = () => {
-        const artifactFile = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
-        const artifactData = artifactFile ? JSON.parse(artifactFile.content) : null;
+        // Prioritize deployedArtifact (most recently compiled) over stale file searches
+        const artifactData = deployedArtifact
+            ?? (() => {
+                const f = (activeFile && isArtifactFile(activeFile)) ? activeFile : project.files.find(f => isArtifactFile(f));
+                return f ? JSON.parse(f.content) : null;
+            })();
 
-        let sourceCode = '';
-        if (artifactData && artifactData.contractName) {
+        let sourceCode = lastCompiledSource;
+        if (!sourceCode && artifactData?.contractName) {
             // Find the source file that generated this artifact
             const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
             if (srcFile) sourceCode = srcFile.content;
@@ -1127,13 +1171,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                                 {isBuilding ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} className="group-active:scale-90 transition-transform" />}
                                 <span>{isBuilding ? 'Building' : 'Build'}</span>
                             </button>
-                            <button
-                                onClick={() => handleRunTask('TEST')}
-                                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-md transition-all text-xs font-bold uppercase tracking-wider group"
-                            >
-                                <Play size={14} className="group-active:scale-90 transition-transform" />
-                                <span>Test</span>
-                            </button>
+
+
                             <button
                                 onClick={() => handleRunTask('AUDIT')}
                                 disabled={isAuditing}
@@ -1161,10 +1200,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             <button
                                 onClick={handleExplainContract}
                                 disabled={isChatting}
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md transition-all text-[11px] font-bold text-[#00E5FF] bg-[#1a2235] hover:bg-[#232c43] border border-[#00E5FF]/20 ml-2 shadow-sm ${isChatting ? 'opacity-50 cursor-wait' : ''}`}
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md transition-all text-[13px] font-bold text-[#00E5FF] bg-[#1a2235] hover:bg-[#232c43] border border-[#00E5FF]/20 ml-2 shadow-sm ${isChatting ? 'opacity-50 cursor-wait' : ''}`}
                             >
                                 <Wand2 size={14} className="active:scale-90 transition-transform" />
-                                <span>Explain contract</span>
+                                <span>EXPLAIN</span>
+                            </button>
+                            <button
+                                onClick={handleDownloadCash}
+                                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-md transition-all text-xs font-bold uppercase tracking-wider group ml-2"
+                                title="Download as .cash file"
+                            >
+                                <Download size={14} className="group-active:scale-90 transition-transform" />
+                                <span>Download</span>
                             </button>
                             <div className="flex-1" />
                             <button
@@ -1329,6 +1376,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         activeFileName?.endsWith('.md') ? 'Markdown' : 'Text',
                 isTerminalActive: true
             }}
+            onNavigateHome={onNavigateHome}
         />
     );
 };

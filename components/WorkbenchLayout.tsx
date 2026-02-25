@@ -2,7 +2,7 @@ import React, { useState, ReactNode } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
     Files, ShieldCheck, BoxSelect, TerminalSquare,
-    Settings, Play, Bot, FileCode, Rocket, GitBranch
+    Settings, Play, Bot, FileCode, Rocket, GitBranch, Home
 } from 'lucide-react';
 import { StatusBar } from './StatusBar';
 import { StatusBarState } from '../types';
@@ -15,6 +15,7 @@ interface WorkbenchLayoutProps {
     onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW') => void;
     problemsCount?: number;
     statusBarState?: StatusBarState;
+    onNavigateHome?: () => void;
 }
 
 const ActivityBarItem = ({
@@ -57,6 +58,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
     onViewChange,
     problemsCount = 0,
     statusBarState = {},
+    onNavigateHome
 }) => {
     const [isBottomOpen, setIsBottomOpen] = useState(true);
 
@@ -65,6 +67,14 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 {/* Activity Bar (Leftmost Strip) - Darkest Layer */}
                 <div className="w-12 h-full max-h-screen flex-shrink-0 flex flex-col border-r border-white/5 bg-[#050507] z-50">
+                    <div className="flex-shrink-0 pt-2 pb-2 border-b border-white/5">
+                        <ActivityBarItem
+                            icon={Home}
+                            label="Home / Dashboard"
+                            isActive={false}
+                            onClick={() => onNavigateHome?.()}
+                        />
+                    </div>
                     <div className="flex-1 flex flex-col pt-2 space-y-2 overflow-y-auto no-scrollbar">
                         <ActivityBarItem
                             icon={Files}

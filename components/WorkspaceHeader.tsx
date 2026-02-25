@@ -11,14 +11,6 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({ project, onNav
     return (
         <div className="bg-[#050507] border-b border-white/5 px-6 py-2 flex items-center justify-between shrink-0 h-12">
             <div className="flex items-center space-x-8">
-                <button
-                    onClick={onNavigateHome}
-                    className="flex items-center space-x-2 mr-4 group"
-                >
-                    <div className="w-6 h-6 bg-nexus-cyan/10 border border-nexus-cyan/20 rounded flex items-center justify-center group-hover:bg-nexus-cyan/20 transition-all">
-                        <ShieldCheck className="w-4 h-4 text-nexus-cyan" />
-                    </div>
-                </button>
                 <div className="flex flex-col">
                     <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Project</span>
                     <span className="text-xs font-bold text-slate-300 tracking-tight">{project.name}</span>
@@ -26,12 +18,12 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({ project, onNav
                 <div className="h-6 w-px bg-white/5" />
                 <div className="flex flex-col">
                     <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Network</span>
-                    <span className="text-xs font-mono text-nexus-cyan">BCH Mainnet</span>
+                    <span className="text-xs font-mono text-nexus-cyan">BCH testnet</span>
                 </div>
                 <div className="h-6 w-px bg-white/5" />
                 <div className="flex flex-col">
                     <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Compiler</span>
-                    <span className="text-xs font-mono text-slate-400">cashc v0.9.0</span>
+                    <span className="text-xs font-mono text-slate-400">cashc v0.13.0</span>
                 </div>
                 <div className="h-6 w-px bg-white/5" />
                 <div className="flex flex-col">

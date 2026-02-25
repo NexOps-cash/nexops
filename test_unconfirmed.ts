@@ -12,7 +12,7 @@ async function main() {
     if (typeof pubkey === 'string') throw new Error(pubkey);
 
     const pkh = ripemd160.hash(sha256.hash(pubkey));
-    const addressData = encodeCashAddress('bchtest', 'p2pkh', pkh);
+    const addressData = encodeCashAddress({ prefix: 'bchtest', type: 'p2pkh', payload: pkh });
     const address = typeof addressData === 'string' ? addressData : addressData.address;
     console.log('[Test] Generated Address:', address);
 

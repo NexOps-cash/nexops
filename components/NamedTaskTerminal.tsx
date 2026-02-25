@@ -10,6 +10,7 @@ interface NamedTaskTerminalProps {
     onRunTask: (taskName: string) => void;
     channelLogs: Record<TerminalChannel, string[]>;
     onActiveChannelChange: (channel: TerminalChannel) => void;
+    activeChannel: TerminalChannel;
     onClearLogs: (channel: TerminalChannel) => void;
     problemsContent?: React.ReactNode;
     problemsCount?: number;
@@ -161,7 +162,7 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
         });
 
         // Small delay then scroll to bottom to ensure it fires after render
-        setTimeout(() => term.scrollToBottom(), 50);
+        // Auto-scroll disabled to prevent jumping to bottom on new logs
     }, [activeChannel, channelLogs, terminalReady, logFilter]);
 
     // Channel configuration
@@ -174,68 +175,9 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
 
     return (
         <div className="flex flex-col h-full bg-[#0a0a0c] border border-white/5 rounded-lg overflow-hidden relative">
-            {/* Header Area with Title & Security Panel */}
-            <div className="bg-[#0a0a0c] px-3 py-1.5 flex items-center justify-between border-b border-white/5 shrink-0 min-h-[36px]">
-                {/* Title Segment */}
-                <div className="flex items-center space-x-2 shrink-0">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Secure Execution Console</span>
-                    <div className="w-4 h-px bg-slate-800 hidden sm:block" />
-                </div>
-
-                {/* Center / Optional Title Elements (Telemetry moving to the left-center) */}
-                <div className="hidden lg:flex items-center space-x-1.5 opacity-40 ml-4 shrink-0">
-                    <Activity size={10} className="text-nexus-cyan" />
-                    <span className="text-[8px] font-mono text-slate-500 uppercase">Telemetry Hook: Standard-v1</span>
-                </div>
-
-                <div className="flex-1" />
-
-                {/* Convergence Badge & Security Panel - Right Aligned */}
-                <div className="flex items-center space-x-4 shrink-0 overflow-x-auto no-scrollbar">
-
-                    {/* Convergence Badge */}
-                    {convergenceStatus !== 'NONE' && (
-                        <div className={`flex items-center space-x-1 px-2 py-0.5 rounded border border-white/10 text-[9px] uppercase font-bold tracking-wider shrink-0 bg-[#121215]
-                            ${convergenceStatus === 'DETERMINISTIC' ? 'text-green-400' : convergenceStatus === 'UNSTABLE' ? 'text-yellow-400' : 'text-red-400'}
-                        `}>
-                            {convergenceStatus === 'DETERMINISTIC' && <span>✅ Deterministic Convergence</span>}
-                            {convergenceStatus === 'UNSTABLE' && <span>⚠ Pattern Unstable</span>}
-                            {convergenceStatus === 'FAILED' && <span>❌ Compilation Failed</span>}
-                        </div>
-                    )}
-
-                    {/* Security Metrics Panel */}
-                    <div className="flex items-center bg-[#121215] border border-white/5 rounded px-2 py-0.5 space-x-3 shrink-0">
-                        <div className="flex items-center space-x-1 border-r border-white/5 pr-3">
-                            <span className="text-[8px] text-slate-500 uppercase tracking-widest font-bold">Score:</span>
-                            <span className={`text-[10px] font-mono font-bold
-                                ${securityScore >= 0.9 ? 'text-green-400' : securityScore >= 0.7 ? 'text-yellow-400' : 'text-red-400'}
-                            `}>
-                                {securityScore.toFixed(2)} / 1.00
-                            </span>
-                        </div>
-                        <div className="flex items-center space-x-1 border-r border-white/5 pr-3">
-                            <span className="text-[8px] text-slate-500 uppercase font-bold">Detectors:</span>
-                            <span className={`text-[10px] font-mono font-bold ${detectorsTriggered === 0 ? 'text-green-400 opacity-60' : 'text-red-400'}`}>{detectorsTriggered}</span>
-                        </div>
-                        <div className="flex items-center space-x-1 border-r border-white/5 pr-3">
-                            <span className="text-[8px] text-slate-500 uppercase font-bold">Retries:</span>
-                            <span className="text-[10px] font-mono font-bold text-slate-300">{retryCount}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                            <span className={`text-[8px] font-black uppercase tracking-widest px-1 rounded bg-black/50
-                                ${auditStatus === 'PASSED' ? 'text-green-400' : auditStatus === 'FAILED' ? 'text-red-400' : auditStatus === 'RUNNING' ? 'text-nexus-cyan animate-pulse' : 'text-slate-500'}
-                            `}>
-                                {auditStatus}
-                            </span>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
 
             {/* Extended Multi-Channel Toolbar */}
-            <div className="flex items-center bg-[#050507] border-b border-white/5 h-9 px-2">
+            <div className="flex items-center bg-[#050507] border-b border-white/5 h-9 px-2 shrink-0">
                 <div className="flex items-center bg-black/40 rounded-md p-0.5 border border-white/5 mr-4 overflow-x-auto no-scrollbar">
                     {channelConfig.map(chn => (
                         <button
@@ -336,7 +278,6 @@ export const NamedTaskTerminal: React.FC<NamedTaskTerminalProps> = ({
                     </div>
                 </div>
             </div>
-
         </div>
     );
 };
