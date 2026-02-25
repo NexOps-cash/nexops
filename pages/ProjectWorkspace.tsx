@@ -14,7 +14,7 @@ import {
     FileCode, Zap, Cpu, Loader2, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getExplorerLink } from '../services/blockchainService';
+import { getExplorerLink, fetchUTXOs } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
@@ -107,7 +107,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     // Deployment State
     const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(null);
     const [lastCompiledSource, setLastCompiledSource] = useState<string>('');
-    const [deployedAddress, setDeployedAddress] = useState<string>('');
+    const [deployedAddress, setDeployedAddress] = useState<string>(project.deployedAddress || '');
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
     const [fundingUtxo, setFundingUtxo] = useState<UTXO | null>(null);
     const [showLiveModal, setShowLiveModal] = useState(false);
@@ -147,6 +147,42 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             setActiveFileName(openFileNames[0] || (project.files[0]?.name && openFileNames.includes(project.files[0].name) ? project.files[0].name : ''));
         }
     }, [project.files, activeFileName, openFileNames]);
+
+    // Rehydration Logic: Restore deployment state when project changes or on mount
+    useEffect(() => {
+        if (project.deployedAddress) {
+            setDeployedAddress(project.deployedAddress);
+
+            // 1. Try to find the compiled artifact in project files
+            const artifactFile = project.files.find(f => f.name.endsWith('.json'));
+            if (artifactFile) {
+                try {
+                    const artifact = JSON.parse(artifactFile.content);
+                    if (artifact.abi && artifact.bytecode) {
+                        setDeployedArtifact(artifact);
+                        console.log(`[Rehydration] Artifact restored for ${project.deployedAddress}`);
+                    }
+                } catch (e) {
+                    console.error('[Rehydration] Failed to parse artifact:', e);
+                }
+            }
+
+            // 2. Refresh UTXO state for the interaction sidebar
+            fetchUTXOs(project.deployedAddress).then(utxos => {
+                if (utxos.length > 0) {
+                    setFundingUtxo(utxos[0]);
+                    console.log(`[Rehydration] Funding UTXO detected for ${project.deployedAddress}`);
+                }
+            }).catch(err => {
+                console.warn('[Rehydration] UTXO fetch failed:', err);
+            });
+        } else {
+            // Reset if no deployment
+            setDeployedAddress('');
+            setDeployedArtifact(null);
+            setFundingUtxo(null);
+        }
+    }, [project.id]); // Only re-run when switching projects
 
     const addLog = (channel: TerminalChannel, message: string | string[]) => {
         const timestamp = new Date().toLocaleTimeString();

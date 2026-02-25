@@ -98,6 +98,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             type: input.type,
             value: ''
         })));
+        setIsModalOpen(true);
         setCurrentStep(2);
     };
 
