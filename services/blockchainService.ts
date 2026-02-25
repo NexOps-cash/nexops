@@ -112,7 +112,7 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
         return listUnspent.map(u => ({
             txid: u.tx_hash,
             vout: u.tx_pos,
-            value: u.value,
+            value: u.value || 0,
             height: u.height,
             confirmations: u.height > 0 ? 1 : 0
         }));

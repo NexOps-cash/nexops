@@ -1,5 +1,5 @@
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
-import { ContractArtifact } from './compilerService';
+import { ContractArtifact } from '../types';
 
 export function deriveContractAddress(
     artifact: ContractArtifact,
@@ -30,7 +30,7 @@ export function deriveContractAddress(
             const val = args[i];
             console.log(`🔍 [addressService]   Input[${i}]: ${inp.name} (${inp.type}) = ${val}`);
             if (inp.type.startsWith('int')) {
-                const bigIntVal = BigInt(val);
+                const bigIntVal = BigInt(val || '0');
                 console.log(`🔍 [addressService]   Converted to BigInt: ${bigIntVal}`);
                 return bigIntVal;
             }

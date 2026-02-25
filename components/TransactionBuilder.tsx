@@ -361,7 +361,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
             // 4. Calculate amount (Sweep minus fee)
             const fee = 1000n;
-            const amount = BigInt(burnerBalance) - fee;
+            const amount = BigInt(burnerBalance || 0) - fee;
 
             if (amount <= 500n) {
                 toast.error('Insufficient burner funds (min ~1500 sats needed).', { id: 'bridge_load' });
@@ -456,7 +456,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
             // 2. Initialize Contract
             // Use INTERNAL constructor args (can be edited by user)
-            const contract = new Contract(artifact, internalConstructorArgs, { provider }) as any;
+            // Sanitize to ensured no undefined values reach CashScript
+            const sanitizedConstructorArgs = internalConstructorArgs.map(arg => arg || '');
+            const contract = new Contract(artifact, sanitizedConstructorArgs, { provider }) as any;
 
             if (deployedAddress && contract.address !== deployedAddress) {
                 console.warn("Warning: initialized contract address differs from derived address:", contract.address, deployedAddress);
@@ -491,8 +493,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 }
 
                 if (def.type === 'int') {
-                    if (isNaN(Number(input.value))) throw new Error(`Invalid integer for ${input.name}`);
-                    return BigInt(input.value);
+                    const val = input.value || '0';
+                    if (isNaN(Number(val))) throw new Error(`Invalid integer for ${input.name}`);
+                    return BigInt(val);
                 }
                 if (def.type === 'bool') return input.value === 'true';
                 if (def.type === 'bytes') return input.value.startsWith('0x') ? input.value.slice(2) : input.value;
@@ -534,12 +537,27 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             // Get the unlocker (Redeem Script + Args)
             const unlocker = contract.unlock[selectedFunction](...typedArgs);
 
-            // Add all selected inputs
+            // Add all selected inputs with correct shape for CashScript TransactionBuilder
             selectedUtxos.forEach(utxo => {
-                txBuilder.addInput(utxo, unlocker);
+                txBuilder.addInput({
+                    txid: utxo.txid,
+                    vout: utxo.vout,
+                    satoshis: BigInt(utxo.value)
+                }, unlocker);
             });
 
             // 5. Configure Transaction
+            const totalInput = selectedUtxos.reduce(
+                (sum, u) => sum + BigInt(u.value),
+                0n
+            );
+            const fee = 1000n;
+            const sendAmount = totalInput - fee;
+
+            if (sendAmount <= 0n) {
+                throw new Error(`Insufficient funds: Total selected value (${totalInput} sats) is less than or equal to the fee (${fee} sats).`);
+            }
+
             const walletAddress = signingMethod === 'burner' ? burnerAddress : getWalletAddress();
             console.log("Using wallet address for output:", walletAddress);
 
@@ -549,11 +567,11 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     ? (walletAddress.startsWith('bitcoincash:') ? walletAddress : `bitcoincash:${walletAddress}`)
                     : (walletAddress.startsWith('bchtest:') ? walletAddress : `bchtest:${walletAddress}`);
 
-                // Add output back to wallet (change or small return)
-                // We also subtract a small amount for fees implicitly by not using the full UTXO
-                txBuilder.addOutput({ to: addressWithPrefix, amount: 1000n });
+                // Send the sweep amount (minus fee) back to the wallet
+                txBuilder.addOutput({ to: addressWithPrefix, amount: sendAmount });
             } else {
-                txBuilder.addOutput({ to: contract.address, amount: 1000n });
+                // Fallback to contract if no wallet, though usually we want to sweep
+                txBuilder.addOutput({ to: contract.address, amount: sendAmount });
             }
 
             // 6. Build Unsigned/Signed Transaction
