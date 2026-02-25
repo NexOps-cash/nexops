@@ -1,13 +1,5 @@
 import { compileString } from 'cashc';
-
-export interface ContractArtifact {
-    bytecode: string;
-    scriptHash?: string; // Derived if not present
-    constructorInputs: { name: string; type: string }[];
-    contractName: string;
-    abi: any[];
-    [key: string]: any;
-}
+import { ContractArtifact } from '../types';
 
 export interface CompilationResult {
     success: boolean;

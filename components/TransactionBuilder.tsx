@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ContractArtifact } from '../services/compilerService';
+import { ContractArtifact } from '../types';
 import { Button, Badge, Modal, Input, Card } from './UI';
 import {
     Play, Terminal, Activity, CheckCircle,
@@ -20,6 +20,7 @@ interface TransactionBuilderProps {
     wcSession: any;
     network?: string;
     initialUtxo?: any;
+    onConfigChange?: (args: string[]) => void;
 }
 
 interface FunctionInput {
@@ -34,7 +35,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     constructorArgs,
     wcSession,
     network = 'chipnet',
-    initialUtxo
+    initialUtxo,
+    onConfigChange
 }) => {
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -49,7 +51,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const [executionResult, setExecutionResult] = useState<{ success: boolean; txid?: string; error?: string } | null>(null);
 
     // Wallet State
-    const [connectUri, setConnectUri] = useState<string>('');
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(walletConnectService.getConnectionStatus());
 
     // Burner Wallet State
@@ -70,13 +71,24 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const [unconfirmedBurnerBalance, setUnconfirmedBurnerBalance] = useState<number>(0);
 
     const [isAwaitingPropagation, setIsAwaitingPropagation] = useState(false);
+    const [selectedUtxoIds, setSelectedUtxoIds] = useState<string[]>([]);
 
     // Parse ABI
     const functions = artifact.abi.filter(item => item.type === 'function' || !item.type);
-    const constructorDef = artifact.abi.find(item => item.type === 'constructor');
+    const constructorInputs = artifact.constructorInputs || [];
 
     // Constructor Args State
-    const [internalConstructorArgs, setInternalConstructorArgs] = useState<string[]>(constructorArgs || []);
+    const [internalConstructorArgs, setInternalConstructorArgs] = useState<string[]>([]);
+
+    // Initialize/Sync constructor args
+    useEffect(() => {
+        if (constructorArgs && constructorArgs.length > 0) {
+            setInternalConstructorArgs(constructorArgs);
+        } else if (constructorInputs.length > 0) {
+            // Fill with empty strings of correct length
+            setInternalConstructorArgs(new Array(constructorInputs.length).fill(''));
+        }
+    }, [constructorArgs, constructorInputs]);
 
     // Reset state when modal opens
     const openModal = () => {
@@ -108,6 +120,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         setInputs(newInputs);
     };
 
+
     // Sync initial connection status on mount
     useEffect(() => {
         // Update status immediately in case service already initialized
@@ -132,6 +145,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         if (initialUtxo) {
             setContractUtxos([initialUtxo]);
             setTotalBalance(initialUtxo.value);
+            // Auto-select initial UTXO
+            setSelectedUtxoIds([`${initialUtxo.txid}:${initialUtxo.vout}`]);
         }
     }, [initialUtxo]);
 
@@ -387,6 +402,27 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const handleExecute = async () => {
         if (!selectedFunction) return;
 
+        // NEW: Validate Constructor Arguments (Mandatory for instantiation)
+        if (constructorInputs.length > 0 && internalConstructorArgs.length !== constructorInputs.length) {
+            setExecutionResult({
+                success: false,
+                error: `Configuration Error: Expected ${constructorInputs.length} constructor arguments, but found ${internalConstructorArgs.length}.`
+            });
+            setIsExecuting(false);
+            return;
+        }
+
+        const missingArgs = constructorInputs.filter((_, i) => !internalConstructorArgs[i]);
+        if (missingArgs.length > 0) {
+            const names = missingArgs.map(a => a.name).join(', ');
+            setExecutionResult({
+                success: false,
+                error: `Missing Constructor Arguments: ${names}. Please provide them in the Contract Config section on the right.`
+            });
+            setIsExecuting(false);
+            return;
+        }
+
         // Guard: Check wallet connection based on method
         if (signingMethod === 'walletconnect' && !walletConnectService.isConnected()) {
             setExecutionResult({
@@ -472,32 +508,36 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             // However, the object is still dynamically keyed by function name.
 
             // 4. Build Transaction (CashScript v0.10+ Flow)
-            // In v0.10+, "contract.functions.foo()" is replaced by:
-            // 1. Instantiate TransactionBuilder
-            // 2. Fetch UTXOs for the contract
-            // 3. Add Input using contract.unlock.foo() as the unlocker
+            console.log("Preparing UTXOs from selected set...");
 
-            console.log("Fetching contract UTXOs...");
-            const utxos = await contract.getUtxos();
-            if (utxos.length === 0) {
+            // Use selected UTXOs from state instead of fetching from contract again
+            // This ensures we spend exactly what the user sees and selects
+            const selectedUtxos = contractUtxos?.filter(u =>
+                selectedUtxoIds.includes(`${u.txid}:${u.vout}`)
+            ) || [];
+
+            if (selectedUtxos.length === 0) {
+                // Fallback: If nothing selected but we have UTXOs, use the first one (prev behavior)
+                // but warn the user or just error out for "Coin Control" safety.
+                if (contractUtxos && contractUtxos.length > 0) {
+                    throw new Error("Please select at least one UTXO from the list on the right.");
+                }
                 throw new Error("No UTXOs found for this contract. Please fund it first.");
             }
-            console.log(`Found ${utxos.length} UTXOs for contract.`);
 
-            // Use the first UTXO for simplicity in this generic builder
-            // A smarter builder might let user select inputs or use "Coin Control"
-            const inputUtxo = utxos[0];
+            console.log(`Using ${selectedUtxos.length} selected UTXOs for transaction.`);
 
             // Import TransactionBuilder class
             const { TransactionBuilder: CashScriptTransactionBuilder } = await import('cashscript');
-
             const txBuilder = new CashScriptTransactionBuilder({ provider });
 
             // Get the unlocker (Redeem Script + Args)
             const unlocker = contract.unlock[selectedFunction](...typedArgs);
 
-            // Add Input
-            txBuilder.addInput(inputUtxo, unlocker);
+            // Add all selected inputs
+            selectedUtxos.forEach(utxo => {
+                txBuilder.addInput(utxo, unlocker);
+            });
 
             // 5. Configure Transaction
             const walletAddress = signingMethod === 'burner' ? burnerAddress : getWalletAddress();
@@ -565,8 +605,11 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
 
     const getWalletAddress = () => {
-        const session = walletConnectService.getSession();
-        return session?.namespaces?.bch?.accounts?.[0]?.split(':')[2] || 'Not Connected';
+        const fullAccount = walletConnectService.getAccount();
+        if (!fullAccount) return 'Not Connected';
+        // Format: namespace:chain:address
+        const parts = fullAccount.split(':');
+        return parts.length > 2 ? parts[parts.length - 1] : fullAccount;
     };
 
     // -- Renders --
@@ -649,15 +692,11 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             if (walletConnectService.isConnected()) {
                 console.log("TransactionBuilder: Wallet already connected from a previous step.");
                 setConnectionStatus(walletConnectService.getConnectionStatus());
-                setConnectUri('');
                 return;
             }
 
             const wcChainId = (network === 'mainnet' || network === 'main') ? 'bch:mainnet' : 'bch:testnet';
-            const uri = await walletConnectService.connect(wcChainId);
-            if (uri) {
-                setConnectUri(uri);
-            }
+            await walletConnectService.connect(wcChainId);
         } catch (error) {
             console.error("Connection failed:", error);
         }
@@ -666,7 +705,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     // Listen for connection success to close QR
     useEffect(() => {
         const handleSessionConnected = () => {
-            setConnectUri('');
+            // Handled by modal closing and status sub
         };
         walletConnectService.on('session_connected', handleSessionConnected);
         return () => {
@@ -819,20 +858,17 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                                     {/* State 3: DISCONNECTED - Show connect option */}
                                     {isDisconnected && (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                            {!connectUri ? (
-                                                <Button size="lg" onClick={handleConnect} icon={<Wallet className="w-5 h-5" />}>
-                                                    Connect Wallet
-                                                </Button>
-                                            ) : (
-                                                <div className="flex flex-col items-center animate-in fade-in zoom-in">
-                                                    <div className="bg-white p-3 rounded-xl mb-4 shadow-xl">
-                                                        <QRCodeSVG value={connectUri} size={200} />
-                                                    </div>
-                                                    <p className="text-sm font-bold text-nexus-cyan mb-1">Scan to Connect</p>
-                                                    <p className="text-xs text-gray-400">Use Paytaca or Zapit</p>
-                                                </div>
-                                            )}
+                                        <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
+                                            <div className="w-16 h-16 bg-nexus-cyan/10 rounded-full flex items-center justify-center mb-2">
+                                                <Wallet className="w-8 h-8 text-nexus-cyan opacity-40" />
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm font-bold text-white mb-1">Wallet Disconnected</p>
+                                                <p className="text-xs text-gray-500 max-w-[180px]">Connect your mobile wallet to sign and broadcast this transaction.</p>
+                                            </div>
+                                            <Button size="lg" onClick={handleConnect} icon={<Wallet className="w-5 h-5" />} className="shadow-[0_0_20px_rgba(0,229,255,0.2)]">
+                                                Connect Wallet
+                                            </Button>
                                         </div>
                                     )}
                                 </div>
@@ -889,15 +925,45 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                     </div>
                                 ) : contractUtxos && contractUtxos.length > 0 ? (
                                     <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
-                                        {contractUtxos.map((u, i) => (
-                                            <div key={i} className="flex justify-between items-center text-xs p-3 bg-black/20 rounded-lg border border-nexus-700/50 hover:bg-black/40 transition-colors">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-2 h-2 rounded-full bg-nexus-cyan animate-pulse"></div>
-                                                    <span className="font-mono text-gray-400 truncate w-32 md:w-48" title={`${u.txid}:${u.vout}`}>{u.txid.slice(0, 16)}...:{u.vout}</span>
+                                        {contractUtxos.map((u, i) => {
+                                            const utxoId = `${u.txid}:${u.vout}`;
+                                            const isSelected = selectedUtxoIds.includes(utxoId);
+
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    onClick={() => {
+                                                        setSelectedUtxoIds(prev =>
+                                                            prev.includes(utxoId)
+                                                                ? prev.filter(id => id !== utxoId)
+                                                                : [...prev, utxoId]
+                                                        );
+                                                    }}
+                                                    className={`flex justify-between items-center text-xs p-3 rounded-lg border transition-all cursor-pointer ${isSelected
+                                                        ? 'bg-nexus-cyan/10 border-nexus-cyan shadow-[0_0_10px_rgba(0,229,255,0.1)]'
+                                                        : 'bg-black/20 border-nexus-700/50 hover:bg-black/40 hover:border-nexus-700'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-nexus-cyan border-nexus-cyan' : 'bg-transparent border-nexus-700'
+                                                            }`}>
+                                                            {isSelected && <CheckCircle className="w-3 h-3 text-nexus-900" />}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-mono text-gray-400 truncate w-32 md:w-48" title={utxoId}>
+                                                                {u.txid.slice(0, 8)}...{u.txid.slice(-4)}:{u.vout}
+                                                            </span>
+                                                            {u.height === 0 && (
+                                                                <span className="text-[8px] text-yellow-500 font-bold uppercase tracking-tighter">Unconfirmed</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <span className={`font-mono font-bold bg-nexus-cyan/10 px-2.5 py-1 rounded ${isSelected ? 'text-white' : 'text-nexus-cyan'}`}>
+                                                        {u.value.toLocaleString()} <span className="text-[10px] opacity-60">sat</span>
+                                                    </span>
                                                 </div>
-                                                <span className="font-mono text-nexus-cyan font-bold bg-nexus-cyan/10 px-2.5 py-1 rounded">{u.value} sats</span>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="m-auto text-center text-gray-500 text-sm flex flex-col items-center bg-black/20 p-6 rounded-xl border border-dashed border-nexus-700 w-full">
@@ -924,14 +990,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 </div>
 
                                 {/* Constructor Args Section */}
-                                {constructorDef && constructorDef.inputs.length > 0 && (
+                                {constructorInputs.length > 0 && (
                                     <div className="space-y-3 pt-1">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Constructor Arguments</label>
-                                            <Badge variant="ghost" className="text-[10px] opacity-50">REQUIRED FOR INSTANTIATION</Badge>
+                                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Contract Config</label>
+                                            <Badge variant="ghost" className="text-[10px] opacity-50">CONSTRUCTOR PARAMETERS</Badge>
                                         </div>
                                         <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
-                                            {constructorDef.inputs.map((input, idx) => (
+                                            {constructorInputs.map((input, idx) => (
                                                 <div key={idx} className="space-y-1">
                                                     <div className="flex justify-between">
                                                         <span className="text-[10px] text-gray-500 uppercase">{input.name}</span>
@@ -943,6 +1009,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                                             const newArgs = [...internalConstructorArgs];
                                                             newArgs[idx] = e.target.value;
                                                             setInternalConstructorArgs(newArgs);
+                                                            onConfigChange?.(newArgs);
                                                         }}
                                                         placeholder={`Enter ${input.name}`}
                                                         className="font-mono text-xs bg-black/20 border-nexus-700/50 h-8"

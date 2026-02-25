@@ -1,6 +1,7 @@
 
 import SignClient from '@walletconnect/sign-client';
 import { SessionTypes } from '@walletconnect/types';
+import { WalletConnectModal } from '@walletconnect/modal';
 import { EventEmitter } from 'events';
 import { Buffer } from 'buffer';
 
@@ -48,6 +49,7 @@ export interface WalletConnectEvents {
 
 class WalletConnectService extends EventEmitter {
     private client: SignClient | null = null;
+    private modal: WalletConnectModal | null = null;
     private session: SessionTypes.Struct | null = null;
     private currentStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
     private static instance: WalletConnectService;
@@ -109,6 +111,11 @@ class WalletConnectService extends EventEmitter {
                 }
             });
 
+            this.modal = new WalletConnectModal({
+                projectId: PROJECT_ID,
+                chains: ['bch:mainnet', 'bch:testnet']
+            });
+
             this.setupEventListeners();
 
             // Check for restored session and validate it
@@ -156,38 +163,36 @@ class WalletConnectService extends EventEmitter {
         // Wallets commonly support 'bch:mainnet' or 'bch:testnet'.
         const normalizedChainId = validChainId;
 
-        const requiredNamespaces = {
-            bch: {
-                methods: ['bch_signTransaction'], // Minimum required
-                events: ['addressesChanged'],
-                chains: [normalizedChainId]
-            }
-        };
-
         const optionalNamespaces = {
             bch: {
                 methods: CHAIN_NAMESPACES.bch.methods,
                 events: CHAIN_NAMESPACES.bch.events,
-                chains: [normalizedChainId]
+                chains: [normalizedChainId, 'bch:mainnet', 'bch:testnet']
             }
         };
 
         try {
             const { uri, approval } = await this.client.connect({
-                requiredNamespaces: requiredNamespaces,
                 optionalNamespaces: optionalNamespaces
             });
 
             if (uri) {
                 this.emit('session_proposal', uri);
 
+                // Open Modal with the URI
+                if (this.modal) {
+                    await this.modal.openModal({ uri });
+                }
+
                 // Wait for approval in background
                 approval().then((session) => {
                     this.session = session;
+                    if (this.modal) this.modal.closeModal();
                     this.updateConnectionStatus(ConnectionStatus.CONNECTED);
                     this.emit('session_connected', session);
                 }).catch((e) => {
                     console.error('Connection refused', e);
+                    if (this.modal) this.modal.closeModal();
                     this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
                     this.emit('session_disconnected');
                 });

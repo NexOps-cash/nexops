@@ -17,8 +17,9 @@ import toast from 'react-hot-toast';
 import { getExplorerLink, fetchUTXOs } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
-import { compileCashScript, ContractArtifact } from '../services/compilerService';
+import { compileCashScript } from '../services/compilerService';
 import { UTXO } from '../services/blockchainService';
+import { ContractArtifact } from '../types';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { walletConnectService } from '../services/walletConnectService';
 import { TransactionBuilder } from '../components/TransactionBuilder';
@@ -105,10 +106,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [compareVersion, setCompareVersion] = useState<CodeVersion | null>(null);
 
     // Deployment State
-    const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(null);
+    const [deployedArtifact, setDeployedArtifact] = useState<ContractArtifact | null>(project.deployedArtifact || null);
     const [lastCompiledSource, setLastCompiledSource] = useState<string>('');
     const [deployedAddress, setDeployedAddress] = useState<string>(project.deployedAddress || '');
-    const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
+    const [constructorArgs, setConstructorArgs] = useState<string[]>(project.constructorArgs || []);
     const [fundingUtxo, setFundingUtxo] = useState<UTXO | null>(null);
     const [showLiveModal, setShowLiveModal] = useState(false);
     const [useExternalGenerator, setUseExternalGenerator] = useState(false);
@@ -1146,6 +1147,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     wcSession={walletConnectService.getSession()}
                     network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
                     initialUtxo={fundingUtxo}
+                    onConfigChange={(newArgs) => {
+                        setConstructorArgs(newArgs);
+                        onUpdateProject({
+                            ...project,
+                            constructorArgs: newArgs,
+                            lastModified: Date.now()
+                        });
+                    }}
                 />
             )}
         </div>
@@ -1174,6 +1183,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 onUpdateProject({
                     ...project,
                     deployedAddress: addr,
+                    deployedArtifact: artifact,
+                    constructorArgs: args,
                     lastModified: Date.now()
                 });
 

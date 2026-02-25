@@ -2,16 +2,17 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge, Modal } from '../components/UI';
 import { Project, ChainType } from '../types';
-import { compileCashScript, verifyDeterminism, ContractArtifact } from '../services/compilerService';
+import { ContractArtifact } from '../types';
+import { compileCashScript, verifyDeterminism } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
-import { walletConnectService } from '../services/walletConnectService';
+import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { deriveContractAddress } from '../services/addressService';
 import { Network } from 'cashscript';
 import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
 import { pollForFunding, getExplorerLink, FundingStatus, UTXO, fetchUTXOs } from '../services/blockchainService';
-import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play } from 'lucide-react';
+import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
@@ -51,7 +52,6 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
     const [fundingStatus, setFundingStatus] = useState<FundingStatus>({ status: 'idle', utxos: [], totalValue: 0 });
 
     // WalletConnect State
-    const [wcUri, setWcUri] = useState<string | null>(null);
     const [wcSession, setWcSession] = useState<any | null>(null);
     const [isConnecting, setIsConnecting] = useState(false);
 
@@ -80,30 +80,22 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
 
         const onConnected = (s: any) => {
             setWcSession(s);
-            setWcUri(null);
             setIsConnecting(false);
             if (!walletConnected) onConnectWallet();
         };
 
         const onDisconnected = () => {
             setWcSession(null);
-            setWcUri(null);
             setIsConnecting(false);
             if (walletConnected) onConnectWallet(); // Toggle off
         };
 
-        const onProposal = (uri: string) => {
-            setWcUri(uri);
-        };
-
         walletConnectService.on('session_connected', onConnected);
         walletConnectService.on('session_disconnected', onDisconnected);
-        walletConnectService.on('session_proposal', onProposal);
 
         return () => {
             walletConnectService.off('session_connected', onConnected);
             walletConnectService.off('session_disconnected', onDisconnected);
-            walletConnectService.off('session_proposal', onProposal);
         };
     }, [walletConnected, onConnectWallet]);
 
@@ -607,47 +599,36 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                         )}
 
                         {!wcSession ? (
-                            // Not Connected State - Shows connect button regardless of audit for UX
-                            <div className="text-center p-6 bg-nexus-900/50 border border-nexus-700 rounded transition-all">
-                                {!wcUri ? (
-                                    // Initial State
-                                    <>
-                                        <Wallet className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-                                        <p className="text-sm text-gray-300 mb-4">Connect Mobile Wallet (Testnet)</p>
-                                        <Button
-                                            onClick={handleConnectWC}
-                                            className="w-full bg-nexus-blue hover:bg-nexus-blue/80"
-                                            isLoading={isConnecting}
-                                        >
-                                            Generate QRCode
-                                        </Button>
-                                        <div className="flex justify-center space-x-4 mt-4 opacity-50 grayscale">
-                                            <span className="text-[10px] text-gray-400">Paytaca</span>
-                                            <span className="text-[10px] text-gray-400">Electron Cash</span>
-                                        </div>
-                                    </>
-                                ) : (
-                                    // QR Code State
-                                    <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
-                                        <div className="bg-white p-3 rounded-xl mb-4">
-                                            <QRCodeSVG value={wcUri} size={180} />
-                                        </div>
-                                        <p className="text-xs text-gray-400 mb-4 animate-pulse">Scan with Paytaca or OPTN Wallet</p>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => { setWcUri(null); setIsConnecting(false); }}
-                                            icon={<RefreshCw className="w-3 h-3" />}
-                                        >
-                                            Reset
-                                        </Button>
+                            <div className="p-6 border-nexus-700 bg-nexus-900 rounded-xl shadow-xl">
+                                <div className="flex flex-col items-center justify-center space-y-6">
+                                    <div className="w-16 h-16 bg-nexus-cyan/10 rounded-full flex items-center justify-center">
+                                        <Wallet className="w-8 h-8 text-nexus-cyan" />
                                     </div>
-                                )}
+                                    <div className="text-center space-y-2">
+                                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">Connection Required</h3>
+                                        <p className="text-slate-400 text-sm max-w-[280px]">
+                                            Connect a compatible Bitcoin Cash wallet to deploy this contract.
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="primary"
+                                        className="w-full py-4 uppercase font-black tracking-widest text-sm shadow-[0_0_30px_rgba(0,229,255,0.3)]"
+                                        onClick={handleConnectWC}
+                                        icon={isConnecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                                        disabled={isConnecting}
+                                    >
+                                        {isConnecting ? 'Opening Modal...' : 'Connect Wallet'}
+                                    </Button>
+                                    <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest pt-2">
+                                        <span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1 text-nexus-cyan" /> Paytaca</span>
+                                        <span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1 text-nexus-cyan" /> Zapit</span>
+                                    </div>
+                                </div>
                             </div>
                         ) : (
-                            // Connected State
-                            <div className="space-y-3">
-                                <div className="p-4 bg-nexus-cyan/10 border border-nexus-cyan/30 rounded-xl flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+                            <div className="space-y-4">
+                                {/* Connected Wallet Bar */}
+                                <div className="p-4 bg-nexus-cyan/10 border border-nexus-cyan/30 rounded-xl flex justify-between items-center">
                                     <div className="flex items-center space-x-3">
                                         {wcSession?.peer?.metadata?.icons?.[0] ? (
                                             <img src={wcSession.peer.metadata.icons[0]} alt="Wallet" className="w-10 h-10 rounded-full border border-nexus-cyan/30" />
@@ -662,120 +643,111 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                                 {wcSession?.peer?.metadata?.name || "Unknown Wallet"}
                                             </h4>
                                             <div className="flex items-center mt-1 space-x-2">
-                                                <Badge variant="neutral" className="text-[10px] py-0 px-1.5 h-4">
-                                                    Testnet
-                                                </Badge>
+                                                <Badge variant="neutral" className="text-[10px] py-0 px-1.5 h-4">Chipnet</Badge>
                                                 <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
                                                     {walletAddress}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
-                                    <Button
-                                        variant="glass"
-                                        size="sm"
-                                        onClick={handleDisconnectWC}
-                                        className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full"
-                                    >
+                                    <Button variant="glass" size="sm" onClick={handleDisconnectWC} className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full">
                                         <XCircle className="w-4 h-4" />
                                     </Button>
                                 </div>
 
                                 {!artifact ? (
-                                    <div className="text-center p-4 bg-nexus-900/50 border border-nexus-700 rounded">
-                                        <FileCode className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                                        <p className="text-sm text-gray-300">Artifacts not ready.</p>
+                                    <div className="text-center p-8 bg-nexus-900/50 border border-dashed border-nexus-700 rounded-xl">
+                                        <FileCode className="w-8 h-8 text-gray-400 mx-auto mb-3 opacity-30" />
+                                        <p className="text-sm text-gray-500 uppercase font-black tracking-widest">Artifacts Not Compiled</p>
                                     </div>
                                 ) : (
                                     <>
-
-                                        <div className="mb-4">
-                                            <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Initial Funding (Sats)</label>
-                                            <input
-                                                type="number"
-                                                value={fundingAmount}
-                                                onChange={(e) => setFundingAmount(Number(e.target.value))}
-                                                className="w-full bg-nexus-900 border border-nexus-700 rounded p-2 text-sm text-white font-mono"
-                                            />
-                                        </div>
-
+                                        {/* Deployment Phase Check */}
                                         {deploymentStep === 2 && paymentRequestUri ? (
-                                            <div className="bg-white p-4 rounded-xl flex flex-col items-center animate-in zoom-in duration-300">
-                                                <QRCodeSVG value={paymentRequestUri} size={180} />
-                                                <p className="text-black text-xs font-bold mt-2 text-center break-all max-w-[200px]">
-                                                    {derivedAddress}
-                                                </p>
-                                                <p className="text-gray-500 text-[10px] mt-1">Scan to Fund Contract ({fundingAmount} sats)</p>
+                                            <div className="bg-white p-6 rounded-2xl flex flex-col items-center animate-in zoom-in duration-300">
+                                                <div className="p-2 border-2 border-slate-100 rounded-xl mb-4">
+                                                    <QRCodeSVG value={paymentRequestUri} size={200} />
+                                                </div>
+                                                <div className="text-center space-y-1 mb-6">
+                                                    <p className="text-nexus-900 font-black text-sm uppercase tracking-tighter">Funding Required</p>
+                                                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest">Send {fundingAmount.toLocaleString()} sats to address below</p>
+                                                </div>
+                                                <div className="w-full bg-slate-50 p-3 rounded-lg border border-slate-200 mb-6 group cursor-pointer" onClick={() => {
+                                                    navigator.clipboard.writeText(derivedAddress!);
+                                                    toast.success("Address copied!");
+                                                }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-[9px] text-slate-400 uppercase font-black">Contract Address</span>
+                                                        <Copy className="w-3 h-3 text-slate-300 group-hover:text-nexus-blue transition-colors" />
+                                                    </div>
+                                                    <p className="text-black text-[10px] font-mono break-all leading-tight">
+                                                        {derivedAddress}
+                                                    </p>
+                                                </div>
 
-                                                {/* Real-time Funding Status */}
-                                                <div className="mt-4 w-full">
-
-                                                    {/* TEMP BYPASS: Checking if we are monitoring, show 'Funded' to allow interaction test */}
+                                                {/* Funding Status */}
+                                                <div className="w-full">
                                                     {fundingStatus.status === 'monitoring' && (
-                                                        <div className="flex items-center justify-center text-blue-600 text-xs">
-                                                            <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
-                                                            Monitoring blockchain... ({fundingStatus.totalValue} / {fundingAmount} sats)
+                                                        <div className="flex flex-col items-center space-y-3">
+                                                            <div className="flex items-center justify-center text-nexus-blue text-[11px] font-black uppercase tracking-widest">
+                                                                <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                                                Monitoring Indexer...
+                                                            </div>
+                                                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="bg-nexus-blue h-full transition-all duration-500"
+                                                                    style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
+                                                                />
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-400 font-bold">{fundingStatus.totalValue.toLocaleString()} / {fundingAmount.toLocaleString()} sats detected</p>
                                                         </div>
                                                     )}
                                                     {fundingStatus.status === 'confirmed' && (
-                                                        <div className="flex flex-col items-center text-green-600 text-xs">
-                                                            <div className="flex items-center mb-2">
-                                                                <CheckCircle className="w-4 h-4 mr-2" />
-                                                                Funded! ✓
+                                                        <div className="flex flex-col items-center space-y-4">
+                                                            <div className="flex items-center text-green-600 font-black uppercase tracking-widest text-sm">
+                                                                <CheckCircle className="w-5 h-5 mr-2" />
+                                                                Contract Live!
                                                             </div>
-                                                            {fundingStatus.txid && (
-                                                                <a
-                                                                    href={getExplorerLink(fundingStatus.txid)}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-blue-600 hover:underline text-[10px] font-mono truncate max-w-[180px]"
-                                                                >
-                                                                    {fundingStatus.txid}
-                                                                </a>
-                                                            )}
-                                                            <Button
-                                                                size="sm"
-                                                                className="mt-2"
-                                                                onClick={() => {
-                                                                    if (onDeployed && artifact) {
-                                                                        onDeployed(derivedAddress!, artifact, constructorArgs);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                Proceed to Interact
+                                                            <Button onClick={() => onDeployed?.(derivedAddress!, artifact, constructorArgs, fundingUtxo!)} className="w-full py-4 bg-nexus-blue hover:bg-blue-600 shadow-[0_4px_15px_rgba(37,99,235,0.3)] font-black uppercase tracking-widest text-xs">
+                                                                Enter Transaction Builder
                                                             </Button>
                                                         </div>
                                                     )}
-                                                    {fundingStatus.status === 'timeout' && (
-                                                        <div className="flex items-center justify-center text-yellow-600 text-xs">
-                                                            <AlertCircle className="w-3 h-3 mr-2" />
-                                                            Timeout - Please verify manually
-                                                        </div>
-                                                    )}
                                                     {fundingStatus.status === 'error' && (
-                                                        <div className="flex items-center justify-center text-red-600 text-xs">
-                                                            <AlertCircle className="w-3 h-3 mr-2" />
-                                                            {fundingStatus.error || 'Monitoring error'}
+                                                        <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
+                                                            {fundingStatus.error || 'Connection Timeout'}
                                                         </div>
                                                     )}
                                                 </div>
                                             </div>
                                         ) : (
-                                            <Button
-                                                onClick={handleDeploy}
-                                                disabled={isDeploying || deploymentStep === 4 || !derivedAddress || hasCriticalValidationErrors() || !isAuditPassed}
-                                                isLoading={isDeploying}
-                                                className="w-full bg-nexus-cyan hover:bg-cyan-400 text-black font-bold h-12 text-sm uppercase tracking-widest shadow-lg shadow-nexus-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                icon={<Rocket className="w-4 h-4" />}
-                                            >
-                                                {deploymentStep === 4
-                                                    ? "Broadcasted"
-                                                    : !isAuditPassed
-                                                        ? "Security Audit Required"
-                                                        : hasCriticalValidationErrors()
-                                                            ? "Funding Blocked (Invalid Inputs)"
-                                                            : "Generate Funding Request"}
-                                            </Button>
+                                            <div className="space-y-4">
+                                                <div className="bg-nexus-900 border border-nexus-700/50 p-4 rounded-xl">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Initial Balance</label>
+                                                        <span className="text-xs font-mono text-white">{fundingAmount.toLocaleString()} Sats</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="1000"
+                                                        max="100000"
+                                                        step="1000"
+                                                        value={fundingAmount}
+                                                        onChange={(e) => setFundingAmount(Number(e.target.value))}
+                                                        className="w-full accent-nexus-cyan h-1.5 bg-nexus-800 rounded-lg appearance-none cursor-pointer"
+                                                    />
+                                                </div>
+
+                                                <Button
+                                                    onClick={handleDeploy}
+                                                    disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
+                                                    isLoading={isDeploying}
+                                                    className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.2)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
+                                                    icon={<Rocket className="w-5 h-5" />}
+                                                >
+                                                    {!isAuditPassed ? "Audit Failed" : "Launch Contract"}
+                                                </Button>
+                                            </div>
                                         )}
                                     </>
                                 )}
@@ -784,22 +756,27 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                     </div>
                 </Card>
 
-                {/* Console */}
-                <Card className="font-mono text-sm bg-black border-nexus-700 min-h-[200px] flex flex-col">
-                    <div className="border-b border-nexus-800 pb-2 mb-2 text-gray-500 uppercase text-xs">Deployment Log</div>
-                    <div className="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                        <p className="text-gray-500">Waiting for command...</p>
-                        {isCompiling && <p className="text-nexus-cyan">&gt; Compiling contract...</p>}
-                        {isFixing && <p className="text-nexus-purple animate-pulse">&gt; Analyzing compiler error with NexusAI...</p>}
-                        {artifact && <p className="text-green-500">&gt; Artifacts generated. Bytecode size: {artifact.bytecode.length / 2} bytes.</p>}
-
-                        {deploymentStep >= 1 && <p className="text-nexus-cyan">&gt; Initiating deployment...</p>}
-                        {deploymentStep >= 2 && <p className="text-yellow-500 animate-pulse">&gt; Requesting signature on mobile device...</p>}
-                        {deploymentStep >= 3 && <p className="text-nexus-cyan">&gt; Broadcasting signed transaction...</p>}
-                        {deploymentStep >= 4 && <p className="text-green-500">&gt; Successful! Contract is now live.</p>}
+                {/* Log Console */}
+                <Card className="p-0 border-nexus-700 bg-black overflow-hidden flex flex-col min-h-[180px]">
+                    <div className="px-4 py-2 border-b border-nexus-900 bg-nexus-950 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Deployment Trace</span>
+                        <div className="flex gap-1">
+                            <div className="w-2 h-2 rounded-full bg-red-500/20" />
+                            <div className="w-2 h-2 rounded-full bg-yellow-500/20" />
+                            <div className="w-2 h-2 rounded-full bg-green-500/20" />
+                        </div>
+                    </div>
+                    <div className="p-4 font-mono text-[11px] space-y-1.5 flex-1 overflow-y-auto custom-scrollbar">
+                        <p className="text-slate-600 font-bold">&gt; nexus_os initialized.</p>
+                        {isCompiling && <p className="text-nexus-cyan animate-pulse">&gt; running cashc compiler...</p>}
+                        {isFixing && <p className="text-nexus-pink animate-pulse">&gt; ai_remediation_agent active: patching source...</p>}
+                        {artifact && <p className="text-green-500/80">&gt; bytecode generated: {artifact.bytecode.length / 2} bytes.</p>}
+                        {deploymentStep >= 1 && <p className="text-nexus-cyan">&gt; initializing secure deployment channel...</p>}
+                        {deploymentStep >= 2 && <p className="text-yellow-500">&gt; awaiting network confirmation...</p>}
+                        {deploymentStep >= 4 && <p className="text-green-400 font-bold">&gt; success: contract deployed to block {fundingUtxo?.height || 'latest'}</p>}
                     </div>
                 </Card>
             </div>
-        </div >
+        </div>
     );
 };

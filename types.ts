@@ -3,6 +3,15 @@ export enum ChainType {
   BCH_TESTNET = 'BCH Chipnet',
 }
 
+export interface ContractArtifact {
+  bytecode: string;
+  scriptHash?: string;
+  constructorInputs: { name: string; type: string }[];
+  contractName: string;
+  abi: any[];
+  [key: string]: any;
+}
+
 export interface Vulnerability {
   severity: 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
   line?: number;
@@ -64,6 +73,8 @@ export interface Project {
   deployedAddress?: string;
   isFixing?: boolean;
   fixInstructions?: string;
+  deployedArtifact?: ContractArtifact;
+  constructorArgs?: string[];
 }
 
 export interface GenerationResponse {
