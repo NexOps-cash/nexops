@@ -187,6 +187,82 @@ export const generateProjectScaffold = async (name: string, description: string)
     }
 };
 
+export const editSmartContract = async (code: string, instruction: string, useExternal: boolean = false): Promise<GenerationResponse> => {
+    if (useExternal) {
+        try {
+            const response = await fetch('http://localhost:3005/api/edit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_code: code,
+                    instruction: instruction,
+                })
+            });
+
+            const data = await response.json();
+            console.log("✏️ External Edit Response:", data);
+            if (data.success === false) {
+                return {
+                    code: code,
+                    explanation: "🛡️ AI Edit failed safety constraints. Manual edit required."
+                };
+            }
+
+            const scoreInfo = data.new_report ? ` New Security Score: ${data.new_report.score}` : '';
+            return {
+                code: data.edited_code,
+                explanation: `✅ Edit Applied Successfully.${scoreInfo}`
+            };
+        } catch (error) {
+            console.error("External Edit Error:", error);
+            throw error;
+        }
+    }
+
+    // Fallback to internal Groq
+    const context = ragEngine.retrieveContext(instruction + "\n" + code.slice(0, 500));
+
+    const systemInstruction = `You are a Senior Smart Contract Engineer for Bitcoin Cash (CashScript).
+    Your task is to EDIT the provided smart contract based on the user's instruction.
+    
+    REFERENCE CONTEXT:
+    ${context || "No specific context retrieved."}
+
+    1. Apply the requested edit precisely.
+    2. Return the COMPLETE modified contract code.
+    3. Add brief comments explaining the changes.
+    4. RETURN FORMATTED CODE with proper newlines and indentation.
+    
+    Return JSON with the edited code and a summary of changes.
+    Schema: { "code": "...", "explanation": "..." }
+    
+    CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE. NO MARKDOWN CODE BLOCKS AROUND THE JSON.`;
+
+    try {
+        const completion = await groq.chat.completions.create({
+            messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: `Edit this contract:\n\n${code}\n\nInstruction: ${instruction}` }
+            ],
+            model: MODEL_CODE,
+            max_tokens: GROQ_LIMITS.code_fix,
+            response_format: { type: "json_object" }
+        });
+
+        const text = completion.choices[0]?.message?.content;
+        if (!text) throw new Error("No response from AI");
+
+        const result = JSON.parse(text);
+        return {
+            code: result.code || code,
+            explanation: result.explanation || "Edit applied."
+        };
+    } catch (error) {
+        console.error("Groq Edit Error:", error);
+        throw error;
+    }
+};
+
 export const fixSmartContract = async (code: string, instructions: string, useExternal: boolean = false, issue?: any): Promise<GenerationResponse> => {
     if (useExternal) {
         try {
@@ -218,10 +294,12 @@ export const fixSmartContract = async (code: string, instructions: string, useEx
                 };
             }
 
+            // ✅ NEW CODE
             return {
                 code: data.corrected_code,
-                explanation: `✅ Repair Successful. New Security Score: ${data.new_report.score}`
+                explanation: `✅ Repair Successful. Please click 'Audit' to calculate the new security score.`
             };
+
         } catch (error) {
             console.error("External Repair Error:", error);
             throw error;
@@ -272,7 +350,7 @@ export const fixSmartContract = async (code: string, instructions: string, useEx
     }
 };
 
-export const auditSmartContract = async (code: string, useExternal: boolean = false): Promise<AuditReport> => {
+export const auditSmartContract = async (code: string, useExternal: boolean = false, intent: string = '', effective_mode: string = ''): Promise<AuditReport> => {
     if (useExternal) {
         try {
             const response = await fetch('http://localhost:3005/api/audit', {
@@ -280,8 +358,8 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     code: code,
-                    effective_mode: "",
-                    context: {}
+                    ...(intent ? { intent } : {}),
+                    ...(effective_mode ? { effective_mode } : {})
                 })
             });
 
@@ -289,10 +367,15 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
             console.log("🛡️ External Audit Response:", data);
 
             return {
-                score: data.score,
+                score: data.total_score ?? data.score ?? 0,
+                total_score: data.total_score,
+                deterministic_score: data.deterministic_score,
+                semantic_score: data.semantic_score,
+                semantic_category: data.semantic_category,
+                deployment_allowed: data.deployment_allowed,
                 risk_level: data.risk_level,
-                summary: `Security Audit Complete. Risk Level: ${data.risk_level}. Issues found: ${data.issues.length}`,
-                vulnerabilities: data.issues.map((issue: any) => ({
+                summary: `Security Audit Complete. Risk: ${data.risk_level}. Score: ${data.total_score}. Issues: ${data.issues?.length ?? 0}`,
+                vulnerabilities: (data.issues ?? []).map((issue: any) => ({
                     severity: issue.severity,
                     line: issue.line,
                     title: issue.title,

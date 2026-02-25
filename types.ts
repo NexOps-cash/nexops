@@ -14,8 +14,13 @@ export interface Vulnerability {
 }
 
 export interface AuditReport {
-  score: number;
-  vulnerabilities: Vulnerability[]; // Map from issues
+  score: number;             // maps to total_score
+  total_score?: number;
+  deterministic_score?: number;
+  semantic_score?: number;
+  semantic_category?: 'no_logic_risk' | 'low_logic_risk' | 'moderate_logic_risk' | 'high_logic_risk' | 'critical_logic_risk';
+  deployment_allowed?: boolean;
+  vulnerabilities: Vulnerability[]; // mapped from issues[]
   risk_level?: 'SAFE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   summary: string;
   timestamp: number;
@@ -23,6 +28,7 @@ export interface AuditReport {
     compile_success: boolean;
     dsl_passed: boolean;
     structural_score: number;
+    semantic_score?: number;
     contract_hash: string;
   };
   total_high?: number;

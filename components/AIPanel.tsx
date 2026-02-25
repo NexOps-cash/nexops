@@ -12,9 +12,9 @@ interface ChatMessage {
     fileUpdates?: { name: string, content: string }[];
     isApplied?: boolean;
     auditReport?: AuditReport;
-    isProgress?: boolean;
     stage?: string;
     explanationData?: ContractExplanation;
+    isReviewing?: boolean;
 }
 
 interface AIPanelProps {
@@ -22,6 +22,8 @@ interface AIPanelProps {
     onSend: (message: string) => void;
     isBusy: boolean;
     onApply: (updates: { name: string, content: string }[], index: number) => void;
+    onAccept?: (index: number) => void;
+    onReject?: (index: number) => void;
     onFixVulnerability?: (vuln: Vulnerability) => void;
     draftInput?: string;
     useExternalGenerator?: boolean;
@@ -30,12 +32,17 @@ interface AIPanelProps {
 }
 
 export const AIPanel: React.FC<AIPanelProps> = ({
-    history, onSend, isBusy, onApply, onFixVulnerability, draftInput,
+    history, onSend, isBusy, onApply, onAccept, onReject, onFixVulnerability, draftInput,
     useExternalGenerator = false, onToggleExternal, isWsConnected = false
 }) => {
     const [input, setInput] = useState('');
+    const [showCommands, setShowCommands] = useState(false);
+    const [filteredCommands, setFilteredCommands] = useState<string[]>([]);
+    const [selectedIndex, setSelectedIndex] = useState(0);
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const availableCommands = ['/generate', '/edit'];
 
     // Update input when draftInput changes
     useEffect(() => {
@@ -51,7 +58,41 @@ export const AIPanel: React.FC<AIPanelProps> = ({
         }
     }, [history, isBusy]);
 
+    const handleInputChange = (val: string) => {
+        setInput(val);
+
+        if (val.startsWith('/')) {
+            const filtered = availableCommands.filter(cmd => cmd.startsWith(val));
+            setFilteredCommands(filtered);
+            setShowCommands(filtered.length > 0);
+            setSelectedIndex(0);
+        } else {
+            setShowCommands(false);
+        }
+    };
+
+    const handleSelectCommand = (cmd: string) => {
+        setInput(cmd + ' ');
+        setShowCommands(false);
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (showCommands) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIndex(prev => (prev + 1) % filteredCommands.length);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIndex(prev => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                handleSelectCommand(filteredCommands[selectedIndex]);
+            } else if (e.key === 'Escape') {
+                setShowCommands(false);
+            }
+            return;
+        }
+
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (input.trim() && !isBusy) {
@@ -149,25 +190,44 @@ export const AIPanel: React.FC<AIPanelProps> = ({
 
                                             <div className="flex items-center gap-2">
                                                 {msg.fileUpdates && (
-                                                    <button
-                                                        onClick={() => onApply(msg.fileUpdates!, i)}
-                                                        disabled={msg.isApplied}
-                                                        className={`
-                                                        flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
-                                                        ${msg.isApplied
-                                                                ? 'border-green-900/30 bg-green-900/10 text-green-500 cursor-default'
-                                                                : 'border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white'
-                                                            }
-                                                    `}
-                                                    >
-                                                        <Plus size={10} />
-                                                        {msg.isApplied ? 'Applied' : 'Insert'}
+                                                    msg.isReviewing ? (
+                                                        <>
+                                                            <button
+                                                                onClick={() => onAccept && onAccept(i)}
+                                                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0078d4] hover:bg-[#106ebe] text-white rounded border border-[#0078d4] transition-colors text-xs shadow-sm"
+                                                            >
+                                                                Accept Alt+↵
+                                                            </button>
+                                                            <button
+                                                                onClick={() => onReject && onReject(i)}
+                                                                className="flex items-center gap-1.5 px-3 py-1 bg-[#252526] hover:bg-[#2d2d30] text-gray-300 rounded border border-[#3e3e42] transition-colors text-xs shadow-sm"
+                                                            >
+                                                                Reject Shift+Alt+⌦
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => onApply(msg.fileUpdates!, i)}
+                                                            disabled={msg.isApplied}
+                                                            className={`
+                                                            flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                                                            ${msg.isApplied
+                                                                    ? 'border-green-900/30 bg-green-900/10 text-green-500 cursor-default'
+                                                                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white'
+                                                                }
+                                                        `}
+                                                        >
+                                                            <Plus size={10} />
+                                                            {msg.isApplied ? 'Applied' : 'Insert'}
+                                                        </button>
+                                                    )
+                                                )}
+                                                {(!msg.fileUpdates || !msg.isReviewing) && (
+                                                    <button className="flex items-center gap-1.5 px-2 py-1 rounded border border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white transition-colors">
+                                                        <Copy size={10} />
+                                                        Copy
                                                     </button>
                                                 )}
-                                                <button className="flex items-center gap-1.5 px-2 py-1 rounded border border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white transition-colors">
-                                                    <Copy size={10} />
-                                                    Copy
-                                                </button>
                                             </div>
                                         </div>
                                     )}
@@ -179,7 +239,26 @@ export const AIPanel: React.FC<AIPanelProps> = ({
             </div>
 
             {/* Command Bar */}
-            <div className="p-3 bg-[#0d0d0d] border-t border-[#2a2a2a]">
+            <div className="p-3 bg-[#0d0d0d] border-t border-[#2a2a2a] relative">
+                {showCommands && (
+                    <div className="absolute bottom-full left-3 right-3 mb-2 bg-[#151515] border border-[#2a2a2a] rounded-md shadow-2xl overflow-hidden z-50">
+                        {filteredCommands.map((cmd, idx) => (
+                            <div
+                                key={cmd}
+                                className={`px-3 py-2 cursor-pointer border-b border-[#2a2a2a] last:border-0 flex items-center justify-between transition-colors ${idx === selectedIndex ? 'bg-nexus-cyan/20 text-nexus-cyan' : 'hover:bg-[#222] text-gray-400'}`}
+                                onClick={() => handleSelectCommand(cmd)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Terminal size={12} className={idx === selectedIndex ? 'text-nexus-cyan' : 'text-gray-500'} />
+                                    <span className="font-bold">{cmd}</span>
+                                </div>
+                                <span className="text-[10px] opacity-40 italic">
+                                    {cmd === '/generate' ? 'create new contract' : 'modify existing contract'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <div className="
                     flex items-center px-3 py-2 
                     bg-[#151515] border border-[#2a2a2a] 
@@ -190,7 +269,7 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                         className="flex-1 bg-transparent outline-none text-sm text-gray-200 placeholder-gray-600"
                         placeholder="Add a follow-up..."
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => handleInputChange(e.target.value)}
                         onKeyDown={handleKeyDown}
                         disabled={isBusy}
                         autoFocus
@@ -222,8 +301,14 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                 </div>
                 <div className="flex justify-between items-center mt-1.5 px-1">
                     <span className="text-[9px] text-gray-600">Enter to submit, Shift+Enter for newline</span>
+                    {useExternalGenerator && (
+                        <span className="text-[9px] text-amber-500/80 font-medium">
+                            <code className="bg-amber-500/10 px-1 rounded">/generate</code> create contract · <code className="bg-amber-500/10 px-1 rounded">/edit</code> modify contract
+                        </span>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
+

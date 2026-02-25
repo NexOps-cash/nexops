@@ -38,24 +38,58 @@ export const AuditReportView: React.FC<AuditReportViewProps> = ({ report, onFix 
                     <Shield className={report.score < 50 ? 'text-red-500' : report.score < 80 ? 'text-yellow-500' : 'text-green-500'} size={16} />
                     <span className="font-bold text-sm text-gray-200">Security Audit</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">Score</span>
-                    <span className={`text-sm font-black ${report.score < 50 ? 'text-red-500' : report.score < 80 ? 'text-yellow-500' : 'text-green-500'}`}>
-                        {report.score}/100
-                    </span>
+                <div className="flex items-center gap-3">
+                    {/* Score Breakdown */}
+                    {report.deterministic_score !== undefined && (
+                        <div className="text-[9px] font-mono text-gray-600 flex items-center gap-1.5">
+                            <span className="text-gray-500">DET</span>
+                            <span className="text-nexus-cyan">{report.deterministic_score}</span>
+                            <span className="text-gray-700">+</span>
+                            <span className="text-gray-500">SEM</span>
+                            <span className="text-nexus-cyan">{report.semantic_score}</span>
+                            <span className="text-gray-700">=</span>
+                        </div>
+                    )}
+                    <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500">Score</span>
+                        <span className={`text-sm font-black ${report.score < 50 ? 'text-red-500' : report.score < 80 ? 'text-yellow-500' : 'text-green-500'}`}>
+                            {report.score}/100
+                        </span>
+                    </div>
                 </div>
             </div>
 
             {/* Summary & Risk Level */}
-            <div className="p-3 border-b border-[#2a2a2a] flex items-center justify-between">
-                <div className="text-xs text-gray-400">
+            <div className="p-3 border-b border-[#2a2a2a] flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs text-gray-400 flex-1">
                     {report.summary}
                 </div>
-                {report.risk_level && (
-                    <div className={`text-[10px] font-black px-2 py-0.5 rounded border ${report.risk_level === 'SAFE' ? 'text-green-500 border-green-500/30' : 'text-orange-500 border-orange-500/30'}`}>
-                        {report.risk_level}
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    {report.semantic_category && (
+                        <div className="text-[9px] font-mono px-2 py-0.5 rounded border text-slate-400 border-slate-600/30 bg-slate-800/30 truncate max-w-[160px]">
+                            {report.semantic_category.replace(/_/g, ' ')}
+                        </div>
+                    )}
+                    {report.risk_level && (() => {
+                        const riskColorMap: Record<string, string> = {
+                            SAFE: 'text-green-400 border-green-500/30 bg-green-500/5',
+                            LOW: 'text-blue-400 border-blue-500/30 bg-blue-500/5',
+                            MEDIUM: 'text-yellow-400 border-yellow-500/30 bg-yellow-500/5',
+                            HIGH: 'text-orange-500 border-orange-500/30 bg-orange-500/5',
+                            CRITICAL: 'text-red-500 border-red-500/30 bg-red-500/5',
+                        };
+                        const cls = riskColorMap[report.risk_level] ?? 'text-gray-400 border-gray-600/30';
+                        return <div className={`text-[10px] font-black px-2 py-0.5 rounded border ${cls}`}>{report.risk_level}</div>;
+                    })()}
+                    {report.deployment_allowed !== undefined && (
+                        <div className={`text-[9px] font-bold px-2 py-0.5 rounded border ${report.deployment_allowed
+                                ? 'text-green-400 border-green-500/30 bg-green-500/5'
+                                : 'text-red-400 border-red-500/30 bg-red-500/5'
+                            }`}>
+                            {report.deployment_allowed ? '✓ Deploy OK' : '✗ Deploy Blocked'}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Vulnerabilities List */}

@@ -25,6 +25,11 @@ export interface WSMessage {
             contract_type: string;
             features: string[];
         };
+        fallback_used?: boolean;
+        metadata?: {
+            lint_soft_fail?: boolean;
+            soft_fail_count?: number;
+        };
     };
 
     // error (External -> NexOps)

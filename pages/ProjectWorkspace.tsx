@@ -12,7 +12,7 @@ import {
     FileJson, MessageSquare, Send, User, Bot, Wand2, X,
     FileCode, Zap, Cpu, Loader2
 } from 'lucide-react';
-import { auditSmartContract, fixSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
+import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript, ContractArtifact } from '../services/compilerService';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
@@ -106,6 +106,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [constructorArgs, setConstructorArgs] = useState<string[]>([]);
     const [useExternalGenerator, setUseExternalGenerator] = useState(false);
     const [isWsConnected, setIsWsConnected] = useState(false);
+    const [lastGeneratedIntent, setLastGeneratedIntent] = useState<string>('');
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
@@ -147,6 +148,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatHistory]);
 
+    const projectRef = useRef(project);
+    useEffect(() => {
+        projectRef.current = project;
+    }, [project]);
+
+    const hasAutoLoadedRef = useRef(false);
+
     // WebSocket Setup
     useEffect(() => {
         const handleConnected = () => setIsWsConnected(true);
@@ -180,18 +188,57 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 });
                 addLog('SYSTEM', progressText);
             } else if (data.type === 'success') {
-                const { code, contract_name, toll_gate } = data.data;
+                const { code, contract_name, toll_gate, fallback_used, metadata } = data.data;
                 const fileName = `${contract_name || (activeFileName?.split('.')[0] || 'Generated')}.cash`;
+                const isFallback = fallback_used === true;
+
                 console.log("✅ Synthesis Success Processing:", { fileName, codeLength: code.length });
-                addLog('SYSTEM', `✅ Synthesis Success: ${contract_name} (${(toll_gate.score * 100).toFixed(0)}%)`);
+                if (isFallback) {
+                    addLog('SYSTEM', `⚠ Template Loaded: ${contract_name}\n\nGuarded synthesis did not fully converge.\nA secure NexOps canonical structure was loaded.\n\nUse /edit to customize logic or add features`);
+                } else {
+                    addLog('SYSTEM', `✅ Successfully generated the contract: ${contract_name}`);
+                    if (metadata?.lint_soft_fail) {
+                        addLog('SYSTEM', `⚠️ Synthesis converged with minor structural warnings. Review Audit for details.`);
+                    }
+                }
+
+                const isAutoLoad = !hasAutoLoadedRef.current;
+
+                if (isAutoLoad) {
+                    hasAutoLoadedRef.current = true;
+                    // Auto apply update so users don't have to manually insert the first time
+                    const p = projectRef.current;
+                    const updatedFiles = [...p.files];
+                    const existingIndex = updatedFiles.findIndex(f => f.name === fileName);
+                    if (existingIndex !== -1) {
+                        updatedFiles[existingIndex] = { ...updatedFiles[existingIndex], content: code };
+                    } else {
+                        updatedFiles.push({ name: fileName, content: code, language: 'cashscript' });
+                    }
+                    onUpdateProject({
+                        ...p,
+                        files: updatedFiles,
+                        contractCode: code,
+                        lastModified: Date.now()
+                    });
+                    setActiveFileName(fileName);
+                }
 
                 setChatHistory(prev => {
                     const newHistory = [...prev];
                     const lastMsg = newHistory[newHistory.length - 1];
+                    const isFallback = isNaN(toll_gate.score) || toll_gate.score === null;
+                    const softFailText = metadata?.lint_soft_fail
+                        ? "\n\n⚠️ Synthesis converged with minor structural warnings. Review Audit for details."
+                        : "";
+
                     const successMsg: ChatMessage = {
                         role: 'model',
-                        text: `✅ Synthesis Complete: ${contract_name}\nScore: ${(toll_gate.score * 100).toFixed(0)}%\n\nThe contract passed with the following features: ${data.data.intent_model.features.join(', ')}.`,
-                        fileUpdates: [{ name: fileName, content: code }]
+                        text: isFallback
+                            ? `⚠ Template Loaded: ${contract_name}\n\nGuarded synthesis did not fully converge.\nA secure NexOps canonical structure was loaded.\n\nUse /edit to customize logic or add features`
+                            : `✅ Successfully generated the contract: ${contract_name}\n\nThe contract passed with the following features: ${data.data.intent_model.features.join(', ')}.${softFailText}`,
+                        fileUpdates: isAutoLoad ? undefined : [{ name: fileName, content: code }],
+                        isApplied: isAutoLoad
                     };
 
                     if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
@@ -301,20 +348,42 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setChatHistory(prev => [...prev, { role: 'user', text: msgToSend }]);
         setIsChatting(true);
 
-        if (useExternalGenerator) {
+        const isGenerateCommand = msgToSend.trim().startsWith('/generate');
+        const isEditCommand = msgToSend.trim().startsWith('/edit');
+        const intentMessage = isGenerateCommand ? msgToSend.replace('/generate', '').trim() : msgToSend;
+        const editInstruction = isEditCommand ? msgToSend.replace('/edit', '').trim() : '';
+
+        if (useExternalGenerator && isGenerateCommand) {
+            setLastGeneratedIntent(intentMessage);
             if (!websocketService.isConnected()) {
                 websocketService.connect();
                 // We'll wait a bit or just fail fast
                 setTimeout(() => {
                     if (websocketService.isConnected()) {
-                        websocketService.sendIntent(msgToSend, chatHistory.map(h => ({ role: h.role, content: h.text })));
+                        websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })));
                     } else {
                         setChatHistory(prev => [...prev, { role: 'model', text: "External Generator is not connected. Attempting to reconnect..." }]);
                         setIsChatting(false);
                     }
                 }, 1000);
             } else {
-                websocketService.sendIntent(msgToSend, chatHistory.map(h => ({ role: h.role, content: h.text })));
+                websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })));
+            }
+            return;
+        }
+
+        if (isEditCommand && mainContractFile) {
+            try {
+                const result = await editSmartContract(mainContractFile.content, editInstruction, useExternalGenerator);
+                setChatHistory(prev => [...prev, {
+                    role: 'model',
+                    text: result.explanation,
+                    fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+                }]);
+            } catch (e) {
+                setChatHistory(prev => [...prev, { role: 'model', text: "Failed to apply edit. Check connection to backend." }]);
+            } finally {
+                setIsChatting(false);
             }
             return;
         }
@@ -336,12 +405,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const applyFileUpdates = (updates: { name: string, content: string }[], messageIndex: number) => {
         console.log("📝 Applying File Updates:", updates);
         const updatedFiles = [...project.files];
+        const originalStates: { name: string, content: string | null }[] = [];
 
         updates.forEach(update => {
             const existingIndex = updatedFiles.findIndex(f => f.name === update.name);
             if (existingIndex !== -1) {
+                originalStates.push({ name: update.name, content: updatedFiles[existingIndex].content });
                 updatedFiles[existingIndex] = { ...updatedFiles[existingIndex], content: update.content };
             } else {
+                originalStates.push({ name: update.name, content: null });
                 updatedFiles.push({
                     name: update.name,
                     content: update.content,
@@ -353,6 +425,24 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         if (updates.length > 0) {
             setActiveFileName(updates[0].name);
         }
+
+        const newHistory = [...chatHistory];
+        newHistory[messageIndex] = { ...newHistory[messageIndex], isReviewing: true, originalStates };
+        setChatHistory(newHistory);
+
+        onUpdateProject({
+            ...project,
+            files: updatedFiles,
+            lastModified: Date.now()
+        });
+
+        setUnsavedChanges(true);
+    };
+
+    const acceptFileUpdates = (messageIndex: number) => {
+        const msg = chatHistory[messageIndex];
+        const updates = msg.fileUpdates;
+        if (!updates) return;
 
         const mainUpdate = updates.find(u => u.name.endsWith('.cash'));
 
@@ -366,18 +456,45 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         };
 
         const newHistory = [...chatHistory];
-        newHistory[messageIndex] = { ...newHistory[messageIndex], isApplied: true };
+        newHistory[messageIndex] = { ...newHistory[messageIndex], isReviewing: false, isApplied: true };
         setChatHistory(newHistory);
 
         onUpdateProject({
             ...project,
-            files: updatedFiles,
             contractCode: newVersion.code,
             versions: [newVersion, ...project.versions],
             lastModified: Date.now()
         });
 
         setUnsavedChanges(false);
+    };
+
+    const rejectFileUpdates = (messageIndex: number) => {
+        const msg = chatHistory[messageIndex];
+        const originalStates = msg.originalStates;
+        if (!originalStates) return;
+
+        const updatedFiles = [...project.files];
+
+        originalStates.forEach(orig => {
+            if (orig.content === null) {
+                const idx = updatedFiles.findIndex(f => f.name === orig.name);
+                if (idx !== -1) updatedFiles.splice(idx, 1);
+            } else {
+                const idx = updatedFiles.findIndex(f => f.name === orig.name);
+                if (idx !== -1) updatedFiles[idx] = { ...updatedFiles[idx], content: orig.content };
+            }
+        });
+
+        const newHistory = [...chatHistory];
+        newHistory[messageIndex] = { ...newHistory[messageIndex], isReviewing: false, isApplied: false };
+        setChatHistory(newHistory);
+
+        onUpdateProject({
+            ...project,
+            files: updatedFiles,
+            lastModified: Date.now()
+        });
     };
 
     const handleRunAudit = async () => {
@@ -389,7 +506,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         setChatHistory(prev => [...prev, { role: 'user', text: 'Run Security Audit' }]);
 
         try {
-            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator);
+            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator, lastGeneratedIntent);
             onUpdateProject({ ...project, auditReport: report });
             addLog('AUDITOR', '✅ Audit Complete. Issues found: ' + report.vulnerabilities.length);
 
@@ -435,6 +552,39 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }]);
         } catch (e) {
             setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix." }]);
+        } finally {
+            setIsChatting(false);
+        }
+    };
+
+    const handleFixProblem = async (problem: Problem) => {
+        if (!mainContractFile) return;
+        setActiveView('AUDITOR');
+        setIsChatting(true);
+
+        const prompt = `Fix this compilation error:\nFile: ${problem.file}\nLine: ${problem.line || 'unknown'}\nError: ${problem.message}`;
+        setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
+
+        try {
+            const issuePayload = {
+                title: 'Compilation Error',
+                description: problem.message,
+                severity: problem.severity === 'error' ? 'HIGH' : 'MEDIUM',
+                line: problem.line,
+                rule_id: 'compiler-error',
+                can_fix: true,
+                recommendation: 'Fix syntax or compilation error'
+            };
+
+            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, issuePayload);
+
+            setChatHistory(prev => [...prev, {
+                role: 'model',
+                text: result.explanation,
+                fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+            }]);
+        } catch (e) {
+            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix for compiler error." }]);
         } finally {
             setIsChatting(false);
         }
@@ -722,6 +872,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             onSend={handleSendMessage}
             isBusy={isChatting}
             onApply={applyFileUpdates}
+            onAccept={acceptFileUpdates}
+            onReject={rejectFileUpdates}
             onFixVulnerability={handleFixVulnerability}
             draftInput={chatDraft}
             useExternalGenerator={useExternalGenerator}
@@ -932,6 +1084,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }
         }
 
+        const activeReviewMessage = chatHistory.find(m => m.isReviewing);
+        const reviewOriginalState = activeReviewMessage?.originalStates?.find(s => s.name === activeFileName);
+
         const auditScore = project.auditReport?.score || 0;
         const auditStatus = auditScore > 0.8 ? 'CLEAN' : auditScore > 0.5 ? 'WARNINGS' : project.auditReport ? 'CRITICAL' : 'UNAUDITED';
         const auditColor = auditStatus === 'CLEAN' ? 'text-green-500 border-green-500/30' : auditStatus === 'WARNINGS' ? 'text-yellow-500 border-yellow-500/30' : auditStatus === 'CRITICAL' ? 'text-red-500 border-red-500/30' : 'text-slate-600 border-white/5';
@@ -1067,6 +1222,24 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                                 readOnly={true}
                             />
                         </>
+                    ) : activeReviewMessage && activeFile && reviewOriginalState ? (
+                        <>
+                            <div className="absolute top-2 right-4 z-50">
+                                <div className="px-3 py-1.5 bg-[#0078d4]/10 text-[#0078d4] border border-[#0078d4]/30 rounded-md shadow-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#0078d4] animate-pulse"></span>
+                                    Reviewing Changes
+                                </div>
+                            </div>
+                            <MonacoEditorWrapper
+                                key={`${activeFile.name}-ai-review`}
+                                code={activeFile.content}
+                                originalCode={reviewOriginalState.content || ''}
+                                language={activeFile.name.endsWith('.cash') ? 'cashscript' : 'markdown'}
+                                diffMode={true}
+                                onChange={() => { }}
+                                readOnly={true}
+                            />
+                        </>
                     ) : activeView === 'FLOW' ? (
                         artifactData ? (
                             <FlowGraph artifact={artifactData} sourceCode={sourceCode} />
@@ -1126,11 +1299,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                     onNavigate={(file, line) => {
                         setActiveFileName(file);
                     }}
-                    onAskAI={(problem: Problem) => {
-                        const msg = `Explain this error in ${problem.file}${problem.line ? `:${problem.line}` : ''}: ${problem.message}`;
-                        setChatDraft(msg);
-                        setActiveView('AUDITOR');
-                    }}
+                    onAskAI={handleFixProblem}
                 />
             }
         />
