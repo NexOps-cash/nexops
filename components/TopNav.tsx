@@ -30,10 +30,6 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate }) => {
                 </div>
                 <span className="text-white font-black tracking-tighter text-xl">NexOps</span>
             </div>
-            <button onClick={() => onNavigate('home')} className="flex items-center space-x-1 px-3 py-1.5 text-sm text-white hover:bg-white/5 rounded transition-colors">
-                <Home className="w-4 h-4" />
-                <span>Home</span>
-            </button>
 
             {/* Center: Nav Links */}
             <div className="hidden md:flex items-center space-x-8">

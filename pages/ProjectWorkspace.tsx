@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import JSZip from 'jszip';
 import { Button, Tabs, getFileIcon, Badge } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
@@ -323,6 +324,32 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         });
         setUnsavedChanges(false);
         return newVersion;
+    };
+
+    const handleDownloadProjectZip = async () => {
+        const zip = new JSZip();
+
+        project.files.forEach(file => {
+            let folder = '';
+            if (file.name.endsWith('.cash')) {
+                folder = 'contracts/';
+            } else if (file.name.endsWith('.json')) {
+                folder = 'artifacts/';
+            } else {
+                folder = 'docs/';
+            }
+            zip.file(`${folder}${file.name}`, file.content);
+        });
+
+        const content = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(content);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${project.name.replace(/\s+/g, '_')}_Project.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     const handleDownloadCash = () => {
@@ -821,8 +848,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
         return (
             <div className="flex-1 overflow-y-auto no-scrollbar py-0">
-                <div className="px-4 py-3 bg-black/20 border-b border-white/5 mb-1">
+                <div className="px-4 py-3 bg-black/20 border-b border-white/5 mb-1 flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{project.name}</span>
+                    <button
+                        onClick={handleDownloadProjectZip}
+                        className="flex items-center space-x-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 text-[9px] font-bold text-slate-400 hover:text-nexus-cyan border border-white/5 rounded transition-all group uppercase tracking-wider"
+                    >
+                        <Download size={12} className="group-hover:scale-110 transition-transform" />
+                        <span>Download .zip</span>
+                    </button>
                 </div>
 
                 <div className="flex flex-col">
