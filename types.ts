@@ -100,3 +100,8 @@ export interface StatusBarState {
   activeChannel?: string;
   isTerminalActive?: boolean;
 }
+
+export interface BYOKSettings {
+  apiKey: string;
+  provider: 'groq' | 'openrouter';
+}

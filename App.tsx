@@ -12,10 +12,13 @@ import { PublishModal } from './components/PublishModal';
 import { TopNav } from './components/TopNav';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
 import { Toaster } from 'react-hot-toast';
+import { SettingsModal } from './components/SettingsModal';
+import { BYOKSettings } from './types';
 
 type ViewState = 'home' | 'creator' | 'workspace' | 'wizard' | 'registry';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
+const BYOK_STORAGE_KEY = 'nexops_byok_settings';
 
 const App: React.FC = () => {
   // Persistence state
@@ -37,6 +40,17 @@ const App: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublishingReg, setIsPublishingReg] = useState(false);
+
+  // BYOK Settings
+  const [byokSettings, setByokSettings] = useState<BYOKSettings>(() => {
+    const saved = localStorage.getItem(BYOK_STORAGE_KEY);
+    try {
+      return saved ? JSON.parse(saved) : { apiKey: '', provider: 'groq' };
+    } catch (e) {
+      return { apiKey: '', provider: 'groq' };
+    }
+  });
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Load projects from Supabase when user logs in
   useEffect(() => {
@@ -154,6 +168,11 @@ const App: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [projects, user, activeProjectId]);
 
+  // Persist BYOK Settings
+  useEffect(() => {
+    localStorage.setItem(BYOK_STORAGE_KEY, JSON.stringify(byokSettings));
+  }, [byokSettings]);
+
   // Derived active project
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
 
@@ -187,8 +206,7 @@ const App: React.FC = () => {
         setCurrentView('creator');
         break;
       case 'Settings':
-        // TODO: Open settings overlay
-        console.log('Settings overlay (to be implemented)');
+        setIsSettingsModalOpen(true);
         break;
       case 'Documentation':
         // TODO: Open docs overlay
@@ -230,7 +248,7 @@ const App: React.FC = () => {
           source_code: activeProject.contractCode,
           bytecode: activeProject.auditReport?.metadata?.contract_hash || "",
           artifact: activeProject.auditReport || {},
-          compiler_version: "cashc v0.9.0",
+          compiler_version: "cashc v0.13.0",
           network: "testnet",
           audit: activeProject.auditReport || { score: 90 },
           tags: details.tags,
@@ -344,6 +362,7 @@ const App: React.FC = () => {
             onConnectWallet={() => setWalletConnected(!walletConnected)}
             onNavigateHome={handleNavigateHome}
             onPublish={handlePublishToRegistry}
+            byokSettings={byokSettings}
           />
         )}
 
@@ -368,6 +387,12 @@ const App: React.FC = () => {
           />
         )}
       </div>
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        settings={byokSettings}
+        onSave={setByokSettings}
+      />
       <Toaster position="bottom-right" toastOptions={{
         style: {
           background: '#0a0a0c',

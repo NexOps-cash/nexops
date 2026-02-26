@@ -209,12 +209,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         <div className="w-14 h-14 rounded-xl bg-nexus-purple/10 border border-nexus-purple/20 flex items-center justify-center mb-6 group-hover:bg-nexus-purple/20 transition-all">
                             <Wand2 className="w-7 h-7 text-nexus-purple" />
                         </div>
-                        <h2 className="text-2xl font-black text-white mb-3 tracking-tight italic">Smart Wizard</h2>
+                        <h2 className="text-2xl font-black text-white mb-3 tracking-tight italic">Smart Wizard (Beta)</h2>
                         <p className="text-slate-400 flex-1 mb-8 text-sm leading-relaxed">
                             Generate audited contract templates using deterministic parameter injection. No hallucinated logic. Reproducible by design.
                         </p>
                         <div className="text-nexus-purple font-bold text-sm tracking-widest uppercase flex items-center group-hover:gap-1 transition-all">
-                            Launch Wizard <ArrowRight className="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                            Launch Wizard (Beta) <ArrowRight className="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                         </div>
                     </button>
 

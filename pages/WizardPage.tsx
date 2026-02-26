@@ -81,7 +81,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                             <Wand2 className="w-6 h-6 text-nexus-purple" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-black text-white tracking-tight">Contract Wizard</h1>
+                            <h1 className="text-3xl font-black text-white tracking-tight">Contract Wizard (Beta)</h1>
                             <p className="text-slate-400 text-sm">Guided, safe contract generation for the NexOps Ecosystem.</p>
                         </div>
                     </div>
@@ -246,7 +246,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/5 p-3 rounded-md border border-white/5">
                                 <div className="text-center md:border-r border-white/10 pr-2">
                                     <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Compiler</div>
-                                    <div className="text-[10px] font-mono text-white text-nowrap">cashc v0.9.0</div>
+                                    <div className="text-[10px] font-mono text-white text-nowrap">cashc v0.13.0</div>
                                 </div>
                                 <div className="text-center md:border-r border-white/10 px-2">
                                     <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Audit</div>

@@ -4,7 +4,7 @@ import { Button } from './UI';
 import { AuditReportView } from './AuditReportView';
 import { ExplainPanelView } from './ExplainPanelView';
 import { ContractExplanation } from '../services/groqService';
-import { AuditReport, Vulnerability } from '../types';
+import { AuditReport, Vulnerability, BYOKSettings } from '../types';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -29,11 +29,12 @@ interface AIPanelProps {
     useExternalGenerator?: boolean;
     onToggleExternal?: (val: boolean) => void;
     isWsConnected?: boolean;
+    byokSettings?: BYOKSettings;
 }
 
 export const AIPanel: React.FC<AIPanelProps> = ({
     history, onSend, isBusy, onApply, onAccept, onReject, onFixVulnerability, draftInput,
-    useExternalGenerator = false, onToggleExternal, isWsConnected = false
+    useExternalGenerator = false, onToggleExternal, isWsConnected = false, byokSettings
 }) => {
     const [input, setInput] = useState('');
     const [showCommands, setShowCommands] = useState(false);
@@ -113,6 +114,12 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    {byokSettings?.apiKey && (
+                        <div className="flex items-center gap-2 px-2 py-0.5 bg-green-500/10 border border-green-500/20 rounded">
+                            <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span>
+                            <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">BYOK: {byokSettings.provider}</span>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <span className={`w-1.5 h-1.5 rounded-full ${useExternalGenerator ? (isWsConnected ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-red-500') : 'bg-slate-600'}`}></span>
                         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">
