@@ -96,9 +96,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                 }
                 // Priority 2: WalletConnect
                 else if (walletConnectService.isConnected()) {
-                    const session = walletConnectService.getSession();
-                    const bchNS = session?.namespaces?.['bch'];
-                    pkValue = (bchNS as any)?.metadata?.pubkey || (bchNS as any)?.metadata?.publicKey || '';
+                    pkValue = walletConnectService.getPublicKey();
                 }
 
                 if (pkValue && nextValues[input.name] !== pkValue) {
@@ -158,8 +156,9 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                     )}
                 </div>
 
-                {!burnerAddress && !walletConnectService.isConnected() ? (
-                    <div className="grid grid-cols-1 gap-2">
+                <div className="space-y-2">
+                    {/* Burner Options - Always show unless burner is explicitly loaded */}
+                    {!burnerAddress ? (
                         <Button
                             variant="glass"
                             size="sm"
@@ -177,39 +176,42 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                 <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mt-1">Instant Pubkey Autofill</div>
                             </div>
                         </Button>
-                    </div>
-                ) : burnerAddress ? (
-                    <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between group">
-                        <div className="flex items-center space-x-3 truncate mr-4">
-                            <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20 shrink-0">
-                                <Activity size={14} className="text-green-500" />
+                    ) : (
+                        <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between group">
+                            <div className="flex items-center space-x-3 truncate mr-4">
+                                <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20 shrink-0">
+                                    <Activity size={14} className="text-green-500" />
+                                </div>
+                                <div className="truncate">
+                                    <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">Burner Loaded</div>
+                                    <div className="text-[8px] font-mono text-slate-500 truncate">{burnerAddress}</div>
+                                </div>
                             </div>
-                            <div className="truncate">
-                                <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">Burner Loaded</div>
-                                <div className="text-[8px] font-mono text-slate-500 truncate">{burnerAddress}</div>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <div className="px-1.5 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[8px] font-bold uppercase tracking-widest">Sync</div>
-                            <button className="p-1 hover:bg-white/5 rounded transition-colors" onClick={onGenerateBurner}>
-                                <RefreshCw size={10} className="text-slate-500" />
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
-                        <div className="flex items-center space-x-3 truncate">
-                            <div className="w-8 h-8 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20 shrink-0">
-                                <Wallet size={14} className="text-nexus-cyan" />
-                            </div>
-                            <div className="truncate">
-                                <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">WalletConnect Session</div>
-                                <div className="text-[8px] font-mono text-slate-500 truncate">{walletConnectService.getSession()?.peer?.metadata?.name || 'External Wallet'}</div>
+                            <div className="flex items-center space-x-2">
+                                <div className="px-1.5 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[8px] font-bold uppercase tracking-widest">Sync</div>
+                                <button className="p-1 hover:bg-white/5 rounded transition-colors" onClick={onGenerateBurner}>
+                                    <RefreshCw size={10} className="text-slate-500" />
+                                </button>
                             </div>
                         </div>
-                        <CheckCircle size={14} className="text-nexus-cyan shrink-0 ml-2" />
-                    </div>
-                )}
+                    )}
+
+                    {/* WalletConnect Status - Complementary */}
+                    {walletConnectService.isConnected() && (
+                        <div className="p-2 bg-black/40 border border-nexus-cyan/10 rounded-lg flex items-center justify-between animate-in slide-in-from-top-2">
+                            <div className="flex items-center space-x-3 truncate">
+                                <div className="w-8 h-8 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20 shrink-0">
+                                    <Wallet size={14} className="text-nexus-cyan" />
+                                </div>
+                                <div className="truncate">
+                                    <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">WalletConnect Session</div>
+                                    <div className="text-[8px] font-mono text-slate-400 truncate">{walletConnectService.getSession()?.peer?.metadata?.name || 'External Wallet'}</div>
+                                </div>
+                            </div>
+                            <CheckCircle size={14} className="text-nexus-cyan shrink-0 ml-2" />
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="space-y-4">

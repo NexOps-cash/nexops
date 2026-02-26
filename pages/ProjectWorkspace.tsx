@@ -22,7 +22,7 @@ import { UTXO } from '../services/blockchainService';
 import { ContractArtifact } from '../types';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { walletConnectService } from '../services/walletConnectService';
-import { TransactionBuilder } from '../components/TransactionBuilder';
+import { TransactionBuilder, TransactionHistory } from '../components/TransactionBuilder';
 import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
 import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
@@ -1175,41 +1175,50 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         );
     };
 
-    const renderSidebarInteract = () => (
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-            {!deployedArtifact ? (
-                <div className="text-center py-10 text-gray-500">
-                    <Rocket className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                    <p className="text-xs uppercase tracking-widest font-bold">No Active Deployment</p>
-                    <p className="text-[10px] mt-2">Deploy a contract to enable interaction.</p>
-                </div>
-            ) : (
-                <TransactionBuilder
-                    artifact={deployedArtifact}
-                    deployedAddress={deployedAddress}
-                    constructorArgs={constructorArgs}
-                    wcSession={walletConnectService.getSession()}
-                    network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
-                    initialUtxo={fundingUtxo}
-                    onConfigChange={(newArgs) => {
-                        setConstructorArgs(newArgs);
-                        onUpdateProject({
-                            ...project,
-                            constructorArgs: newArgs,
-                            lastModified: Date.now()
-                        });
-                    }}
-                    burnerWif={burnerWif}
-                    burnerAddress={burnerAddress}
-                    burnerPubkey={burnerPubkey}
-                    onGenerateBurner={handleGenerateBurner}
-                    isGeneratingBurner={isGeneratingBurner}
-                    history={project.executionHistory}
-                    onRecordTransaction={handleRecordTransaction}
-                />
-            )}
-        </div>
-    );
+    const renderSidebarInteract = () => {
+        const history = project.executionHistory || [];
+
+        return (
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col h-full">
+                {!deployedArtifact ? (
+                    <div className="flex-1 flex flex-col items-center justify-center py-10 text-gray-500">
+                        <Rocket className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                        <p className="text-xs uppercase tracking-widest font-bold">No Active Deployment</p>
+                        <p className="text-[10px] mt-2 mb-8">Deploy a contract to enable interaction.</p>
+
+                        {/* Always show history if it exists */}
+                        <div className="w-full border-t border-white/5 pt-6 mt-6">
+                            <TransactionHistory history={history} />
+                        </div>
+                    </div>
+                ) : (
+                    <TransactionBuilder
+                        artifact={deployedArtifact}
+                        deployedAddress={deployedAddress}
+                        constructorArgs={constructorArgs}
+                        wcSession={walletConnectService.getSession()}
+                        network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
+                        initialUtxo={fundingUtxo}
+                        onConfigChange={(newArgs) => {
+                            setConstructorArgs(newArgs);
+                            onUpdateProject({
+                                ...project,
+                                constructorArgs: newArgs,
+                                lastModified: Date.now()
+                            });
+                        }}
+                        burnerWif={burnerWif}
+                        burnerAddress={burnerAddress}
+                        burnerPubkey={burnerPubkey}
+                        onGenerateBurner={handleGenerateBurner}
+                        isGeneratingBurner={isGeneratingBurner}
+                        history={history}
+                        onRecordTransaction={handleRecordTransaction}
+                    />
+                )}
+            </div>
+        );
+    };
 
     const renderSidebarDeploy = () => (
         <Deployment

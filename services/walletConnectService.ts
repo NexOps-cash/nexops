@@ -24,6 +24,11 @@ const CHAIN_NAMESPACES = {
     }
 };
 
+const CAIP2_BY_NETWORK: Record<string, string> = {
+    mainnet: 'bch:bitcoincash',
+    chipnet: 'bch:bchtest',
+};
+
 export type ChainId = string;
 
 // Connection Status Enum
@@ -113,7 +118,7 @@ class WalletConnectService extends EventEmitter {
 
             this.modal = new WalletConnectModal({
                 projectId: PROJECT_ID,
-                chains: ['bch:mainnet', 'bch:testnet']
+                chains: ['bch:bitcoincash', 'bch:bchtest']
             });
 
             this.setupEventListeners();
@@ -159,21 +164,22 @@ class WalletConnectService extends EventEmitter {
         if (!this.client) await this.init();
         if (!this.client) throw new Error('WalletConnect Client not initialized');
 
-        // WalletConnect chains mapped to namespaces. 
-        // Wallets commonly support 'bch:mainnet' or 'bch:testnet'.
-        const normalizedChainId = validChainId;
+        // Map internal network name to CAIP-2
+        // We handle variants of 'chipnet', 'testnet' etc.
+        const currentNetwork = (validChainId.includes('test') || validChainId.includes('chip')) ? 'chipnet' : 'mainnet';
+        const caipChainId = CAIP2_BY_NETWORK[currentNetwork];
 
-        const optionalNamespaces = {
+        const requiredNamespaces = {
             bch: {
                 methods: CHAIN_NAMESPACES.bch.methods,
                 events: CHAIN_NAMESPACES.bch.events,
-                chains: [normalizedChainId, 'bch:mainnet', 'bch:testnet']
+                chains: [caipChainId]
             }
         };
 
         try {
             const { uri, approval } = await this.client.connect({
-                optionalNamespaces: optionalNamespaces
+                requiredNamespaces: requiredNamespaces
             });
 
             if (uri) {
@@ -187,6 +193,7 @@ class WalletConnectService extends EventEmitter {
                 // Wait for approval in background
                 approval().then((session) => {
                     this.session = session;
+                    console.log('WC Session Namespaces:', session.namespaces);
                     if (this.modal) this.modal.closeModal();
                     this.updateConnectionStatus(ConnectionStatus.CONNECTED);
                     this.emit('session_connected', session);
@@ -255,7 +262,7 @@ class WalletConnectService extends EventEmitter {
             for (const [nsKey, ns] of allNamespaces) {
                 const bchAccount = ns.accounts?.find(a => a.includes('bch:'));
                 if (bchAccount) {
-                    // Extract chain from account string (format: "bch:testnet:address")
+                    // Extract chain from account string (format: "bch:bchtest:address")
                     const parts = bchAccount.split(':');
                     if (parts.length >= 2) {
                         approvedChainId = `${parts[0]}:${parts[1]}`;
@@ -344,6 +351,10 @@ class WalletConnectService extends EventEmitter {
         // Search 'bch' namespace first
         const bchNamespace = this.session.namespaces['bch'];
         if (bchNamespace?.accounts?.[0]) {
+            // CAIP-10 format: "namespace:reference:account_id" 
+            // example: "bch:bchtest:bchtest:qqxxxxx" or "bch:bchtest:qqxxxxx"
+            // The user wants the last part, but if it's bchtest:qqxxxxx, we might need more.
+            // Following user's explicit request for slice(-1)[0] but noting it might need adjustment if prefix is needed.
             return bchNamespace.accounts[0];
         }
 
@@ -354,6 +365,42 @@ class WalletConnectService extends EventEmitter {
         }
 
         return null;
+    }
+
+    /**
+     * Extracts the address from a CAIP-10 account string.
+     * Aligns with OPTN expectations.
+     */
+    public getAddress(): string {
+        const fullAccount = this.getAccount();
+        if (!fullAccount) return '';
+
+        const parts = fullAccount.split(':');
+        // If format is like bch:bchtest:bchtest:qqxxxxx
+        // slice(-1)[0] extracts: qqxxxxx
+        // To get bchtest:qqxxxxx, we would need parts.slice(-2).join(':')
+
+        // However, the user specifically requested slice(-1)[0] logic in their prompt snippet, 
+        // while also saying it extracts "bchtest:qqxxxxx". This is a contradiction if split by ':'.
+        // We will implement a robust extraction that handles both.
+
+        if (parts.length >= 4) {
+            return parts.slice(-2).join(':'); // Extracts "prefix:payload"
+        }
+
+        return parts[parts.length - 1];
+    }
+
+    /**
+     * Extracts the public key from the session metadata if provided by the wallet.
+     */
+    public getPublicKey(): string {
+        if (!this.session) return '';
+
+        const bchNamespace = this.session.namespaces['bch'];
+        // some wallets provide pubkey in metadata or as a dedicated property
+        const metadata = (bchNamespace as any)?.metadata;
+        return metadata?.pubkey || metadata?.publicKey || '';
     }
 
     private setupEventListeners() {

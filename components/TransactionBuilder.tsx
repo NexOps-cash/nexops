@@ -127,14 +127,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             updated = true;
                         }
                     } else if (signingMethod === 'walletconnect' && walletConnectService.isConnected()) {
-                        // Deriving from WalletConnect session
-                        const session = walletConnectService.getSession();
-                        // Search for pubkey in namespaces/accounts metadata if available
-                        // Most BCH wallets don't expose it directly in standard WC strings, 
-                        // but some provide it in session namespaces metadata
-                        const bchNS = session?.namespaces?.['bch'];
-                        const pk = (bchNS as any)?.metadata?.pubkey || (bchNS as any)?.metadata?.publicKey;
-
+                        const pk = walletConnectService.getPublicKey();
                         if (pk && newArgs[i] !== pk) {
                             newArgs[i] = pk;
                             updated = true;
@@ -690,19 +683,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
 
     const getWalletAddress = () => {
-        const fullAccount = walletConnectService.getAccount();
-        if (!fullAccount) return 'Not Connected';
-
-        const parts = fullAccount.split(':');
-
-        // WalletConnect format typically is namespace:chain:prefix:payload
-        // We need the last two parts to form a valid CashAddr (prefix:payload)
-        if (parts.length >= 4) {
-            return parts.slice(-2).join(':');
-        }
-
-        // Fallback for simpler formats
-        return parts.length > 2 ? parts[parts.length - 1] : fullAccount;
+        const address = walletConnectService.getAddress();
+        if (!address) return 'Not Connected';
+        return address;
     };
 
     // -- Renders --
@@ -788,8 +771,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 return;
             }
 
-            const wcChainId = (network === 'mainnet' || network === 'main') ? 'bch:mainnet' : 'bch:testnet';
-            await walletConnectService.connect(wcChainId);
+            // The service now handles mapping internal 'network' to CAIP-2
+            await walletConnectService.connect(network);
         } catch (error) {
             console.error("Connection failed:", error);
         }
@@ -1209,63 +1192,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         </div>
     );
 
-    const renderHistory = () => {
-        if (!history || history.length === 0) return null;
-
-        return (
-            <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4">
-                <div className="flex items-center justify-between px-1">
-                    <div className="flex items-center space-x-2">
-                        <History size={12} className="text-nexus-cyan" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution History</span>
-                    </div>
-                    <Badge variant="ghost" className="text-[10px] opacity-50 uppercase font-black">{history.length} SPENDS</Badge>
-                </div>
-
-                <div className="space-y-2">
-                    {[...history].reverse().map((record, idx) => (
-                        <div
-                            key={idx}
-                            className="bg-black/40 border border-white/5 rounded-xl p-3 group hover:border-nexus-cyan/30 transition-all"
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center space-x-2">
-                                    <div className="w-6 h-6 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20">
-                                        <Play size={10} className="text-nexus-cyan" />
-                                    </div>
-                                    <span className="font-mono text-xs font-black text-white">{record.funcName}</span>
-                                </div>
-                                <div className="flex items-center space-x-1.5 text-slate-500">
-                                    <Clock size={10} />
-                                    <span className="text-[9px] font-bold uppercase tracking-tighter">
-                                        {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 mr-2">
-                                    {record.args.map((arg, i) => (
-                                        <span key={i} className="text-[8px] font-mono px-1.5 py-0.5 bg-white/5 text-slate-400 rounded border border-white/5 truncate max-w-[80px]">
-                                            {arg}
-                                        </span>
-                                    ))}
-                                </div>
-                                <button
-                                    onClick={() => window.open(getExplorerLink(record.txid), '_blank')}
-                                    className="p-1.5 bg-white/5 hover:bg-nexus-cyan/10 text-slate-500 hover:text-nexus-cyan rounded-lg border border-white/5 hover:border-nexus-cyan/20 transition-all flex items-center space-x-1 shrink-0"
-                                >
-                                    <span className="text-[9px] font-black tracking-widest uppercase ml-1">View</span>
-                                    <ExternalLink size={10} />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    };
-
     // -- Main Render --
     return (
         <div className="flex flex-col h-full">
@@ -1334,7 +1260,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     </div>
                 )}
 
-                {renderHistory()}
+                <TransactionHistory history={history} />
             </div>
 
             {/* Wizard Modal */}
@@ -1356,6 +1282,66 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     {currentStep === 4 && renderStep4_Result()}
                 </div>
             </Modal>
+        </div>
+    );
+};
+
+// --- Standalone History Component ---
+export const TransactionHistory: React.FC<{
+    history: ExecutionRecord[];
+}> = ({ history }) => {
+    if (!history || history.length === 0) return null;
+
+    return (
+        <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center justify-between px-1">
+                <div className="flex items-center space-x-2">
+                    <History size={12} className="text-nexus-cyan" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution History</span>
+                </div>
+                <Badge variant="ghost" className="text-[10px] opacity-50 uppercase font-black">{history.length} SPENDS</Badge>
+            </div>
+
+            <div className="space-y-2">
+                {[...history].reverse().map((record, idx) => (
+                    <div
+                        key={idx}
+                        className="bg-black/40 border border-white/5 rounded-xl p-3 group hover:border-nexus-cyan/30 transition-all"
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                                <div className="w-6 h-6 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20">
+                                    <Play size={10} className="text-nexus-cyan" />
+                                </div>
+                                <span className="font-mono text-xs font-black text-white">{record.funcName}</span>
+                            </div>
+                            <div className="flex items-center space-x-1.5 text-slate-500">
+                                <Clock size={10} />
+                                <span className="text-[9px] font-bold uppercase tracking-tighter">
+                                    {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 mr-2">
+                                {record.args.map((arg, i) => (
+                                    <span key={i} className="text-[8px] font-mono px-1.5 py-0.5 bg-white/5 text-slate-400 rounded border border-white/5 truncate max-w-[80px]">
+                                        {arg}
+                                    </span>
+                                ))}
+                            </div>
+                            <button
+                                onClick={() => window.open(getExplorerLink(record.txid), '_blank')}
+                                className="p-1.5 bg-white/5 hover:bg-nexus-cyan/10 text-slate-500 hover:text-nexus-cyan rounded-lg border border-white/5 hover:border-nexus-cyan/20 transition-all flex items-center space-x-1 shrink-0"
+                            >
+                                <span className="text-[9px] font-black tracking-widest uppercase ml-1">View</span>
+                                <ExternalLink size={10} />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
