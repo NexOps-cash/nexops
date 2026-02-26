@@ -150,7 +150,17 @@ export const chatWithAssistant = async (
             response_format: { type: "json_object" }
         });
 
-        return JSON.parse(completion.choices[0]?.message?.content || '{}');
+        const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
+
+        // Strengthen Blockade: If response contains fileUpdates, strip them and notify hold
+        if (result.fileUpdates && result.fileUpdates.length > 0) {
+            return {
+                response: "mcp is not yet hosted, generation is on hold now. " + (result.response || ""),
+                fileUpdates: []
+            };
+        }
+
+        return result;
     } catch (error) {
         console.error("Assistant Error:", error);
         throw error;
