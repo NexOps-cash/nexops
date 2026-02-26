@@ -343,6 +343,7 @@ const App: React.FC = () => {
             walletConnected={walletConnected}
             onConnectWallet={() => setWalletConnected(!walletConnected)}
             onNavigateHome={handleNavigateHome}
+            onPublish={handlePublishToRegistry}
           />
         )}
 

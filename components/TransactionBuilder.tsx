@@ -5,9 +5,10 @@ import {
     Play, Terminal, Activity, CheckCircle,
     ArrowRight, Wallet, ChevronRight, AlertCircle,
     Cpu, Hash, ArrowLeft, Loader2, ShieldAlert,
-    ExternalLink, History, Clock, Zap, ChevronDown, ChevronUp
+    ExternalLink, History, Clock, Zap, ChevronDown, ChevronUp,
+    RotateCcw
 } from 'lucide-react';
-import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
+import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds } from '../services/blockchainService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { QRCodeSVG } from 'qrcode.react';
 import LocalWalletService from '../services/localWalletService';
@@ -93,12 +94,12 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const [selectedUtxoIds, setSelectedUtxoIds] = useState<string[]>([]);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
-    // Parse ABI
-    const functions = artifact.abi.filter(item => item.type === 'function' || !item.type);
-    const constructorInputs = artifact.constructorInputs || [];
-
     // Constructor Args State
     const [internalConstructorArgs, setInternalConstructorArgs] = useState<string[]>([]);
+
+    // Parse ABI - SAFE ACCESS
+    const functions = artifact?.abi.filter(item => item.type === 'function' || !item.type) || [];
+    const constructorInputs = artifact?.constructorInputs || [];
 
     // Initialize/Sync constructor args
     useEffect(() => {
@@ -255,9 +256,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         };
     }, [deployedAddress, burnerAddress]);
 
-    const loadUtxos = async () => {
+    const loadUtxos = async (manual = false) => {
         if (!deployedAddress) return;
         setIsFetchingUtxos(true);
+        if (manual) toast.loading('Refreshing balance...', { id: 'refresh_load' });
         try {
             const utxos = await fetchUTXOs(deployedAddress);
             setContractUtxos(utxos);
@@ -281,8 +283,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                 if (bConfirmedValue + bUnconfirmedValue > 0) setIsAwaitingPropagation(false);
             }
+            if (manual) toast.success('Balance updated', { id: 'refresh_load' });
         } catch (e) {
             console.error(e);
+            if (manual) toast.error('Failed to refresh balance', { id: 'refresh_load' });
         } finally {
             setIsFetchingUtxos(false);
         }
@@ -315,62 +319,20 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         if (!targetAddress) return;
         setIsFundingBurner(true);
         try {
-            // Validate address format and type
-            const decoded = decodeCashAddress(targetAddress);
-            if (typeof decoded === 'string') {
-                toast.error('Invalid address format: ' + decoded);
-                return;
-            }
+            const result = await requestFaucetFunds(targetAddress);
 
-            // Faucets typically only support P2PKH
-            if (decoded.type === 'p2sh') {
-                toast.error('Faucet limitation: Only P2PKH (wallet) addresses can be funded. Contracts must be funded from a wallet.', {
-                    duration: 5000,
-                    id: 'faucet_p2sh_warn'
-                });
-                return;
-            }
-
-            // The rest-unstable faucet expects a properly prefixed address
-            const formattedAddress = targetAddress.includes(':') ? targetAddress : `bchtest:${targetAddress}`;
-
-            console.log(`[Faucet] Requesting funds for: ${formattedAddress} (Type: ${decoded.type})`);
-
-            const response = await fetch('https://rest-unstable.mainnet.cash/faucet/get_testnet_bch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cashaddr: formattedAddress }),
-            });
-
-            const responseText = await response.text();
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                data = { error: 'Server returned non-JSON response' };
-            }
-
-            // Diagnostic logging for the 405 error (which means Incorrect cashaddr in this API)
-            console.log(`[Faucet] Response Status: ${response.status}`);
-            console.log(`[Faucet] Response Body:`, data);
-
-            if (response.status === 405) {
-                toast.error('Faucet Error (405): The server rejected this address. Ensure it is a valid P2PKH Testnet address.', { id: 'fund_405' });
-                return;
-            }
-
-            if (data.txId) {
-                toast.success('Testnet gas secured! TX: ' + data.txId.slice(0, 10) + '...', { id: 'fund_success' });
+            if (result.success) {
+                if (result.txid) {
+                    toast.success('Testnet gas secured! TX: ' + result.txid.slice(0, 10) + '...', { id: 'fund_success' });
+                } else {
+                    toast.success('Funds requested. Awaiting network confirmation.', { id: 'fund_req' });
+                }
                 // Trigger propagation UI (Subscription & Polling will handle the update)
                 setIsAwaitingPropagation(true);
                 // Immediately check once
                 loadUtxos();
-            } else if (data.error) {
-                toast.error('Funding failed: ' + data.error, { id: 'fund_err' });
             } else {
-                toast.success('Funds requested. Awaiting network confirmation.', { id: 'fund_req' });
-                setIsAwaitingPropagation(true);
-                loadUtxos();
+                toast.error(result.error || 'Funding failed', { id: 'fund_err' });
             }
         } catch (error: any) {
             console.error("Faucet error details:", error);
@@ -569,16 +531,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
             // Use selected UTXOs from state instead of fetching from contract again
             // This ensures we spend exactly what the user sees and selects
-            const selectedUtxos = contractUtxos?.filter(u =>
+            let selectedUtxos = contractUtxos?.filter(u =>
                 selectedUtxoIds.includes(`${u.txid}:${u.vout}`)
             ) || [];
 
+            // Logic: if only 1 utxo is available, use it even if not explicitly selected in UI
+            if (selectedUtxos.length === 0 && contractUtxos?.length === 1) {
+                selectedUtxos = contractUtxos;
+            }
+
             if (selectedUtxos.length === 0) {
-                // Fallback: If nothing selected but we have UTXOs, use the first one (prev behavior)
-                // but warn the user or just error out for "Coin Control" safety.
-                if (contractUtxos && contractUtxos.length > 0) {
-                    throw new Error("Please select at least one UTXO from the list on the right.");
-                }
                 throw new Error("No UTXOs found for this contract. Please fund it first.");
             }
 
@@ -947,7 +909,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest">UTXO Inventory</span>
-                                    <button onClick={loadUtxos} className="text-[9px] text-nexus-cyan font-bold hover:underline">Refresh</button>
+                                    <div className="text-[9px] text-nexus-cyan/40 font-bold italic">Auto-Syncing</div>
                                 </div>
                                 <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
                                     {contractUtxos && contractUtxos.length > 0 ? (
@@ -1087,6 +1049,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     );
 
     // -- Main Render --
+    if (!artifact) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500">
+                <ShieldAlert className="w-12 h-12 mb-4 opacity-20" />
+                <div className="text-xs uppercase tracking-widest font-black">Missing Artifact</div>
+                <p className="text-[10px] mt-2 opacity-60">The contract metadata is missing. Try re-compiling the contract.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-full">
             <div className="p-4 border-b border-white/5 bg-black/20">
@@ -1096,9 +1068,29 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         Available Actions
                     </h3>
                     {totalBalance > 0 ? (
-                        <Badge variant="success" className="text-[9px] py-0 h-4 shadow-[0_0_10px_rgba(34,197,94,0.3)]">Funded: {totalBalance.toLocaleString()} sats</Badge>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => loadUtxos(true)}
+                                disabled={isFetchingUtxos}
+                                className={`p-1.5 rounded-lg border border-nexus-cyan/20 hover:bg-nexus-cyan/10 transition-colors ${isFetchingUtxos ? 'animate-pulse' : ''}`}
+                                title="Refresh Balance"
+                            >
+                                <RotateCcw className={`w-3 h-3 text-nexus-cyan ${isFetchingUtxos ? 'animate-spin' : ''}`} />
+                            </button>
+                            <Badge variant="success" className="text-[9px] py-0 h-4 shadow-[0_0_10px_rgba(34,197,94,0.3)]">Funded: {totalBalance.toLocaleString()} sats</Badge>
+                        </div>
                     ) : (
-                        <Badge variant="warning" className="text-[9px] py-0 h-4">Awaiting Funding</Badge>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => loadUtxos(true)}
+                                disabled={isFetchingUtxos}
+                                className={`p-1.5 rounded-lg border border-white/5 hover:bg-white/5 transition-colors ${isFetchingUtxos ? 'animate-pulse' : ''}`}
+                                title="Refresh Balance"
+                            >
+                                <RotateCcw className={`w-3 h-3 text-slate-500 ${isFetchingUtxos ? 'animate-spin' : ''}`} />
+                            </button>
+                            <Badge variant="warning" className="text-[9px] py-0 h-4">Awaiting Funding</Badge>
+                        </div>
                     )}
                 </div>
                 <p className="text-[10px] text-slate-500 font-medium">Select a function to build an execution transaction.</p>

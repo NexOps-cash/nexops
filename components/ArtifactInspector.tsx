@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
     FileJson, Code, Cpu, Layers,
     Copy, Check, Download, ExternalLink,
-    Terminal as TerminalIcon, Info, Zap
+    Terminal as TerminalIcon, Info, Zap, Play
 } from 'lucide-react';
 import { Button, Badge } from './UI';
 
@@ -19,9 +19,10 @@ interface ArtifactInspectorProps {
         };
     };
     onDeploy?: () => void;
+    onInteract?: () => void;
 }
 
-export const ArtifactInspector: React.FC<ArtifactInspectorProps> = ({ artifact, onDeploy }) => {
+export const ArtifactInspector: React.FC<ArtifactInspectorProps> = ({ artifact, onDeploy, onInteract }) => {
     const [copied, setCopied] = useState(false);
     const [activeTab, setActiveTab] = useState<'METADATA' | 'ABI' | 'BYTECODE'>('METADATA');
 
@@ -61,7 +62,12 @@ export const ArtifactInspector: React.FC<ArtifactInspectorProps> = ({ artifact, 
                         <Button variant="glass" size="sm" onClick={downloadArtifact} icon={<Download size={14} />}>
                             Export
                         </Button>
-                        <Button variant="primary" size="sm" onClick={onDeploy} icon={<Zap size={14} />}>
+                        {onInteract && (
+                            <Button variant="primary" size="sm" onClick={onInteract} icon={<Play size={14} />} className="shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+                                Interact
+                            </Button>
+                        )}
+                        <Button variant={onInteract ? "glass" : "primary"} size="sm" onClick={onDeploy} icon={<Zap size={14} />}>
                             Deploy
                         </Button>
                     </div>

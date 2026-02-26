@@ -14,7 +14,7 @@ import {
     FileCode, Zap, Cpu, Loader2, ExternalLink, Wallet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
+import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript } from '../services/compilerService';
@@ -52,9 +52,17 @@ interface ProjectWorkspaceProps {
     walletConnected: boolean;
     onConnectWallet: () => void;
     onNavigateHome: () => void;
+    onPublish?: () => void;
 }
 
-export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onUpdateProject, walletConnected, onConnectWallet, onNavigateHome }) => {
+export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
+    project,
+    onUpdateProject,
+    walletConnected,
+    onConnectWallet,
+    onNavigateHome,
+    onPublish
+}) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
     const [wcSession, setWcSession] = useState<any>(null);
@@ -126,6 +134,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [burnerAddress, setBurnerAddress] = useState<string>('');
     const [burnerPubkey, setBurnerPubkey] = useState<string>('');
     const [isGeneratingBurner, setIsGeneratingBurner] = useState(false);
+    const [isFetchingBalance, setIsFetchingBalance] = useState(false);
     const [contractBalance, setContractBalance] = useState<number>(0);
 
     // Derived State
@@ -155,13 +164,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         if (!hasBurner && !hasWC) return 'CONNECT';
 
         // Step 2: Fund (Contract exists but balance is 0)
-        if (deployedAddress && contractBalance === 0) return 'FUND';
+        // If not deployed yet, we stay at "FUND" but show a deployment prompt
+        if (!deployedAddress || contractBalance === 0) return 'FUND';
 
         // Step 3: Interact (Contract has balance)
+        // TransactionBuilder handles missing artifact gracefully
         if (deployedAddress && contractBalance > 0) return 'INTERACT';
 
-        // Fallback to CONNECT if no deployment yet but wallet is connected
-        return 'CONNECT';
+        // Fallback to FUND if connected but no specific state match
+        return 'FUND';
     }, [burnerWif, wcSession, deployedAddress, contractBalance]);
 
     const openFiles = useMemo(() => {
@@ -1282,40 +1293,64 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                         <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mt-1">Pending Funding</p>
                     </div>
 
-                    <div className="bg-white p-3 rounded-2xl shadow-xl shadow-nexus-cyan/10 mx-auto inline-block">
-                        <QRCodeSVG value={deployedAddress || ''} size={160} />
-                    </div>
+                    {!deployedAddress ? (
+                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 text-left">
+                            <div className="flex items-center gap-2 text-yellow-500 text-[10px] font-black uppercase tracking-widest mb-2">
+                                <Rocket className="w-3 h-3" />
+                                Deployment Required
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-relaxed mb-4">
+                                You are connected, but haven't deployed this contract yet. Deploy now to generate a contract address and start funding.
+                            </p>
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                className="w-full text-[10px] font-black uppercase"
+                                onClick={() => setActiveView('DEPLOY')}
+                            >
+                                Go to Deploy Panel
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="bg-white p-3 rounded-2xl shadow-xl shadow-nexus-cyan/10 mx-auto inline-block">
+                                <QRCodeSVG value={deployedAddress || ''} size={160} />
+                            </div>
+
+                            <div className="bg-black/40 p-3 rounded-xl border border-white/5 text-left group cursor-pointer" onClick={() => {
+                                navigator.clipboard.writeText(deployedAddress);
+                                toast.success("Address copied");
+                            }}>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
+                                    <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
+                                </div>
+                                <p className="text-nexus-cyan font-mono text-[10px] break-all">
+                                    {deployedAddress}
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-3 pt-2">
-                        <div className="bg-black/40 p-3 rounded-xl border border-white/5 text-left group cursor-pointer" onClick={() => {
-                            navigator.clipboard.writeText(deployedAddress);
-                            toast.success("Address copied");
-                        }}>
-                            <div className="flex justify-between items-center mb-1">
-                                <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
-                                <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
-                            </div>
-                            <p className="text-nexus-cyan font-mono text-[10px] break-all">
-                                {deployedAddress}
-                            </p>
-                        </div>
-
                         <Button
                             variant="glass"
                             size="sm"
                             className="w-full border-nexus-cyan/20 hover:bg-nexus-cyan/10 text-nexus-cyan/70 hover:text-nexus-cyan"
-                            onClick={() => {
-                                // Trigger handleAutoFund (need to ensure it's accessible or replicated)
-                                // For now, we'll use the existing handleAutoFund from TransactionBuilder if possible
-                                // But since this is a different component, we might need to implement it in ProjectWorkspace
-                                toast.promise(
-                                    fetch(`https://chipnet.faucet.cash/send?address=${deployedAddress}`),
-                                    {
-                                        loading: 'Requesting funds from faucet...',
-                                        success: 'Faucet request sent! Waiting for detection...',
-                                        error: 'Faucet request failed. Try manual funding.'
+                            isLoading={isFetchingBalance}
+                            onClick={async () => {
+                                if (!deployedAddress) return;
+                                setIsFetchingBalance(true);
+                                try {
+                                    const result = await requestFaucetFunds(deployedAddress);
+                                    if (result.success) {
+                                        toast.success("Faucet request sent! Waiting for detection...");
+                                    } else {
+                                        toast.error(result.error || "Faucet failed");
                                     }
-                                );
+                                } finally {
+                                    setIsFetchingBalance(false);
+                                }
                             }}
                         >
                             <Zap className="w-3 h-3 mr-2" />
@@ -1325,15 +1360,22 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             variant="glass"
                             size="sm"
                             className="w-full border-white/5 bg-white/5 hover:bg-white/10 mt-2"
+                            isLoading={isFetchingBalance}
                             onClick={async () => {
-                                const utxos = await fetchUTXOs(deployedAddress);
-                                const balance = utxos.reduce((sum, u) => sum + u.value, 0);
-                                setContractBalance(balance);
-                                if (balance > 0) {
-                                    toast.success(`Balance detected: ${balance} sats`);
-                                    setActiveView('INTERACT');
-                                } else {
-                                    toast.error("No balance detected yet.");
+                                if (!deployedAddress) return;
+                                setIsFetchingBalance(true);
+                                try {
+                                    const utxos = await fetchUTXOs(deployedAddress);
+                                    const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                                    setContractBalance(balance);
+                                    if (balance > 0) {
+                                        toast.success(`Balance detected: ${balance} sats`);
+                                        setActiveView('INTERACT');
+                                    } else {
+                                        toast.error("No balance detected yet.");
+                                    }
+                                } finally {
+                                    setIsFetchingBalance(false);
                                 }
                             }}
                         >
@@ -1656,6 +1698,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                                 <Download size={14} className="group-active:scale-90 transition-transform" />
                                 <span>Download</span>
                             </button>
+                            {onPublish && (
+                                <button
+                                    onClick={onPublish}
+                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/30 rounded-md transition-all text-xs font-bold uppercase tracking-wider group ml-2"
+                                    title="Publish to Registry"
+                                >
+                                    <ShieldCheck size={14} className="group-active:scale-90 transition-transform" />
+                                    <span>Publish</span>
+                                </button>
+                            )}
                             <div className="flex-1" />
                             <button
                                 onClick={() => {
@@ -1746,6 +1798,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                                 onDeploy={() => {
                                     setDeployedArtifact(JSON.parse(activeFile.content));
                                     setActiveView('DEPLOY');
+                                }}
+                                onInteract={() => {
+                                    setDeployedArtifact(JSON.parse(activeFile.content));
+                                    setActiveView('INTERACT');
                                 }}
                             />
                         ) : (

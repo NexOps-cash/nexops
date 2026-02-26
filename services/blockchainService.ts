@@ -13,6 +13,12 @@ export interface UTXO {
     confirmations: number;
 }
 
+export interface FaucetResponse {
+    success: boolean;
+    txid?: string;
+    error?: string;
+}
+
 export interface FundingStatus {
     status: 'idle' | 'monitoring' | 'confirmed' | 'timeout' | 'error';
     utxos: UTXO[];
@@ -104,6 +110,7 @@ class ElectrumManager {
 export async function fetchUTXOs(address: string): Promise<UTXO[]> {
     try {
         const client = await ElectrumManager.getClient();
+
         const scriptHash = addressToScriptHash(address);
 
         // Use generic request, library handles ID and framing
@@ -117,8 +124,10 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
             confirmations: u.height > 0 ? 1 : 0
         }));
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('[blockchainService] UTXO fetch error:', error);
+        // If it's a connection error, it might be worth throwing or returning a specific flag
+        // but for now we return empty to avoid crashing UI
         return [];
     }
 }
@@ -292,4 +301,38 @@ export function getExplorerLink(value: string): string {
         return `${TESTNET_EXPLORER}/address/${value}`;
     }
     return `${TESTNET_EXPLORER}/tx/${value}`;
+}
+
+/**
+ * Consolidated Faucet Request
+ * Uses rest-unstable.mainnet.cash for reliability
+ */
+export async function requestFaucetFunds(address: string): Promise<FaucetResponse> {
+    try {
+        // Ensure prefix
+        const formattedAddress = address.includes(':') ? address : `bchtest:${address}`;
+
+        console.log(`[Faucet] Requesting funds for: ${formattedAddress}`);
+
+        const response = await fetch('https://rest-unstable.mainnet.cash/faucet/get_testnet_bch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cashaddr: formattedAddress }),
+        });
+
+        const data = await response.json();
+
+        if (data.txId) {
+            return { success: true, txid: data.txId };
+        } else if (data.error) {
+            return { success: false, error: data.error };
+        } else if (response.status === 405) {
+            return { success: false, error: 'Faucet server rejected address (405). Ensure it is a valid P2PKH Testnet address.' };
+        }
+
+        return { success: true }; // Assume success if no txId but no error (faucet behaves differently sometimes)
+    } catch (error: any) {
+        console.error("Faucet error:", error);
+        return { success: false, error: 'Funding API unreachable. Check network connection.' };
+    }
 }
