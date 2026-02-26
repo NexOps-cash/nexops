@@ -394,14 +394,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 setChatHistory(prev => {
                     const newHistory = [...prev];
                     const lastMsg = newHistory[newHistory.length - 1];
-                    const isFallback = isNaN(toll_gate.score) || toll_gate.score === null;
+                    // USE CONSOLIDATED FALLBACK FLAG
+                    const isFallbackFinal = isFallback;
                     const softFailText = metadata?.lint_soft_fail
                         ? "\n\n⚠️ Synthesis converged with minor structural warnings. Review Audit for details."
                         : "";
 
                     const successMsg: ChatMessage = {
                         role: 'model',
-                        text: isFallback
+                        text: isFallbackFinal
                             ? `⚠ Template Loaded: ${contract_name}\n\nGuarded synthesis did not fully converge.\nA secure NexOps canonical structure was loaded.\n\nUse /edit to customize logic or add features`
                             : `✅ Successfully generated the contract: ${contract_name}\n\nThe contract passed with the following features: ${data.data.intent_model.features.join(', ')}.${softFailText}`,
                         fileUpdates: isAutoLoad ? undefined : [{ name: fileName, content: code }],

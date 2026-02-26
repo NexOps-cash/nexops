@@ -75,12 +75,27 @@ const App: React.FC = () => {
             versions: row.versions || [],
             auditReport: row.audit_report,
             deployedAddress: row.deployed_address,
-            lastModified: row.last_modified
+            lastModified: typeof row.last_modified === 'string' ? new Date(row.last_modified).getTime() : row.last_modified
           }));
 
-          // Merge logic: Supabase wins if newer, or if local is empty
-          setProjects(mappedProjects);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(mappedProjects));
+          // Merge logic: For each remote project, update local if remote is newer or local doesn't exist
+          setProjects(prev => {
+            const localMap = new Map<string, Project>(prev.map(p => [p.id, p]));
+            let hasChanges = false;
+
+            mappedProjects.forEach(remote => {
+              const local = localMap.get(remote.id);
+              if (!local || remote.lastModified > local.lastModified) {
+                localMap.set(remote.id, remote);
+                hasChanges = true;
+              }
+            });
+
+            if (!hasChanges) return prev;
+            const updated = Array.from(localMap.values()).sort((a, b) => b.lastModified - a.lastModified);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            return updated;
+          });
         }
       } catch (err: any) {
         console.error("Failed to load projects from Supabase", err);
@@ -123,7 +138,7 @@ const App: React.FC = () => {
             versions: p.versions,
             audit_report: p.auditReport,
             deployed_address: p.deployedAddress,
-            last_modified: new Date().toISOString()
+            last_modified: Date.now()
           }, { onConflict: 'id' });
 
         if (error) throw error;
