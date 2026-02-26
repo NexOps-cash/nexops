@@ -15,10 +15,12 @@ NexOps Protocol is a high-performance, AI-driven development and operations laye
 - **🛡️ Automated Audit & Auto-Fix**: Real-time security scanning with an integrated feedback loop to correct logic and compile errors.
 - **⚡ Guided Interaction Flow**: A robust 3-step progressive stepper (Connect -> Fund -> Run) that automates the transition from compilation to live on-chain interaction.
 - **🔗 Multi-Wallet Broadcast Engine**: Full integration with WalletConnect v2 and temporary "Burner" wallets for seamless Chipnet testing.
-- **📊 Operational Intelligence**: Real-time UTXO monitoring, automated faucet funding, and opcode-level execution simulation with stack visualization.
+- **📊 Operational Intelligence**: Real-time UTXO monitoring, automated faucet funding, WIH burner wallets for quick Chipnet testing.
 - **🧩 Smart Contract Wizards**: Access high-level templates for Treasuries, Governance, and Escrows, generating production-ready code in seconds.
+- **🧬 VisualFlow Architecture**: Automated logic mapping that parses CashScript branching (if/else) and validation rules into a high-density relationship "pallet" for clear architectural oversight.
 - **🏛️ Verified Global Registry**: Publish and share audited contracts with the community to promote open, secure, and reusable smart contract patterns.
 - **☁️ Persistent Cloud Sync**: Reliable project storage with a "local-first" priority and automatic Supabase cloud synchronization.
+- **🔑 Bring Your Own Key (BYOK)**: Optional integration for Groq and OpenRouter keys, granting full control over AI provider usage and RAG behavior.
 
 ---
 
@@ -29,6 +31,7 @@ NexOps is built on a modular "Nexus" architecture that prioritizes security and 
 - **Nexus Frontend**: A polished React + Vite application utilizing Tailwind CSS for a premium, high-density dashboard experience.
 - **Inference Layer**: Pluggable AI backend supporting advanced reasoning for contract generation and audit report synthesis.
 - **Blockchain Interface**: Direct integration with `libauth` and `electrum-cash` for robust network interactions and hardware wallet compatibility.
+- **🔐 Privacy-First Security**: User API keys for BYOK are stored exclusively in `localStorage` and sent over encrypted channels only for request fulfillment.
 
 ---
 
@@ -70,6 +73,7 @@ The following technologies power the NexOps ecosystem:
    VITE_GEMINI_API_KEY=your_key_here
    VITE_GROQ_API_KEY=your_key_here
    ```
+   Alternatively, use the **BYOK Settings** in the UI to provide your own keys without environment variables.
 
 4. Launch the Development Server:
    ```bash
@@ -80,6 +84,7 @@ The following technologies power the NexOps ecosystem:
 
 ## 🗺️ Roadmap
 
+- [x] **Q1 2025**: Bring Your Own Key (BYOK) Integration for Groq/OpenRouter.
 - [ ] **Q3 2025**: Multi-contract composition support (linking multiple scripts).
 - [ ] **Q4 2025**: Integrated automated testing suite with BCH-sandbox.
 - [ ] **Q1 2026**: "One-Click Protocol" templates for common DeFi primitives (DEX, Lending, Stablecoins).

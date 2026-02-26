@@ -1,13 +1,17 @@
 import Groq from "groq-sdk";
-import { GenerationResponse, AuditReport, ProjectFile } from "../types";
+import { GenerationResponse, AuditReport, ProjectFile, BYOKSettings } from "../types";
 import { ragEngine } from "./RagEngine";
 
 // Initialize Groq SDK
-// Note: In Vite, we're relying on the process.envshim from vite.config.ts
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-    dangerouslyAllowBrowser: true // Required for client-side usage
-});
+const getGroqClient = (byok?: BYOKSettings) => {
+    const apiKey = (byok?.provider === 'groq' && byok?.apiKey) ? byok.apiKey : process.env.GROQ_API_KEY;
+    return new Groq({
+        apiKey: apiKey,
+        dangerouslyAllowBrowser: true
+    });
+};
+
+const groq = getGroqClient();
 
 const MODEL_CODE = 'llama-3.3-70b-versatile';
 const MODEL_AUDIT = 'llama-3.3-70b-versatile';
@@ -23,7 +27,8 @@ const GROQ_LIMITS = {
 const TEMP_CODE = 0.15;
 const TEMP_FIX = 0.0;
 
-export const generateSmartContract = async (prompt: string): Promise<GenerationResponse> => {
+export const generateSmartContract = async (prompt: string, byok?: BYOKSettings): Promise<GenerationResponse> => {
+    const client = getGroqClient(byok);
     // 1. RAG Retrieval Step
     const context = ragEngine.retrieveContext(prompt);
 
@@ -62,34 +67,42 @@ export const generateSmartContract = async (prompt: string): Promise<GenerationR
   PROVIDED CONTEXT:
   ${context}`;
 
-    try {
-        const completion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemInstruction },
-                { role: 'user', content: prompt }
-            ],
-            model: MODEL_CODE,
-            temperature: TEMP_CODE,
-            max_tokens: GROQ_LIMITS.code_generation,
-            response_format: { type: "json_object" }
-        });
-
-        const text = completion.choices[0]?.message?.content;
-        if (!text) throw new Error("No response from AI");
-
-        return JSON.parse(text) as GenerationResponse;
-
-    } catch (error) {
-        console.error("Groq Generation Error:", error);
-        throw error;
-    }
+    return {
+        code: "// Generation on Hold",
+        explanation: "mcp is not yet hosted, generation is on hold now"
+    };
+    /*
+        try {
+            const completion = await client.chat.completions.create({
+                messages: [
+                    { role: 'system', content: systemInstruction },
+                    { role: 'user', content: prompt }
+                ],
+                model: MODEL_CODE,
+                temperature: TEMP_CODE,
+                max_tokens: GROQ_LIMITS.code_generation,
+                response_format: { type: "json_object" }
+            });
+    
+            const text = completion.choices[0]?.message?.content;
+            if (!text) throw new Error("No response from AI");
+    
+            return JSON.parse(text) as GenerationResponse;
+    
+        } catch (error) {
+            console.error("Groq Generation Error:", error);
+            throw error;
+        }
+    */
 };
 
 export const chatWithAssistant = async (
     message: string,
     files: ProjectFile[],
-    history: { role: 'user' | 'model', text: string }[]
+    history: { role: 'user' | 'model', text: string }[],
+    byok?: BYOKSettings
 ): Promise<{ response: string, fileUpdates?: { name: string, content: string }[] }> => {
+    const client = getGroqClient(byok);
     // Basic Chat RAG Retrieval (Optional but helpful for Q&A)
     const ragContext = ragEngine.retrieveContext(message);
     const fileContext = files.map(f => `FILE: ${f.name}\nCONTENT:\n${f.content}`).join('\n\n---\n\n');
@@ -125,7 +138,7 @@ export const chatWithAssistant = async (
             content: h.text
         }));
 
-        const completion = await groq.chat.completions.create({
+        const completion = await client.chat.completions.create({
             messages: [
                 { role: 'system', content: systemInstruction },
                 // @ts-ignore
@@ -144,50 +157,50 @@ export const chatWithAssistant = async (
     }
 };
 
-export const generateProjectScaffold = async (name: string, description: string): Promise<ProjectFile[]> => {
-    if (!process.env.GROQ_API_KEY) return [
-        { name: 'Contract.cash', content: '// Groq API Key missing. Please configure.', language: 'cashscript' },
-        { name: 'abi.json', content: '[]', language: 'json' },
-        { name: 'README.md', content: `# ${name}\n\n${description}`, language: 'markdown' }
-    ];
+export const generateProjectScaffold = async (projectName: string, prompt: string): Promise<ProjectFile[]> => {
+    // Static scaffolding - stop auto-generation
+    return [
+        {
+            name: "Contract.cash",
+            content: `pragma cashscript ^0.13.0;
 
-    const prompt = `Create a Web3 project structure for a Bitcoin Cash dApp named "${name}".
-        Description: ${description}
-    Language: CashScript(BCH)
-    
-    Return a JSON object containing the files. 
-    1. Main contract file(Contract.cash).
-    2. A dummy artifact.json
-    3. A README.md
-    
-    Response Format: { "files": [{ "name": "...", "content": "...", "language": "..." }] }
-    `;
+/*
+ * Project: ${projectName}
+ * Status: Workspace Initialized
+ * Instructions: ${prompt || 'Enter your logic here'}
+ */
 
-    try {
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
-            model: MODEL_CODE,
-            max_tokens: GROQ_LIMITS.scaffold,
-            response_format: { type: "json_object" }
-        });
-
-        const data = JSON.parse(completion.choices[0]?.message?.content || '{"files": []}');
-        return data.files;
-
-    } catch (e) {
-        return [
-            {
-                name: 'MyContract.cash',
-                content: 'contract MyContract() {\n    function spend() {\n        require(true);\n    }\n}',
-                language: 'cashscript'
-            },
-            { name: 'artifact.json', content: '{\n  "contractName": "MyContract"\n}', language: 'json' },
-            { name: 'README.md', content: `# ${name} \n\nGenerated by NexusAI via Groq`, language: 'markdown' }
-        ];
+contract ${projectName.replace(/\s+/g, '') || 'MyContract'}() {
+    function unlock() {
+        require(true);
     }
+}
+`,
+            language: 'cashscript'
+        },
+        {
+            name: "README.md",
+            content: `# ${projectName}
+
+Initial workspace for your Bitcoin Cash smart contract.
+
+## Usage
+- Write your contract logic in \`Contract.cash\`
+- Run Security Audit from the AI Console
+- Use the 3-step guide to Build/Fund/Run
+`,
+            language: 'markdown'
+        }
+    ];
 };
 
-export const editSmartContract = async (code: string, instruction: string, useExternal: boolean = false): Promise<GenerationResponse> => {
+export const editSmartContract = async (code: string, instruction: string, useExternal: boolean = false, byok?: BYOKSettings): Promise<GenerationResponse> => {
+    return {
+        code: code,
+        explanation: "mcp is not yet hosted, generation is on hold now"
+    };
+
+    /*
     if (useExternal) {
         try {
             const response = await fetch('http://localhost:3005/api/edit', {
@@ -196,6 +209,11 @@ export const editSmartContract = async (code: string, instruction: string, useEx
                 body: JSON.stringify({
                     original_code: code,
                     instruction: instruction,
+                    context: {
+                        api_key: byok?.apiKey,
+                        provider: byok?.provider,
+                        use_rag: false // Disable internal RAG for generation/edit
+                    }
                 })
             });
 
@@ -239,7 +257,8 @@ export const editSmartContract = async (code: string, instruction: string, useEx
     CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE. NO MARKDOWN CODE BLOCKS AROUND THE JSON.`;
 
     try {
-        const completion = await groq.chat.completions.create({
+        const client = getGroqClient(byok);
+        const completion = await client.chat.completions.create({
             messages: [
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: `Edit this contract:\n\n${code}\n\nInstruction: ${instruction}` }
@@ -261,96 +280,31 @@ export const editSmartContract = async (code: string, instruction: string, useEx
         console.error("Groq Edit Error:", error);
         throw error;
     }
+    */
 };
 
-export const fixSmartContract = async (code: string, instructions: string, useExternal: boolean = false, issue?: any): Promise<GenerationResponse> => {
-    if (useExternal) {
+export const fixSmartContract = async (code: string, instructions: string, useExternal: boolean = false, issue?: any, byok?: BYOKSettings): Promise<GenerationResponse> => {
+    return {
+        code: code,
+        explanation: "mcp is not yet hosted, automated fixes are on hold now"
+    };
+    /*
+        if (useExternal) {
+            // ... (existing code commented out)
+        }
+    
+        // Retrieve context based on the code/instructions to help the fix
+        // ...
         try {
-            const response = await fetch('http://localhost:3005/api/repair', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    original_code: code,
-                    issue: {
-                        severity: (issue as any)?.severity || 'HIGH',
-                        line: (issue as any)?.line,
-                        title: (issue as any)?.title || 'Manual Fix',
-                        description: (issue as any)?.description || instructions,
-                        recommendation: (issue as any)?.recommendation || instructions,
-                        rule_id: (issue as any)?.rule_id,
-                        can_fix: (issue as any)?.can_fix ?? true
-                    },
-                    context: {}
-                })
-            });
-
-            const data = await response.json();
-            console.log("🛠️ External Repair Response:", data);
-            if (data.success === false) {
-                // Return original code but signal failure in explanation
-                return {
-                    code: code,
-                    explanation: "🛡️ AI Repair failed safety constraints. Manual fix required."
-                };
-            }
-
-            // ✅ NEW CODE
-            return {
-                code: data.corrected_code,
-                explanation: `✅ Repair Successful. Please click 'Audit' to calculate the new security score.`
-            };
-
+            // ...
         } catch (error) {
-            console.error("External Repair Error:", error);
+            console.error("Groq Fix Error:", error);
             throw error;
         }
-    }
-
-    // Retrieve context based on the code/instructions to help the fix
-    const context = ragEngine.retrieveContext(instructions + "\n" + code.slice(0, 500));
-
-    const systemInstruction = `You are a Senior Smart Contract Security Engineer. 
-    Your task is to FIX the provided smart contract based on the vulnerability report and instructions.
-    
-    REFERENCE CONTEXT:
-    ${context || "No specific context retrieved."}
-
-    1. Apply fixes for the mentioned vulnerabilities.
-    2. TARGETED FIXES ONLY: Return only the modified functions or blocks of code. Do not return the entire file.
-    3. Add brief comments explaining the security fixes.
-    4. RETURN FORMATTED CODE with proper newlines and indentation.
-    
-    Return JSON with the fixed code chunks and a summary of changes.
-    Schema: { "code": "...", "explanation": "..." }
-    
-    CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE. NO MARKDOWN CODE BLOCKS AROUND THE JSON.`;
-
-    try {
-        const prompt = `ORIGINAL CODE: \n${code} \n\nFIX INSTRUCTIONS: \n${instructions} `;
-
-        const completion = await groq.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemInstruction },
-                { role: 'user', content: prompt }
-            ],
-            model: MODEL_CODE,
-            temperature: TEMP_FIX,
-            max_tokens: GROQ_LIMITS.code_fix,
-            response_format: { type: "json_object" }
-        });
-
-        const text = completion.choices[0]?.message?.content;
-        if (!text) throw new Error("No response from AI");
-
-        return JSON.parse(text) as GenerationResponse;
-
-    } catch (error) {
-        console.error("Groq Fix Error:", error);
-        throw error;
-    }
+    */
 };
 
-export const auditSmartContract = async (code: string, useExternal: boolean = false, intent: string = '', effective_mode: string = ''): Promise<AuditReport> => {
+export const auditSmartContract = async (code: string, useExternal: boolean = false, intent: string = '', effective_mode: string = '', byok?: BYOKSettings): Promise<AuditReport> => {
     if (useExternal) {
         try {
             const response = await fetch('http://localhost:3005/api/audit', {
@@ -359,7 +313,12 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
                 body: JSON.stringify({
                     code: code,
                     ...(intent ? { intent } : {}),
-                    ...(effective_mode ? { effective_mode } : {})
+                    ...(effective_mode ? { effective_mode } : {}),
+                    context: {
+                        api_key: byok?.apiKey,
+                        provider: byok?.provider,
+                        use_rag: false // Disable internal RAG for auditing
+                    }
                 })
             });
 
@@ -458,7 +417,8 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
   CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE. NO MARKDOWN CODE BLOCKS AROUND THE JSON.`;
 
     try {
-        const completion = await groq.chat.completions.create({
+        const client = getGroqClient(byok);
+        const completion = await client.chat.completions.create({
             messages: [
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: `Audit this contract: \n\n${code} ` }
@@ -507,7 +467,8 @@ export interface ContractExplanation {
     risks: { level: 'LOW' | 'MEDIUM' | 'HIGH'; description: string }[];
 }
 
-export const explainSmartContract = async (code: string): Promise<ContractExplanation> => {
+export const explainSmartContract = async (code: string, byok?: BYOKSettings): Promise<ContractExplanation> => {
+    const client = getGroqClient(byok);
     const systemInstruction = `You are a CashScript static analysis assistant.
 Analyze the compiled contract and return structured JSON.
 
@@ -540,7 +501,7 @@ Do not include filler text.
 CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE.`;
 
     try {
-        const completion = await groq.chat.completions.create({
+        const completion = await client.chat.completions.create({
             messages: [
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: `Explain this contract:\n\n${code}` }

@@ -5,7 +5,7 @@ import { Button, Tabs, getFileIcon, Badge, Modal } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
-import { Project, ProjectFile, CodeVersion, ExecutionRecord } from '../types';
+import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
@@ -53,6 +53,7 @@ interface ProjectWorkspaceProps {
     onConnectWallet: () => void;
     onNavigateHome: () => void;
     onPublish?: () => void;
+    byokSettings: BYOKSettings;
 }
 
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
@@ -61,7 +62,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     walletConnected,
     onConnectWallet,
     onNavigateHome,
-    onPublish
+    onPublish,
+    byokSettings
 }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
@@ -613,21 +615,29 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 // We'll wait a bit or just fail fast
                 setTimeout(() => {
                     if (websocketService.isConnected()) {
-                        websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })));
+                        websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
+                            api_key: byokSettings.apiKey,
+                            provider: byokSettings.provider,
+                            use_rag: false
+                        });
                     } else {
                         setChatHistory(prev => [...prev, { role: 'model', text: "External Generator is not connected. Attempting to reconnect..." }]);
                         setIsChatting(false);
                     }
                 }, 1000);
             } else {
-                websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })));
+                websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
+                    api_key: byokSettings.apiKey,
+                    provider: byokSettings.provider,
+                    use_rag: false
+                });
             }
             return;
         }
 
         if (isEditCommand && mainContractFile) {
             try {
-                const result = await editSmartContract(mainContractFile.content, editInstruction, useExternalGenerator);
+                const result = await editSmartContract(mainContractFile.content, editInstruction, useExternalGenerator, byokSettings);
                 setChatHistory(prev => [...prev, {
                     role: 'model',
                     text: result.explanation,
@@ -642,7 +652,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         }
 
         try {
-            const result = await chatWithAssistant(msgToSend, project.files, chatHistory);
+            const result = await chatWithAssistant(msgToSend, project.files, chatHistory, byokSettings);
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.response,
@@ -766,7 +776,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setChatHistory(prev => [...prev, { role: 'user', text: 'Run Security Audit' }]);
 
         try {
-            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator, lastGeneratedIntent);
+            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator, lastGeneratedIntent, '', byokSettings);
             onUpdateProject({ ...project, auditReport: report });
             addLog('AUDITOR', '✅ Audit Complete. Issues found: ' + report.vulnerabilities.length);
 
@@ -797,7 +807,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
 
         try {
-            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, vuln);
+            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, vuln, byokSettings);
 
             // Handle external repair failure (success: false)
             if (useExternalGenerator && result.explanation.includes("AI Repair failed safety constraints")) {
@@ -836,7 +846,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 recommendation: 'Fix syntax or compilation error'
             };
 
-            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, issuePayload);
+            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, issuePayload, byokSettings);
 
             setChatHistory(prev => [...prev, {
                 role: 'model',
@@ -1000,7 +1010,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setIsChatting(true);
 
         try {
-            const explanation = await explainSmartContract(sourceCode);
+            const explanation = await explainSmartContract(sourceCode, byokSettings);
             setChatHistory(prev => {
                 const newHistory = [...prev];
                 newHistory.pop(); // remove progress
@@ -1179,6 +1189,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             useExternalGenerator={useExternalGenerator}
             onToggleExternal={setUseExternalGenerator}
             isWsConnected={isWsConnected}
+            byokSettings={byokSettings}
         />
     );
 
@@ -1262,7 +1273,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         onClick={onConnectWallet}
                         icon={<Zap className="w-4 h-4" />}
                     >
-                        WalletConnect
+                        WalletConnect (Beta)
                     </Button>
                     <div className="relative flex items-center py-2">
                         <div className="flex-grow border-t border-white/5"></div>

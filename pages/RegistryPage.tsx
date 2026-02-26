@@ -116,12 +116,12 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                             </div>
                         </div>
                         <div className="p-4 border-r border-white/5">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Registry Flow</div>
-                            <div className="text-3xl font-black text-nexus-cyan">12.5K</div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Active Interactions</div>
+                            <div className="text-3xl font-black text-nexus-cyan">2.8K</div>
                         </div>
                         <div className="p-4">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Ecosystem Node</div>
-                            <div className="text-3xl font-black text-nexus-purple">45</div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Verified Nodes</div>
+                            <div className="text-3xl font-black text-nexus-purple">12</div>
                         </div>
                     </div>
                 </div>
@@ -166,7 +166,7 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                                                     {contract.title}
                                                 </h3>
                                                 <span className="text-[10px] font-mono font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded border border-white/5">v{contract.version}</span>
-                                                <span className="text-[10px] font-mono font-bold text-nexus-cyan bg-nexus-cyan/5 px-2 py-0.5 rounded border border-nexus-cyan/10 uppercase">Mainnet</span>
+                                                <span className="text-[10px] font-mono font-bold text-nexus-cyan bg-nexus-cyan/5 px-2 py-0.5 rounded border border-nexus-cyan/10 uppercase">Chipnet</span>
                                             </div>
                                             <div className="flex items-center text-xs text-slate-500 font-medium">
                                                 by <span className="text-nexus-purple ml-1 hover:underline cursor-pointer">@{contract.author || 'anonymous'}</span>
@@ -187,10 +187,10 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
 
                                         <div className="flex items-center space-x-4 pt-1">
                                             <div className="text-[10px] text-slate-600 font-mono">
-                                                Compiler: <span className="text-slate-500 ml-1">{contract.compiler_version || 'cashc v0.9.0'}</span>
+                                                Compiler: <span className="text-slate-500 ml-1">{contract.compiler_version || 'cashc v0.13.0'}</span>
                                             </div>
                                             <div className="text-[10px] text-slate-600 font-mono">
-                                                Network: <span className="text-slate-500 ml-1">BCH Mainnet</span>
+                                                Network: <span className="text-slate-500 ml-1">BCH Chipnet</span>
                                             </div>
                                         </div>
                                     </div>
@@ -284,7 +284,7 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                                                     Download .cash
                                                 </button>
                                                 <div className="text-slate-500 text-[10px] font-mono opacity-50 ml-2">
-                                                    {contract.compiler_version || 'cashc v0.9.0'}
+                                                    {contract.compiler_version || 'cashc v0.13.0'}
                                                 </div>
                                             </div>
                                         </div>

@@ -646,7 +646,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                         icon={isConnecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
                                         disabled={isConnecting}
                                     >
-                                        {isConnecting ? 'Opening Modal...' : 'Connect Wallet'}
+                                        {isConnecting ? 'Opening Modal...' : 'WalletConnect (Beta)'}
                                     </Button>
                                     <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest pt-2">
                                         <span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1 text-nexus-cyan" /> Paytaca</span>

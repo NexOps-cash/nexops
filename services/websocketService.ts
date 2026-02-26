@@ -32,6 +32,13 @@ export interface WSMessage {
         };
     };
 
+    // context (BYOK)
+    context?: {
+        api_key?: string;
+        provider?: string;
+        use_rag?: boolean;
+    };
+
     // error (External -> NexOps)
     error?: {
         code: string;
@@ -99,7 +106,7 @@ class WebSocketService extends EventEmitter {
         }
     }
 
-    sendIntent(prompt: string, history: any[] = []) {
+    sendIntent(prompt: string, history: any[] = [], context?: any) {
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
             console.error('WebSocket not connected');
             return false;
@@ -108,7 +115,8 @@ class WebSocketService extends EventEmitter {
         const payload: WSMessage = {
             type: 'intent',
             prompt,
-            history
+            history,
+            context
         };
 
         this.socket.send(JSON.stringify(payload));
