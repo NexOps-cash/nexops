@@ -11,7 +11,7 @@ import {
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
     AlertTriangle, CheckCircle, Copy, GitMerge, RotateCcw,
     FileJson, MessageSquare, Send, User, Bot, Wand2, X, Trash2,
-    FileCode, Zap, Cpu, Loader2, ExternalLink
+    FileCode, Zap, Cpu, Loader2, ExternalLink, Wallet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
@@ -22,6 +22,7 @@ import { UTXO } from '../services/blockchainService';
 import { ContractArtifact } from '../types';
 import { DebuggerService, DebuggerState } from '../services/DebuggerService';
 import { walletConnectService } from '../services/walletConnectService';
+import { QRCodeSVG } from 'qrcode.react';
 import { TransactionBuilder, TransactionHistory } from '../components/TransactionBuilder';
 import { DebugStackVisualizer } from '../components/DebugStackVisualizer';
 import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
@@ -125,6 +126,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [burnerAddress, setBurnerAddress] = useState<string>('');
     const [burnerPubkey, setBurnerPubkey] = useState<string>('');
     const [isGeneratingBurner, setIsGeneratingBurner] = useState(false);
+    const [contractBalance, setContractBalance] = useState<number>(0);
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
@@ -144,6 +146,23 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             }
         }, []);
     }, [project.files]);
+
+    // Derived 3-step progressive state
+    const appStep = useMemo(() => {
+        // Step 1: Connect (No WalletConnect AND no Burner Wallet)
+        const hasBurner = !!burnerWif;
+        const hasWC = !!wcSession;
+        if (!hasBurner && !hasWC) return 'CONNECT';
+
+        // Step 2: Fund (Contract exists but balance is 0)
+        if (deployedAddress && contractBalance === 0) return 'FUND';
+
+        // Step 3: Interact (Contract has balance)
+        if (deployedAddress && contractBalance > 0) return 'INTERACT';
+
+        // Fallback to CONNECT if no deployment yet but wallet is connected
+        return 'CONNECT';
+    }, [burnerWif, wcSession, deployedAddress, contractBalance]);
 
     const openFiles = useMemo(() => {
         return allUniqueFiles.filter(f => openFileNames.includes(f.name));
@@ -177,20 +196,55 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
 
             // 2. Refresh UTXO state for the interaction sidebar
             fetchUTXOs(project.deployedAddress).then(utxos => {
+                const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                setContractBalance(balance);
                 if (utxos.length > 0) {
                     setFundingUtxo(utxos[0]);
-                    console.log(`[Rehydration] Funding UTXO detected for ${project.deployedAddress}`);
                 }
-            }).catch(err => {
-                console.warn('[Rehydration] UTXO fetch failed:', err);
             });
-        } else {
-            // Reset if no deployment
-            setDeployedAddress('');
-            setDeployedArtifact(null);
-            setFundingUtxo(null);
         }
-    }, [project.id]); // Only re-run when switching projects
+    }, [project.deployedAddress]);
+
+    // Live subscription for contract balance
+    useEffect(() => {
+        if (!deployedAddress) {
+            setContractBalance(0);
+            return;
+        }
+
+        let unsubscribe: (() => void) | null = null;
+
+        const startSub = async () => {
+            console.log(`[Subscription] Starting for ${deployedAddress}...`);
+            unsubscribe = await subscribeToAddress(deployedAddress, (utxos) => {
+                const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+
+                // IMPORTANT: We use the functional update to compare against current state
+                setContractBalance(prev => {
+                    if (prev === 0 && balance > 0) {
+                        console.log(`[Subscription] Funding detected! 0 -> ${balance}`);
+                        setShowLiveModal(true);
+                        setActiveView('INTERACT');
+                        toast.success("Contract Funded!", { id: 'funded_toast' });
+                    }
+                    return balance;
+                });
+
+                if (utxos.length > 0) {
+                    const bestUtxo = utxos.find(u => u.height > 0) || utxos[0];
+                    setFundingUtxo(bestUtxo);
+                }
+            });
+        };
+
+        startSub();
+        return () => {
+            if (unsubscribe) {
+                console.log(`[Subscription] Cleaning up for ${deployedAddress}`);
+                unsubscribe();
+            }
+        };
+    }, [deployedAddress]); // Removed contractBalance to prevent loop
 
     // Global funding monitor: Detect funding regardless of active view
     useEffect(() => {
@@ -1178,44 +1232,186 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const renderSidebarInteract = () => {
         const history = project.executionHistory || [];
 
-        return (
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col h-full">
-                {!deployedArtifact ? (
-                    <div className="flex-1 flex flex-col items-center justify-center py-10 text-gray-500">
-                        <Rocket className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                        <p className="text-xs uppercase tracking-widest font-bold">No Active Deployment</p>
-                        <p className="text-[10px] mt-2 mb-8">Deploy a contract to enable interaction.</p>
+        const renderStep1_Connect = () => (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in zoom-in duration-500">
+                <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
+                    <Wallet className="w-10 h-10 text-nexus-cyan" />
+                </div>
+                <div className="space-y-2">
+                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Connect Wallet</h3>
+                    <p className="text-slate-400 text-sm max-w-[280px]">
+                        Connect a Bitcoin Cash wallet or generate a temporary test wallet to interact with this contract.
+                    </p>
+                </div>
+                <div className="w-full space-y-3">
+                    <Button
+                        variant="primary"
+                        className="w-full py-4 uppercase font-black tracking-widest text-xs shadow-[0_0_20px_rgba(0,229,255,0.2)]"
+                        onClick={onConnectWallet}
+                        icon={<Zap className="w-4 h-4" />}
+                    >
+                        WalletConnect
+                    </Button>
+                    <div className="relative flex items-center py-2">
+                        <div className="flex-grow border-t border-white/5"></div>
+                        <span className="flex-shrink mx-4 text-[9px] font-black text-slate-600 uppercase tracking-widest">or</span>
+                        <div className="flex-grow border-t border-white/5"></div>
+                    </div>
+                    <Button
+                        variant="glass"
+                        className="w-full border-white/10 hover:border-white/20 text-slate-400 hover:text-white"
+                        onClick={handleGenerateBurner}
+                        isLoading={isGeneratingBurner}
+                        icon={<Cpu className="w-4 h-4" />}
+                    >
+                        Generate Test Wallet
+                    </Button>
+                </div>
+            </div>
+        );
 
-                        {/* Always show history if it exists */}
-                        <div className="w-full border-t border-white/5 pt-6 mt-6">
-                            <TransactionHistory history={history} />
+        const renderStep2_Fund = () => (
+            <div className="flex-1 flex flex-col p-4 space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                <div className="bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-2xl p-6 text-center space-y-4">
+                    <div className="w-12 h-12 bg-nexus-cyan/20 rounded-full flex items-center justify-center mx-auto border border-nexus-cyan/40 animate-pulse">
+                        <Zap className="w-6 h-6 text-nexus-cyan" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white tracking-tight leading-tight">Activate Contract</h3>
+                        <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mt-1">Pending Funding</p>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-2xl shadow-xl shadow-nexus-cyan/10 mx-auto inline-block">
+                        <QRCodeSVG value={deployedAddress || ''} size={160} />
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                        <div className="bg-black/40 p-3 rounded-xl border border-white/5 text-left group cursor-pointer" onClick={() => {
+                            navigator.clipboard.writeText(deployedAddress);
+                            toast.success("Address copied");
+                        }}>
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
+                                <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
+                            </div>
+                            <p className="text-nexus-cyan font-mono text-[10px] break-all">
+                                {deployedAddress}
+                            </p>
+                        </div>
+
+                        <Button
+                            variant="glass"
+                            size="sm"
+                            className="w-full border-nexus-cyan/20 hover:bg-nexus-cyan/10 text-nexus-cyan/70 hover:text-nexus-cyan"
+                            onClick={() => {
+                                // Trigger handleAutoFund (need to ensure it's accessible or replicated)
+                                // For now, we'll use the existing handleAutoFund from TransactionBuilder if possible
+                                // But since this is a different component, we might need to implement it in ProjectWorkspace
+                                toast.promise(
+                                    fetch(`https://chipnet.faucet.cash/send?address=${deployedAddress}`),
+                                    {
+                                        loading: 'Requesting funds from faucet...',
+                                        success: 'Faucet request sent! Waiting for detection...',
+                                        error: 'Faucet request failed. Try manual funding.'
+                                    }
+                                );
+                            }}
+                        >
+                            <Zap className="w-3 h-3 mr-2" />
+                            Auto-Fund with Faucet
+                        </Button>
+                        <Button
+                            variant="glass"
+                            size="sm"
+                            className="w-full border-white/5 bg-white/5 hover:bg-white/10 mt-2"
+                            onClick={async () => {
+                                const utxos = await fetchUTXOs(deployedAddress);
+                                const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                                setContractBalance(balance);
+                                if (balance > 0) {
+                                    toast.success(`Balance detected: ${balance} sats`);
+                                    setActiveView('INTERACT');
+                                } else {
+                                    toast.error("No balance detected yet.");
+                                }
+                            }}
+                        >
+                            <RotateCcw className="w-3 h-3 mr-2" />
+                            Refresh Balance
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="bg-black/20 rounded-2xl p-4 border border-white/5">
+                    <div className="flex items-center space-x-2 mb-3">
+                        <Loader2 className="w-3 h-3 text-nexus-cyan animate-spin" />
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monitoring Network</span>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-nexus-cyan w-1/3 animate-pulse"></div>
+                        </div>
+                        <p className="text-[10px] text-slate-500">
+                            The system is watching for incoming transactions on Chipnet. Once detected, the Transaction Builder will unlock automatically.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const renderStep3_Interact = () => (
+            <TransactionBuilder
+                artifact={deployedArtifact!}
+                deployedAddress={deployedAddress}
+                constructorArgs={constructorArgs}
+                wcSession={walletConnectService.getSession()}
+                network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
+                initialUtxo={fundingUtxo}
+                onConfigChange={(newArgs) => {
+                    setConstructorArgs(newArgs);
+                    onUpdateProject({
+                        ...project,
+                        constructorArgs: newArgs,
+                        lastModified: Date.now()
+                    });
+                }}
+                burnerWif={burnerWif}
+                burnerAddress={burnerAddress}
+                burnerPubkey={burnerPubkey}
+                onGenerateBurner={handleGenerateBurner}
+                isGeneratingBurner={isGeneratingBurner}
+                history={history}
+                onRecordTransaction={handleRecordTransaction}
+            />
+        );
+
+        return (
+            <div className="flex flex-col h-full bg-[#0d1425] border-r border-white/5">
+                {/* Stepper Header */}
+                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20">
+                    <div className="flex items-center space-x-4">
+                        <div className={`flex flex-col items-center ${appStep === 'CONNECT' ? 'opacity-100' : 'opacity-40'}`}>
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border ${appStep === 'CONNECT' ? 'bg-nexus-cyan border-nexus-cyan text-black' : 'border-white/20 text-white'}`}>1</div>
+                            <span className="text-[8px] font-black uppercase tracking-tighter mt-1">Connect</span>
+                        </div>
+                        <div className="w-4 h-px bg-white/10 mt-[-10px]"></div>
+                        <div className={`flex flex-col items-center ${appStep === 'FUND' ? 'opacity-100' : 'opacity-40'}`}>
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border ${appStep === 'FUND' ? 'bg-nexus-cyan border-nexus-cyan text-black' : 'border-white/20 text-white'}`}>2</div>
+                            <span className="text-[8px] font-black uppercase tracking-tighter mt-1">Fund</span>
+                        </div>
+                        <div className="w-4 h-px bg-white/10 mt-[-10px]"></div>
+                        <div className={`flex flex-col items-center ${appStep === 'INTERACT' ? 'opacity-100' : 'opacity-40'}`}>
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border ${appStep === 'INTERACT' ? 'bg-nexus-cyan border-nexus-cyan text-black' : 'border-white/20 text-white'}`}>3</div>
+                            <span className="text-[8px] font-black uppercase tracking-tighter mt-1">Run</span>
                         </div>
                     </div>
-                ) : (
-                    <TransactionBuilder
-                        artifact={deployedArtifact}
-                        deployedAddress={deployedAddress}
-                        constructorArgs={constructorArgs}
-                        wcSession={walletConnectService.getSession()}
-                        network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
-                        initialUtxo={fundingUtxo}
-                        onConfigChange={(newArgs) => {
-                            setConstructorArgs(newArgs);
-                            onUpdateProject({
-                                ...project,
-                                constructorArgs: newArgs,
-                                lastModified: Date.now()
-                            });
-                        }}
-                        burnerWif={burnerWif}
-                        burnerAddress={burnerAddress}
-                        burnerPubkey={burnerPubkey}
-                        onGenerateBurner={handleGenerateBurner}
-                        isGeneratingBurner={isGeneratingBurner}
-                        history={history}
-                        onRecordTransaction={handleRecordTransaction}
-                    />
-                )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+                    {appStep === 'CONNECT' && renderStep1_Connect()}
+                    {appStep === 'FUND' && renderStep2_Fund()}
+                    {appStep === 'INTERACT' && renderStep3_Interact()}
+                </div>
             </div>
         );
     };
@@ -1231,7 +1427,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
                 setConstructorArgs(args);
-                // We DON'T auto-navigate here, let them finish the success modal flow or fund
+                setActiveView('INTERACT'); // Auto-switch to guided flow
             }}
             onDeployed={(addr, artifact, args, utxo) => {
                 setDeployedAddress(addr);
@@ -1249,6 +1445,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 });
 
                 setShowLiveModal(true);
+                setActiveView('INTERACT'); // Ensure we switch to Builder
             }}
             onNavigate={(view) => setActiveView(view)}
             burnerWif={burnerWif}

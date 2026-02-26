@@ -628,13 +628,13 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         )}
 
                         {!wcSession ? (
-                            <div className="p-6 border-nexus-700 bg-nexus-900 rounded-xl shadow-xl">
+                            <div className="p-8 glass-panel rounded-2xl border border-white/5 shadow-2xl backdrop-blur-xl">
                                 <div className="flex flex-col items-center justify-center space-y-6">
-                                    <div className="w-16 h-16 bg-nexus-cyan/10 rounded-full flex items-center justify-center">
-                                        <Wallet className="w-8 h-8 text-nexus-cyan" />
+                                    <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
+                                        <Wallet className="w-10 h-10 text-nexus-cyan" />
                                     </div>
                                     <div className="text-center space-y-2">
-                                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">Connection Required</h3>
+                                        <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Connection Required</h3>
                                         <p className="text-slate-400 text-sm max-w-[280px]">
                                             Connect a compatible Bitcoin Cash wallet to deploy this contract.
                                         </p>
@@ -657,7 +657,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         ) : (
                             <div className="space-y-4">
                                 {/* Connected Wallet Bar */}
-                                <div className="p-4 bg-nexus-cyan/10 border border-nexus-cyan/30 rounded-xl flex justify-between items-center">
+                                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center backdrop-blur-md">
                                     <div className="flex items-center space-x-3">
                                         {wcSession?.peer?.metadata?.icons?.[0] ? (
                                             <img src={wcSession.peer.metadata.icons[0]} alt="Wallet" className="w-10 h-10 rounded-full border border-nexus-cyan/30" />
@@ -693,23 +693,23 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                     <>
                                         {/* Deployment Phase Check */}
                                         {deploymentStep === 2 && paymentRequestUri ? (
-                                            <div className="bg-white p-6 rounded-2xl flex flex-col items-center animate-in zoom-in duration-300">
-                                                <div className="p-2 border-2 border-slate-100 rounded-xl mb-4">
-                                                    <QRCodeSVG value={paymentRequestUri} size={200} />
+                                            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl">
+                                                <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
+                                                    <QRCodeSVG value={paymentRequestUri} size={180} />
                                                 </div>
                                                 <div className="text-center space-y-1 mb-6">
-                                                    <p className="text-nexus-900 font-black text-sm uppercase tracking-tighter">Funding Required</p>
-                                                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest">Send {fundingAmount.toLocaleString()} sats to address below</p>
+                                                    <p className="text-white font-black text-sm uppercase tracking-tighter">Funding Required</p>
+                                                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest leading-relaxed">Send {fundingAmount.toLocaleString()} sats to address below</p>
                                                 </div>
-                                                <div className="w-full bg-slate-50 p-3 rounded-lg border border-slate-200 mb-6 group cursor-pointer" onClick={() => {
+                                                <div className="w-full bg-black/40 p-4 rounded-xl border border-white/5 mb-6 group cursor-pointer" onClick={() => {
                                                     navigator.clipboard.writeText(derivedAddress!);
                                                     toast.success("Address copied!");
                                                 }}>
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-[9px] text-slate-400 uppercase font-black">Contract Address</span>
-                                                        <Copy className="w-3 h-3 text-slate-300 group-hover:text-nexus-blue transition-colors" />
+                                                        <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
+                                                        <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
                                                     </div>
-                                                    <p className="text-black text-[10px] font-mono break-all leading-tight">
+                                                    <p className="text-nexus-cyan font-mono text-[10px] break-all leading-relaxed">
                                                         {derivedAddress}
                                                     </p>
                                                 </div>
@@ -718,13 +718,13 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                                 <div className="w-full">
                                                     {fundingStatus.status === 'monitoring' && (
                                                         <div className="flex flex-col items-center space-y-3">
-                                                            <div className="flex items-center justify-center text-nexus-blue text-[11px] font-black uppercase tracking-widest">
+                                                            <div className="flex items-center justify-center text-nexus-cyan text-[11px] font-black uppercase tracking-widest">
                                                                 <Loader2 className="w-3 h-3 mr-2 animate-spin" />
                                                                 Monitoring Indexer...
                                                             </div>
-                                                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5">
                                                                 <div
-                                                                    className="bg-nexus-blue h-full transition-all duration-500"
+                                                                    className="bg-nexus-cyan h-full transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
                                                                     style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
                                                                 />
                                                             </div>
@@ -771,7 +771,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                                     onClick={handleDeploy}
                                                     disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
                                                     isLoading={isDeploying}
-                                                    className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.2)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
+                                                    className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
                                                     icon={<Rocket className="w-5 h-5" />}
                                                 >
                                                     {!isAuditPassed ? "Audit Failed" : "Launch Contract"}

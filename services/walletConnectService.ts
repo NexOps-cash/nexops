@@ -4,6 +4,12 @@ import { SessionTypes } from '@walletconnect/types';
 import { WalletConnectModal } from '@walletconnect/modal';
 import { EventEmitter } from 'events';
 import { Buffer } from 'buffer';
+import {
+    binToHex,
+    secp256k1,
+    sha256,
+    hexToBin
+} from '@bitauth/libauth';
 
 // Polyfill Buffer for the browser environment if needed (Vite often needs this)
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -379,6 +385,92 @@ class WalletConnectService extends EventEmitter {
 
         console.warn("WC DEBUG: No public key found in session metadata.");
         return '';
+    }
+
+    /**
+     * Derives the public key by requesting a message signature from the wallet.
+     * Works even if the wallet doesn't provide the pubkey in session metadata.
+     */
+    public async derivePublicKeyFromWallet(): Promise<string> {
+        if (!this.client || !this.session) {
+            throw new Error('No WalletConnect session');
+        }
+
+        const bchNamespace = this.session.namespaces['bch'];
+        const chainId = bchNamespace?.chains?.[0];
+        const topic = this.session.topic;
+
+        const account = this.getAddress();
+        if (!account) {
+            throw new Error('No wallet account found');
+        }
+
+        const challenge = `NexOps PubKey Derivation Challenge ${Date.now()}`;
+
+        console.log("WC DEBUG: Requesting message signature for pubkey derivation...");
+        const signatureBase64 = await this.client.request({
+            topic,
+            chainId,
+            request: {
+                method: 'bch_signMessage',
+                params: {
+                    account,
+                    message: challenge
+                }
+            }
+        }) as string;
+
+        // Convert base64 → Uint8Array
+        const signatureBytes = new Uint8Array(Buffer.from(signatureBase64, 'base64'));
+
+        // Strategy 1: Standard double-SHA256 (Simple)
+        const messageHash = sha256.hash(
+            sha256.hash(new TextEncoder().encode(challenge))
+        );
+
+        try {
+            console.log("WC DEBUG: Attempting pubkey recovery (Standard hash)...");
+            // Note: signatureBytes might include recovery ID in first byte (Bitcoin style)
+            // or Libauth might handle the 65-byte format depending on version.
+            const recovery = (secp256k1 as any).recoverPublicKeyCompressed(
+                signatureBytes,
+                messageHash
+            );
+            if (typeof recovery !== 'string' && recovery) {
+                return binToHex(recovery);
+            }
+        } catch (e) {
+            console.warn("WC DEBUG: Standard recovery failed, trying Bitcoin Signed Message format...", e);
+        }
+
+        // Strategy 2: Bitcoin Signed Message Format (Robust)
+        // Format: "\x18Bitcoin Signed Message:\n" + varint(len(message)) + message
+        const prefix = "\x18Bitcoin Signed Message:\n";
+        const messageEncoded = new TextEncoder().encode(challenge);
+
+        // Simple varint for small lengths
+        const varint = messageEncoded.length < 253
+            ? new Uint8Array([messageEncoded.length])
+            : new Uint8Array([253, messageEncoded.length & 0xff, (messageEncoded.length >> 8) & 0xff]);
+
+        const fullMessage = new Uint8Array(prefix.length + varint.length + messageEncoded.length);
+        fullMessage.set(new TextEncoder().encode(prefix), 0);
+        fullMessage.set(varint, prefix.length);
+        fullMessage.set(messageEncoded, prefix.length + varint.length);
+
+        const robustHash = sha256.hash(sha256.hash(fullMessage));
+
+        console.log("WC DEBUG: Attempting pubkey recovery (Robust hash)...");
+        const recoveryRobust = (secp256k1 as any).recoverPublicKeyCompressed(
+            signatureBytes,
+            robustHash
+        );
+
+        if (typeof recoveryRobust === 'string' || !recoveryRobust) {
+            throw new Error(`PubKey recovery failed: ${recoveryRobust || 'Unknown error'}`);
+        }
+
+        return binToHex(recoveryRobust);
     }
 
     private setupEventListeners() {

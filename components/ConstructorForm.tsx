@@ -307,13 +307,32 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                 </div>
                             )}
 
-                            <input
-                                value={fieldValues[inp.name] || ''}
-                                onChange={(e) => handleFieldChange(inp.name, e.target.value, inp.type)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleApply()}
-                                className={`w-full bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors`}
-                                placeholder={`Value for ${inp.name}`}
-                            />
+                            <div className="relative group/input">
+                                <input
+                                    value={fieldValues[inp.name] || ''}
+                                    onChange={(e) => handleFieldChange(inp.name, e.target.value, inp.type)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleApply()}
+                                    className={`w-full bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors pr-24`}
+                                    placeholder={`Value for ${inp.name}`}
+                                />
+                                {inp.type === 'pubkey' && walletConnectService.isConnected() && (
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const pubkey = await walletConnectService.derivePublicKeyFromWallet();
+                                                handleFieldChange(inp.name, pubkey, 'pubkey');
+                                                toast.success("Public key auto-filled from wallet");
+                                            } catch (e) {
+                                                console.error("Auto-derivation failed:", e);
+                                                toast.error("Auto-derivation failed. Please paste manually.", { id: 'derivation-error' });
+                                            }
+                                        }}
+                                        className="absolute right-1 top-1 bottom-1 px-2 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 border border-nexus-cyan/20 rounded text-[8px] font-black uppercase text-nexus-cyan transition-all active:scale-95"
+                                    >
+                                        Auto-Fill
+                                    </button>
+                                )}
+                            </div>
                             {hasValue && validation && validation.message && (
                                 <div className={`flex items-center mt-1 text-[10px] ${validation.severity === 'error' ? 'text-red-400' :
                                     validation.severity === 'warning' ? 'text-yellow-400' :

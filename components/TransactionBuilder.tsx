@@ -5,7 +5,7 @@ import {
     Play, Terminal, Activity, CheckCircle,
     ArrowRight, Wallet, ChevronRight, AlertCircle,
     Cpu, Hash, ArrowLeft, Loader2, ShieldAlert,
-    ExternalLink, History, Clock, Zap
+    ExternalLink, History, Clock, Zap, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
@@ -91,6 +91,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
     const [isAwaitingPropagation, setIsAwaitingPropagation] = useState(false);
     const [selectedUtxoIds, setSelectedUtxoIds] = useState<string[]>([]);
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     // Parse ABI
     const functions = artifact.abi.filter(item => item.type === 'function' || !item.type);
@@ -826,328 +827,198 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         };
 
         return (
-            <div className="flex flex-col h-full space-y-4">
-                <div className="flex flex-col md:flex-row gap-6">
-
-                    {/* LEFT COLUMN: Signing Method & Wallet Details */}
-                    <div className="flex-1 space-y-4">
-                        {/* Method Toggle */}
-                        <div className="flex bg-nexus-900 border border-nexus-700 rounded-lg p-1">
-                            <button
-                                onClick={() => setSigningMethod('walletconnect')}
-                                className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${signingMethod === 'walletconnect' ? 'bg-nexus-cyan text-nexus-900' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                WalletConnect (Secure)
-                            </button>
-                            <button
-                                onClick={() => setSigningMethod('burner')}
-                                className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${signingMethod === 'burner' ? 'bg-nexus-pink text-white' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                Burner Wallet (Dev)
-                            </button>
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* HERO SECTION: Contract Status */}
+                {totalBalance > 0 ? (
+                    <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-6 text-center space-y-4">
+                        <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto border border-green-500/40">
+                            <CheckCircle className="w-6 h-6 text-green-500" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-white tracking-tight">Contract Active</h3>
+                            <div className="flex items-center justify-center gap-2 mt-1">
+                                <span className="text-2xl font-mono font-black text-green-400">{totalBalance.toLocaleString()}</span>
+                                <span className="text-xs text-green-500/60 font-bold uppercase tracking-widest mt-1">Sats</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-4 text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] pt-2">
+                            <div className="flex items-center gap-1.5">
+                                <Activity className="w-3 h-3 text-nexus-cyan" />
+                                Live on Chipnet
+                            </div>
+                            <div className="w-1 h-1 rounded-full bg-gray-700" />
+                            <div className="flex items-center gap-1.5">
+                                <ShieldAlert className="w-3 h-3 text-nexus-cyan" />
+                                Secured
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-2xl p-8 text-center space-y-4">
+                        <div className="w-12 h-12 bg-nexus-cyan/20 rounded-full flex items-center justify-center mx-auto border border-nexus-cyan/40 animate-pulse">
+                            <Zap className="w-6 h-6 text-nexus-cyan" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-white tracking-tight">Activate Contract</h3>
+                            <p className="text-xs text-gray-400 mt-1">Send funds to the contract to enable interaction.</p>
                         </div>
 
-                        {/* Burner Wallet Card */}
-                        {signingMethod === 'burner' && (
-                            <div className="bg-nexus-900 border border-nexus-pink/50 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 h-full min-h-[300px]">
-                                <div className="p-4 border-b border-nexus-pink/20 bg-nexus-pink/5">
-                                    <h4 className="text-xs font-bold text-nexus-pink uppercase tracking-widest flex items-center justify-between">
-                                        <span className="flex items-center"><Terminal className="w-3 h-3 mr-2" /> Ephemeral Burner</span>
-                                        <Badge variant="warning">Testnet Only</Badge>
-                                    </h4>
+                        <div className="flex items-center justify-center gap-6 pt-2">
+                            <div className="bg-white p-2 rounded-xl shadow-lg shadow-nexus-cyan/10">
+                                <QRCodeSVG value={getQrValue(deployedAddress || '')} size={100} />
+                            </div>
+                            <div className="text-left space-y-2">
+                                <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Target Address</div>
+                                <div className="font-mono text-[11px] text-nexus-cyan bg-nexus-cyan/10 px-3 py-2 rounded-lg border border-nexus-cyan/20 max-w-[180px] break-all">
+                                    {deployedAddress}
                                 </div>
-                                <div className="p-4 space-y-4">
-                                    <div className="text-xs text-nexus-pink/80 flex items-start gap-2 bg-nexus-pink/10 p-3 rounded-lg border border-nexus-pink/20">
-                                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <p><strong>DO NOT USE MAINNET KEYS.</strong> This burner is stored entirely in memory. Use only for fast Testnet testing.</p>
-                                    </div>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(deployedAddress);
+                                        toast.success("Address copied");
+                                    }}
+                                    className="text-[10px] font-bold text-nexus-cyan hover:text-white transition-colors"
+                                >
+                                    Copy Address
+                                </button>
+                            </div>
+                        </div>
 
-                                    {!burnerWif ? (
-                                        <div className="flex flex-col items-center justify-center py-6">
-                                            <Button onClick={handleGenerateBurner} variant="secondary" className="w-full">
-                                                Generate Ephemeral Key
-                                            </Button>
+                        <div className="pt-4">
+                            <Button
+                                variant="glass"
+                                size="sm"
+                                className="w-auto px-6 border-nexus-cyan/20 hover:bg-nexus-cyan/10"
+                                onClick={() => handleAutoFund(deployedAddress)}
+                                isLoading={isFundingBurner}
+                            >
+                                <Zap className="w-3 h-3 mr-2" />
+                                Auto-Fund with Faucet
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* FUNCTION DETAILS */}
+                <div className="bg-black/20 border border-white/5 rounded-2xl p-5 space-y-4">
+                    <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Target Function</span>
+                        <Badge variant="ghost" className="bg-nexus-cyan/10 text-nexus-cyan border-nexus-cyan/20 font-mono py-1 px-3">
+                            {selectedFunction}()
+                        </Badge>
+                    </div>
+
+                    {constructorInputs.length > 0 && (
+                        <div className="space-y-3 pt-2">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Configuration</span>
+                            <div className="grid grid-cols-1 gap-2">
+                                {constructorInputs.map((input, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2.5 bg-black/30 rounded-xl border border-white/5">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] text-gray-500 font-bold uppercase">{input.name}</span>
+                                            <span className="text-[9px] text-nexus-cyan/60 font-mono truncate max-w-[150px]">{internalConstructorArgs[idx]}</span>
                                         </div>
+                                        <button
+                                            onClick={() => setCurrentStep(2)}
+                                            className="text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase"
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* ADVANCED DETAILS: Collapsible */}
+                <div className="border-t border-white/5 pt-4">
+                    <button
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center justify-between w-full text-[10px] font-bold text-gray-500 hover:text-white transition-all uppercase tracking-widest py-2"
+                    >
+                        <span>Advanced Details</span>
+                        {showAdvanced ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+
+                    {showAdvanced && (
+                        <div className="mt-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                            {/* UTXOs */}
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest">UTXO Inventory</span>
+                                    <button onClick={loadUtxos} className="text-[9px] text-nexus-cyan font-bold hover:underline">Refresh</button>
+                                </div>
+                                <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                                    {contractUtxos && contractUtxos.length > 0 ? (
+                                        contractUtxos.map((u, i) => (
+                                            <div key={i} className="flex justify-between items-center text-[10px] p-2 bg-black/40 rounded-lg border border-white/5 font-mono">
+                                                <span className="text-gray-500">{u.txid.slice(0, 10)}...:{u.vout}</span>
+                                                <span className="text-nexus-cyan">{u.value.toLocaleString()} sats</span>
+                                            </div>
+                                        ))
                                     ) : (
-                                        <div className="space-y-3">
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-500 uppercase">Burner Address</label>
-                                                <div className="flex items-center gap-3 bg-black/30 p-3 rounded-lg border border-nexus-700 mt-1">
-                                                    <div className="bg-white p-1 rounded-sm shrink-0">
-                                                        <QRCodeSVG value={getQrValue(burnerAddress)} size={48} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0 text-right">
-                                                        <div className="text-[10px] text-gray-500 uppercase flex justify-between items-center mb-1">
-                                                            <span>Balance</span>
-                                                            <div className="flex items-center gap-2">
-                                                                {unconfirmedBurnerBalance > 0 && (
-                                                                    <Badge variant="warning" className="text-[8px] py-0 h-4">Unconfirmed (Spendable)</Badge>
-                                                                )}
-                                                                <span className="font-bold text-nexus-cyan">{burnerBalance.toLocaleString()} sats</span>
-                                                            </div>
-                                                        </div>
-                                                        <span className="text-xs font-mono text-nexus-cyan break-all block mt-1">{burnerAddress}</span>
-                                                        {burnerBalance > 0 && totalBalance === 0 && (
-                                                            <button
-                                                                onClick={handleBridgeFunds}
-                                                                disabled={isBridging || isAwaitingPropagation}
-                                                                className="mt-2 text-[9px] font-bold uppercase tracking-widest text-nexus-pink hover:text-white transition-colors flex items-center gap-1 justify-end ml-auto"
-                                                            >
-                                                                <ArrowRight className={`w-3 h-3 ${isBridging ? 'animate-pulse' : ''}`} /> Top-up Contract
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-500 uppercase">Private Key (WIF)</label>
-                                                <div className="flex items-center justify-between bg-black/30 p-3 rounded-lg border border-nexus-700 mt-1">
-                                                    <span className="text-xs md:text-sm font-mono text-nexus-pink break-all">{burnerWif}</span>
-                                                </div>
-                                            </div>
-                                            <div className="pt-2 flex flex-col gap-2">
-                                                <Button
-                                                    onClick={() => handleAutoFund(burnerAddress)}
-                                                    disabled={isFundingBurner || isAwaitingPropagation}
-                                                    variant="secondary"
-                                                    className="w-full text-xs h-8 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/30"
-                                                    icon={<Activity className={`w-3 h-3 ${isFundingBurner || isAwaitingPropagation ? 'animate-pulse' : ''}`} />}
-                                                >
-                                                    {isFundingBurner ? 'Requesting Protocol Funding...' : isAwaitingPropagation ? 'Syncing with Network...' : 'Request Testnet Gas Overlay'}
-                                                </Button>
-                                                <p className="text-[10px] text-gray-500 text-center uppercase tracking-widest">Fund the Burner Address to sign transactions.</p>
-                                            </div>
-                                        </div>
+                                        <div className="text-center py-4 text-[10px] text-gray-600 italic border border-dashed border-white/10 rounded-lg">No outputs detected</div>
                                     )}
                                 </div>
                             </div>
-                        )}
 
-                        {/* WalletConnect Card */}
-                        {signingMethod === 'walletconnect' && (
-                            <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 h-full min-h-[300px]">
-                                <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
-                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
-                                        <Wallet className="w-3 h-3 mr-2 text-nexus-pink" /> Transaction Signer
-                                    </h4>
+                            {/* Signing Info / Switcher */}
+                            <div className="p-4 bg-nexus-cyan/5 border border-nexus-cyan/10 rounded-2xl">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="text-[10px] font-black text-nexus-cyan/80 uppercase tracking-widest">Signing Identity</div>
+                                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5">
+                                        <button
+                                            onClick={() => setSigningMethod('walletconnect')}
+                                            className={`px-3 py-1 text-[9px] font-black uppercase tracking-tighter rounded-md transition-all ${signingMethod === 'walletconnect' ? 'bg-nexus-cyan text-nexus-900 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'text-gray-500 hover:text-gray-300'}`}
+                                        >
+                                            WalletConnect
+                                        </button>
+                                        <button
+                                            onClick={() => setSigningMethod('burner')}
+                                            className={`px-3 py-1 text-[9px] font-black uppercase tracking-tighter rounded-md transition-all ${signingMethod === 'burner' ? 'bg-nexus-cyan text-nexus-900 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'text-gray-500 hover:text-gray-300'}`}
+                                        >
+                                            Test Wallet
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="p-4 h-full flex flex-col items-center justify-center gap-4 py-8">
-                                    {/* State 1: CONNECTED - Show wallet address */}
-                                    {isConnected && (
-                                        <div className="w-full flex flex-col items-center p-6 bg-nexus-900 border border-nexus-700 rounded-lg">
-                                            <div className="w-16 h-16 rounded-full bg-nexus-cyan/20 flex flex-col items-center justify-center mb-4">
-                                                <Wallet className="w-8 h-8 text-nexus-cyan" />
-                                            </div>
-                                            <p className="text-base font-bold text-white mb-2">Wallet Connected</p>
-                                            <div className="text-xs text-nexus-cyan font-mono break-all text-center px-4">
-                                                {walletConnectService.getAccount() || 'Session Active'}
-                                            </div>
+
+                                <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${signingMethod === 'burner' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                            <Wallet className="w-4 h-4" />
                                         </div>
+                                        <div>
+                                            <p className="text-[10px] text-white font-bold leading-none">
+                                                {signingMethod === 'burner' ? 'Burner Wallet' : (wcSession?.peer?.metadata?.name || 'WalletConnect')}
+                                            </p>
+                                            <p className="text-[9px] font-mono text-gray-500 mt-1">
+                                                {signingMethod === 'burner'
+                                                    ? (burnerAddress ? `${burnerAddress.slice(0, 10)}...${burnerAddress.slice(-8)}` : 'Not Generated')
+                                                    : (walletConnectService.getAddress() ? `${walletConnectService.getAddress()?.slice(0, 10)}...${walletConnectService.getAddress()?.slice(-8)}` : 'Not Connected')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {signingMethod === 'burner' && !burnerWif && (
+                                        <button
+                                            onClick={onGenerateBurner}
+                                            className="text-[9px] font-black text-nexus-cyan hover:underline uppercase tracking-widest"
+                                        >
+                                            Generate
+                                        </button>
                                     )}
-
-                                    {/* State 2: EXPIRED - Show reconnect option */}
-                                    {isExpired && (
-                                        <div className="w-full text-center space-y-4">
-                                            <div className="text-base text-yellow-400 font-bold">⚠ Session Expired</div>
-                                            <p className="text-sm text-gray-400">Your wallet session has expired or disconnected</p>
-                                            <Button size="sm" onClick={handleConnect} icon={<Wallet className="w-4 h-4" />}>
-                                                Reconnect Wallet
-                                            </Button>
-                                        </div>
-                                    )}
-
-                                    {/* State 3: DISCONNECTED - Show connect option */}
-                                    {isDisconnected && (
-                                        <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
-                                            <div className="w-16 h-16 bg-nexus-cyan/10 rounded-full flex items-center justify-center mb-2">
-                                                <Wallet className="w-8 h-8 text-nexus-cyan opacity-40" />
-                                            </div>
-                                            <div className="text-center">
-                                                <p className="text-sm font-bold text-white mb-1">Wallet Disconnected</p>
-                                                <p className="text-xs text-gray-500 max-w-[180px]">Connect your mobile wallet to sign and broadcast this transaction.</p>
-                                            </div>
-                                            <Button size="lg" onClick={handleConnect} icon={<Wallet className="w-5 h-5" />} className="shadow-[0_0_20px_rgba(0,229,255,0.2)]">
-                                                Connect Wallet
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* RIGHT COLUMN: UTXOs and Contract Details */}
-                    <div className="flex-1 flex flex-col gap-4">
-
-                        {/* UTXO Inspector */}
-                        <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden flex-1 flex flex-col">
-                            <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30 flex justify-between items-center shrink-0">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
-                                    <Hash className="w-3 h-3 mr-2 text-nexus-cyan" /> Contract UTXOs
-                                </h4>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                        <div className="text-[10px] text-gray-500 uppercase flex justify-between items-center mb-1">
-                                            <span>Total Balance</span>
-                                            {unconfirmedContractBalance > 0 && (
-                                                <Badge variant="warning" className="text-[8px] py-0 h-4 ml-2">Unconfirmed (Spendable)</Badge>
-                                            )}
-                                        </div>
-                                        <div className={`text-sm font-bold ${totalBalance > 0 ? 'text-nexus-cyan' : 'text-gray-500'}`}>
-                                            {totalBalance.toLocaleString()} <span className="text-[10px]">SATS</span>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            loadUtxos();
-                                        }}
-                                        className="text-xs text-nexus-cyan hover:text-white transition-colors flex items-center gap-1"
-                                    >
-                                        <Activity className={`w-3 h-3 ${isFetchingUtxos || isAwaitingPropagation ? 'animate-spin' : ''}`} /> Refresh
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="p-4 flex-1 overflow-hidden flex flex-col">
-                                {isAwaitingPropagation && totalBalance === 0 && (
-                                    <div className="bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-lg p-3 mb-3 animate-pulse">
-                                        <div className="flex items-center gap-2 text-nexus-cyan">
-                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                            <span className="text-[10px] font-bold uppercase tracking-widest">Awaiting Network Indexer...</span>
-                                        </div>
-                                        <p className="text-[9px] text-nexus-cyan/70 mt-1">Faucet transaction confirmed. Waiting for Electrum nodes to propagate the outcome.</p>
-                                    </div>
-                                )}
-
-                                {isFetchingUtxos && !isAwaitingPropagation ? (
-                                    <div className="m-auto text-center text-gray-500 text-xs flex flex-col items-center">
-                                        <Loader2 className="w-6 h-6 text-nexus-cyan animate-spin mb-3" />
-                                        Scanning Electrum...
-                                    </div>
-                                ) : contractUtxos && contractUtxos.length > 0 ? (
-                                    <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
-                                        {contractUtxos.map((u, i) => {
-                                            const utxoId = `${u.txid}:${u.vout}`;
-                                            const isSelected = selectedUtxoIds.includes(utxoId);
-
-                                            return (
-                                                <div
-                                                    key={i}
-                                                    onClick={() => {
-                                                        setSelectedUtxoIds(prev =>
-                                                            prev.includes(utxoId)
-                                                                ? prev.filter(id => id !== utxoId)
-                                                                : [...prev, utxoId]
-                                                        );
-                                                    }}
-                                                    className={`flex justify-between items-center text-xs p-3 rounded-lg border transition-all cursor-pointer ${isSelected
-                                                        ? 'bg-nexus-cyan/10 border-nexus-cyan shadow-[0_0_10px_rgba(0,229,255,0.1)]'
-                                                        : 'bg-black/20 border-nexus-700/50 hover:bg-black/40 hover:border-nexus-700'
-                                                        }`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-nexus-cyan border-nexus-cyan' : 'bg-transparent border-nexus-700'
-                                                            }`}>
-                                                            {isSelected && <CheckCircle className="w-3 h-3 text-nexus-900" />}
-                                                        </div>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-mono text-gray-400 truncate w-32 md:w-48" title={utxoId}>
-                                                                {u.txid.slice(0, 8)}...{u.txid.slice(-4)}:{u.vout}
-                                                            </span>
-                                                            {u.height === 0 && (
-                                                                <span className="text-[8px] text-yellow-500 font-bold uppercase tracking-tighter">Unconfirmed</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <span className={`font-mono font-bold bg-nexus-cyan/10 px-2.5 py-1 rounded ${isSelected ? 'text-white' : 'text-nexus-cyan'}`}>
-                                                        {u.value.toLocaleString()} <span className="text-[10px] opacity-60">sat</span>
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="m-auto text-center text-gray-500 text-sm flex flex-col items-center bg-black/20 p-6 rounded-xl border border-dashed border-nexus-700 w-full">
-                                        <AlertCircle className="w-8 h-8 mb-3 text-yellow-500/80" />
-                                        <p className="font-bold text-gray-300">No UTXOs Found</p>
-                                        <p className="text-xs mt-1">The contract must be funded to execute calls.</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Contract Details & Parameters */}
-                        <div className="bg-nexus-900 border border-nexus-700 rounded-xl overflow-hidden shrink-0">
-                            <div className="p-4 border-b border-nexus-700/50 bg-nexus-800/30">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center">
-                                    <Cpu className="w-3 h-3 mr-2 text-nexus-cyan" /> Contract Config
-                                </h4>
-                            </div>
-                            <div className="p-4 space-y-4">
-                                {/* Function Call Info */}
-                                <div className="flex justify-between items-center text-sm border-b border-nexus-700/50 pb-2">
-                                    <span className="text-gray-500">Target Function:</span>
-                                    <span className="text-nexus-cyan font-mono font-bold bg-nexus-cyan/10 px-2 py-0.5 rounded">{selectedFunction}</span>
-                                </div>
-
-                                {/* Constructor Args Section */}
-                                {constructorInputs.length > 0 && (
-                                    <div className="space-y-3 pt-1">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Contract Config</label>
-                                            <Badge variant="ghost" className="text-[10px] opacity-50">CONSTRUCTOR PARAMETERS</Badge>
-                                        </div>
-                                        <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
-                                            {constructorInputs.map((input, idx) => (
-                                                <div key={idx} className="space-y-1">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-[10px] text-gray-500 uppercase">{input.name}</span>
-                                                        <span className="text-[9px] text-nexus-cyan/50 font-mono">{input.type}</span>
-                                                    </div>
-                                                    <Input
-                                                        value={internalConstructorArgs[idx] || ''}
-                                                        onChange={(e) => {
-                                                            const newArgs = [...internalConstructorArgs];
-                                                            newArgs[idx] = e.target.value;
-                                                            setInternalConstructorArgs(newArgs);
-                                                            onConfigChange?.(newArgs);
-                                                        }}
-                                                        placeholder={`Enter ${input.name}`}
-                                                        className="font-mono text-xs bg-black/20 border-nexus-700/50 h-8"
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Address QR */}
-                                <div className="space-y-1 pt-2 border-t border-nexus-700/30">
-                                    <span className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Contract Address</span>
-                                    <div className="flex items-center gap-3 bg-black/30 p-2 rounded-lg border border-nexus-700/50">
-                                        <div className="bg-white p-1 rounded-sm shrink-0">
-                                            <QRCodeSVG value={getQrValue(deployedAddress || '')} size={36} />
-                                        </div>
-                                        <span className="text-gray-300 font-mono text-[10px] md:text-xs break-all flex-1">{deployedAddress}</span>
-                                    </div>
                                 </div>
                             </div>
                         </div>
-
-                    </div>
+                    )}
                 </div>
 
                 {/* BOTTOM ROW: Actions */}
-                <div className="flex items-center justify-between pt-4 border-t border-nexus-700 mt-4">
+                <div className="flex items-center justify-between pt-4 border-t border-white/5 mt-4">
                     <Button variant="ghost" onClick={() => setCurrentStep(2)} size="sm">
                         <ArrowLeft className="w-4 h-4 mr-2" /> Back to Args
                     </Button>
                     <div className="flex items-center gap-3">
-                        {signingMethod === 'walletconnect' && !isConnected && (
-                            <span className="text-xs text-gray-500 italic">Connect wallet to sign</span>
-                        )}
-                        {signingMethod === 'burner' && !burnerWif && (
-                            <span className="text-xs text-gray-500 italic">Generate burner to sign</span>
-                        )}
                         <Button
                             onClick={() => {
                                 handleExecute();
@@ -1158,7 +1029,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             icon={<Play className="w-4 h-4" />}
                             className="px-8"
                         >
-                            {(signingMethod === 'walletconnect' ? isConnected : burnerWif) ? 'Sign & Broadcast' : 'Ready to Sign?'}
+                            Execute Call
                         </Button>
                     </div>
                 </div>
@@ -1290,7 +1161,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                className="max-w-2xl w-[95vw]"
+                className="max-w-4xl w-[95vw]"
                 title={
                     currentStep === 1 ? "Select Function" :
                         currentStep === 2 ? "Configure Arguments" :
@@ -1298,7 +1169,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 "Execution Status"
                 }
             >
-                <div className="min-h-[300px]">
+                <div className="max-h-[65vh] overflow-y-auto custom-scrollbar px-1 -mx-1">
                     {currentStep === 1 && renderStep1_Select()}
                     {currentStep === 2 && renderStep2_Args()}
                     {currentStep === 3 && renderStep3_Preview()}
