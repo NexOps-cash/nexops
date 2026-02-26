@@ -115,8 +115,13 @@ contract FeeSplitter() {
         parameters: [
             { id: 'threshold', label: 'Signature Threshold', type: 'number', description: 'Number of signatures required to pass a governance action.', defaultValue: 3 },
             { id: 'signersCount', label: 'Total Signers', type: 'number', description: 'Total number of authorized board members.', defaultValue: 5 },
-            { id: 'dailyCap', label: 'Daily Spend Limit (BCH)', type: 'number', description: 'Maximum amount that can be spent per day without full consensus.', defaultValue: 10 },
+            { id: 'maxSpend', label: 'Daily Spend Limit (BCH)', type: 'number', description: 'Maximum amount that can be spent per day without full consensus.', defaultValue: 10 },
             { id: 'emergencyKey', label: 'Emergency Freeze Key', type: 'string', description: 'A single key that can halt all spends in an emergency.', placeholder: '02...' },
+            { id: 'signer1', label: 'Signer 1 (Nexus Pubkey)', type: 'string', description: 'Public key for signer 1.', placeholder: '02...' },
+            { id: 'signer2', label: 'Signer 2 (Nexus Pubkey)', type: 'string', description: 'Public key for signer 2.', placeholder: '02...' },
+            { id: 'signer3', label: 'Signer 3 (Nexus Pubkey)', type: 'string', description: 'Public key for signer 3.', placeholder: '02...' },
+            { id: 'signer4', label: 'Signer 4 (Nexus Pubkey)', type: 'string', description: 'Public key for signer 4.', placeholder: '02...' },
+            { id: 'signer5', label: 'Signer 5 (Nexus Pubkey)', type: 'string', description: 'Public key for signer 5.', placeholder: '02...' },
         ],
         spendPaths: [
             { pathName: 'Standard Spend', whoSigns: 'Threshold subset (e.g. 3 of 5)', when: 'Amount <= Daily Cap', valueRule: 'Limits output value', risk: 'Low' },
@@ -124,22 +129,57 @@ contract FeeSplitter() {
             { pathName: 'Emergency Halt', whoSigns: 'Emergency Key Holder', when: 'Immediate', valueRule: 'No spend, sends to recovery', risk: 'Critical' }
         ],
         generateSource: (params) => `
-pragma cashscript ^0.9.0;
+pragma cashscript ^0.13.0;
 
-// Treasury Governance 
-// NexOps Policy Mode Configuration
 contract TreasuryGovernance(
     int signatureThreshold,
-    int dailySpendLimit,
-    pubkey emergencyKey
+    int maxSpendPerTx,
+    pubkey emergencyFreezeKey,
+
+    pubkey signer1,
+    pubkey signer2,
+    pubkey signer3,
+    pubkey signer4,
+    pubkey signer5
 ) {
-    function standardSpend(sig[] sigs) {
-        // Enforce daily cap and threshold
-        require(true); 
+
+    function spend(
+        sig s1,
+        sig s2,
+        sig s3,
+        sig s4,
+        sig s5,
+        int spendAmount
+    ) {
+
+        int valid = 10;
+
+        if (checkSig(s1, signer1)) {
+            valid = valid + 1;
+        }
+
+        if (checkSig(s2, signer2)) {
+            valid = valid + 1;
+        }
+
+        if (checkSig(s3, signer3)) {
+            valid = valid + 1;
+        }
+
+        if (checkSig(s4, signer4)) {
+            valid = valid + 1;
+        }
+
+        if (checkSig(s5, signer5)) {
+            valid = valid + 1;
+        }
+
+        require(valid >= signatureThreshold);
+        require(spendAmount <= maxSpendPerTx);
     }
-    
-    function emergencyHalt(sig emergencySig) {
-        require(checkSig(emergencySig, emergencyKey));
+
+    function emergencyFreeze(sig emergencySig) {
+        require(checkSig(emergencySig, emergencyFreezeKey));
     }
 }
 `.trim()

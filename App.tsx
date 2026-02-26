@@ -168,23 +168,11 @@ const App: React.FC = () => {
   };
 
   const handleSelectProject = (projectId: string) => {
-    // Request fullscreen on user gesture
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {
-        // Silently fail if blocked
-      });
-    }
     setActiveProjectId(projectId);
     setCurrentView('workspace');
   };
 
   const handleCreateProject = (project: Project) => {
-    // Request fullscreen on user gesture
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {
-        // Silently fail if blocked
-      });
-    }
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
     setCurrentView('workspace');

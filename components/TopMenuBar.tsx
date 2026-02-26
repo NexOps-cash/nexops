@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, Github, User as UserIcon } from 'lucide-react';
+import { ChevronDown, Github, User as UserIcon, Maximize, Minimize } from 'lucide-react';
 import { Project } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -27,7 +27,26 @@ const menus: MenuItem[] = [
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction, isSyncing, syncError }) => {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const { user, signInWithGithub, signInWithGoogle, signOut } = useAuth();
+
+    React.useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    };
 
     const handleMenuClick = (menuLabel: string) => {
         setActiveMenu(activeMenu === menuLabel ? null : menuLabel);
@@ -103,6 +122,15 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction,
                 <div className="text-xs text-slate-500 font-mono hidden md:block">
                     {activeProject ? activeProject.name : 'No Project'}
                 </div>
+
+                {/* Fullscreen Toggle */}
+                <button
+                    onClick={toggleFullscreen}
+                    className="p-1.5 hover:bg-white/5 rounded-md text-slate-400 hover:text-white transition-colors"
+                    title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                    {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
+                </button>
 
                 {/* Auth Section */}
                 <div className="relative">
