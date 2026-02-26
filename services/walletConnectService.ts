@@ -215,110 +215,63 @@ class WalletConnectService extends EventEmitter {
 
     /**
      * Request a signature from the connected wallet.
-     * Uses 'bch_signTransaction'.
+     * Uses 'bch_signTransaction' with TransactionCommon and sourceOutputs.
      */
-    public async requestSignature(txHex: string, requestedChainId: ChainId): Promise<string> {
+    public async requestSignature(
+        transaction: any,
+        sourceOutputs: any[],
+        requestedChainId: string
+    ): Promise<string> {
         if (!this.client || !this.session) {
             throw new Error('No WalletConnect session');
         }
 
-        const method = 'bch_signTransaction';
-
-        // Fix: Derive chainId from the specific session namespace approval
-        // We MUST use the chainId that is present in the session namespaces.
-        // We MUST use the chainId that is present in the session namespaces.
-        console.log("DEBUG: WC Session Namespaces:", JSON.stringify(this.session.namespaces, null, 2));
-
-        let approvedChainId: string | undefined;
-
-        // Strategy 1: Try the 'bch' namespace directly
         const bchNamespace = this.session.namespaces['bch'];
-        if (bchNamespace?.chains?.[0]) {
-            approvedChainId = bchNamespace.chains[0];
-            console.log("DEBUG: Found BCH chain in 'bch' namespace:", approvedChainId);
+        if (!bchNamespace?.chains?.[0]) {
+            throw new Error('No approved BCH chain in session');
         }
 
-        // Strategy 2: Search all namespaces for any chain starting with 'bch:'
-        if (!approvedChainId) {
-            console.log("DEBUG: 'bch' namespace not found, searching all namespaces...");
-            const allNamespaces = Object.entries(this.session.namespaces);
-            console.log("DEBUG: Available namespaces:", Object.keys(this.session.namespaces));
-
-            for (const [nsKey, ns] of allNamespaces) {
-                console.log(`DEBUG: Checking namespace '${nsKey}':`, ns.chains);
-                const bchChain = ns.chains?.find(c => c.startsWith('bch:'));
-                if (bchChain) {
-                    approvedChainId = bchChain;
-                    console.log(`DEBUG: Found BCH chain in '${nsKey}' namespace:`, approvedChainId);
-                    break;
-                }
-            }
-        }
-
-        // Strategy 3: Check accounts array for BCH addresses
-        if (!approvedChainId) {
-            console.log("DEBUG: Checking accounts for BCH chain...");
-            const allNamespaces = Object.entries(this.session.namespaces);
-            for (const [nsKey, ns] of allNamespaces) {
-                const bchAccount = ns.accounts?.find(a => a.includes('bch:'));
-                if (bchAccount) {
-                    // Extract chain from account string (format: "bch:bchtest:address")
-                    const parts = bchAccount.split(':');
-                    if (parts.length >= 2) {
-                        approvedChainId = `${parts[0]}:${parts[1]}`;
-                        console.log(`DEBUG: Derived BCH chain from account in '${nsKey}':`, approvedChainId);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!approvedChainId) {
-            console.error("DEBUG: Failed to find BCH chain. Full session:", this.session);
-            throw new Error('No approved BCH chain found in session namespaces.');
-        }
-
-        console.log(`DEBUG: Requesting signature on approved chain: ${approvedChainId} (Requested was: ${requestedChainId}, ignored)`);
-
+        const approvedChainId = bchNamespace.chains[0];
         const topic = this.session.topic;
 
-        // We MUST use the chain string the wallet understands/approved `approvedChainId`.
-        const payload = {
-            txHex,
-            // STRICT REQUIREMENT: Only pass the approved chainId to the wallet logic
-            chainId: approvedChainId,
-            description: "Interact with NexOps Smart Contract"
-        };
+        console.log("WC DEBUG: Using chainId:", approvedChainId);
+        console.log("WC DEBUG: Sending transaction template:", transaction);
+        console.log("WC DEBUG: Sending sourceOutputs:", sourceOutputs);
 
         try {
-            // DEBUG: Log namespaces to see what the wallet actually approved
-            console.log("DEBUG: WC Session Topic:", topic);
-            console.log("DEBUG: WC Session Namespaces:", JSON.stringify(this.session.namespaces, null, 2));
-
             const result = await this.client.request({
                 topic,
-                chainId: approvedChainId, // Must match what is in `session.namespaces`
+                chainId: approvedChainId,
                 request: {
-                    method,
-                    params: [payload]
+                    method: 'bch_signTransaction',
+                    params: {
+                        transaction,
+                        sourceOutputs,
+                        broadcast: false,
+                        userPrompt: "Sign NexOps Smart Contract Transaction"
+                    }
                 }
             }) as any;
 
-            console.log("DEBUG: WC Signing Result Type:", typeof result);
-            console.log("DEBUG: WC Signing Result Value:", JSON.stringify(result));
+            console.log("WC DEBUG: Wallet response:", result);
 
-            // Result depends on wallet, usually { signedTransaction: hex } (Paytaca) or just hex string
-            // We need to return the raw hex string for broadcasting
             if (typeof result === 'string') {
                 return result;
-            } else if (result && typeof result === 'object') {
-                const hex = result.signedTransaction || result.transaction || result.hex || result.result;
-                if (hex && typeof hex === 'string') {
-                    return hex;
-                }
             }
 
-            throw new Error('Unable to extract signed transaction hex from wallet response');
+            if (result?.signedTransaction) {
+                return result.signedTransaction;
+            }
+
+            if (result?.result?.signedTransaction) {
+                return result.result.signedTransaction;
+            }
+
+            if (result?.transaction) {
+                return result.transaction;
+            }
+
+            throw new Error('Unable to extract signed transaction from wallet response');
         } catch (e) {
             console.error('Signing failed', e);
             throw e;
@@ -393,14 +346,39 @@ class WalletConnectService extends EventEmitter {
 
     /**
      * Extracts the public key from the session metadata if provided by the wallet.
+     * Some wallets (Paytaca) provide it in namespace metadata, others in peer metadata.
      */
     public getPublicKey(): string {
         if (!this.session) return '';
 
-        const bchNamespace = this.session.namespaces['bch'];
-        // some wallets provide pubkey in metadata or as a dedicated property
-        const metadata = (bchNamespace as any)?.metadata;
-        return metadata?.pubkey || metadata?.publicKey || '';
+        console.log("WC DEBUG: Searching for Pubkey in session:", JSON.stringify(this.session.namespaces, null, 2));
+
+        // Strategy 1: Search all namespaces for metadata.pubkey
+        for (const [nsKey, ns] of Object.entries(this.session.namespaces)) {
+            const pk = (ns as any)?.metadata?.pubkey || (ns as any)?.metadata?.publicKey;
+            if (pk) {
+                console.log(`WC DEBUG: Found Pubkey in namespace '${nsKey}':`, pk);
+                return pk;
+            }
+        }
+
+        // Strategy 2: Check peer metadata (global)
+        const peerMetadata = this.session.peer?.metadata as any;
+        const peerPk = peerMetadata?.pubkey || peerMetadata?.publicKey;
+        if (peerPk) {
+            console.log("WC DEBUG: Found Pubkey in peer metadata:", peerPk);
+            return peerPk;
+        }
+
+        // Strategy 3: Check for Paytaca-specific session extensions if any
+        // (Sometimes wallets put it in custom keys at the root of the namespace)
+        const bchNS = this.session.namespaces['bch'] as any;
+        if (bchNS?.pubkey || bchNS?.publicKey) {
+            return bchNS.pubkey || bchNS.publicKey;
+        }
+
+        console.warn("WC DEBUG: No public key found in session metadata.");
+        return '';
     }
 
     private setupEventListeners() {

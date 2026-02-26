@@ -4,6 +4,7 @@ import { ContractArtifact } from '../types';
 import { validateConstructorArg, ValidationResult } from '../services/validationService';
 import { walletConnectService } from '../services/walletConnectService';
 import { Button } from './UI';
+import toast from 'react-hot-toast';
 
 interface ConstructionProps {
     inputs: ContractArtifact['constructorInputs'];
@@ -99,7 +100,11 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                     pkValue = walletConnectService.getPublicKey();
                 }
 
-                if (pkValue && nextValues[input.name] !== pkValue) {
+                // REFINE: Only auto-fill if the target field is EMPTY
+                // This prevents the automatic logic from overriding a manual user choice 
+                // while still providing a sensible default.
+                const currentValue = nextValues[input.name];
+                if (pkValue && !currentValue && currentValue !== pkValue) {
                     nextValues[input.name] = pkValue;
                     nextValidations[input.name] = validateConstructorArg(pkValue, 'pubkey', input.name);
                     updated = true;
@@ -116,6 +121,44 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
             onChange(args, nextValidations);
         }
     }, [burnerPubkey, inputs, burnerAddress]); // Re-run when burner changes or wallet connects
+
+    // MANUAL PUBKEY AUTOFILL
+    const autoFillFromSource = (source: 'burner' | 'walletconnect') => {
+        let pkValue = '';
+        if (source === 'burner' && burnerPubkey) {
+            pkValue = burnerPubkey;
+        } else if (source === 'walletconnect' && walletConnectService.isConnected()) {
+            pkValue = walletConnectService.getPublicKey();
+        }
+
+        if (!pkValue) {
+            if (source === 'walletconnect') {
+                toast.error("Wallet did not provide a public key in the session. You may need to enter it manually.", { id: 'wc-pk-error' });
+            }
+            return;
+        }
+
+        let updated = false;
+        const nextValues = { ...fieldValues };
+        const nextValidations = { ...fieldValidations };
+
+        inputs.forEach((input) => {
+            if (input.type === 'pubkey') {
+                if (nextValues[input.name] !== pkValue) {
+                    nextValues[input.name] = pkValue;
+                    nextValidations[input.name] = validateConstructorArg(pkValue, 'pubkey', input.name);
+                    updated = true;
+                }
+            }
+        });
+
+        if (updated) {
+            setFieldValues(nextValues);
+            setFieldValidations(nextValidations);
+            const args = inputs.map(inp => nextValues[inp.name] || '');
+            onChange(args, nextValidations);
+        }
+    };
 
     const handleFieldChange = (name: string, value: string, type: string) => {
         const newValidation = value ? validateConstructorArg(value, type, name) : { isValid: true, severity: 'info', message: '' };
@@ -188,7 +231,12 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                 </div>
                             </div>
                             <div className="flex items-center space-x-2">
-                                <div className="px-1.5 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[8px] font-bold uppercase tracking-widest">Sync</div>
+                                <button
+                                    onClick={() => autoFillFromSource('burner')}
+                                    className="px-2 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[9px] font-black uppercase tracking-widest hover:bg-green-500/20 transition-all active:scale-95"
+                                >
+                                    Use
+                                </button>
                                 <button className="p-1 hover:bg-white/5 rounded transition-colors" onClick={onGenerateBurner}>
                                     <RefreshCw size={10} className="text-slate-500" />
                                 </button>
@@ -208,7 +256,15 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                     <div className="text-[8px] font-mono text-slate-400 truncate">{walletConnectService.getSession()?.peer?.metadata?.name || 'External Wallet'}</div>
                                 </div>
                             </div>
-                            <CheckCircle size={14} className="text-nexus-cyan shrink-0 ml-2" />
+                            <div className="flex items-center space-x-3">
+                                <button
+                                    onClick={() => autoFillFromSource('walletconnect')}
+                                    className="px-2 py-0.5 bg-nexus-cyan/10 text-nexus-cyan border border-nexus-cyan/20 rounded text-[9px] font-black uppercase tracking-widest hover:bg-nexus-cyan/20 transition-all active:scale-95"
+                                >
+                                    Use
+                                </button>
+                                <CheckCircle size={14} className="text-nexus-cyan shrink-0" />
+                            </div>
                         </div>
                     )}
                 </div>

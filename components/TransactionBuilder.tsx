@@ -635,10 +635,33 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 const unsignedHex = await txBuilder.build();
                 console.log("Unsigned Hex (Pre-Sign):", unsignedHex);
 
+                // NEW: Use libauth to decode hex to TransactionCommon for Paytaca/Standard wallets
+                const { decodeTransaction, hexToBin, cashAddressToLockingBytecode } = await import('@bitauth/libauth');
+
+                const transaction = decodeTransaction(hexToBin(unsignedHex as string));
+                if (typeof transaction === 'string') throw new Error(transaction);
+
+                // Prepare sourceOutputs for the wallet to verify the transaction
+                const lockResult = cashAddressToLockingBytecode(deployedAddress);
+                if (typeof lockResult === 'string') throw new Error(lockResult);
+
+                const sourceOutputs = selectedUtxos.map(u => ({
+                    lockingBytecode: lockResult.bytecode,
+                    valueSatoshis: BigInt(u.value)
+                }));
+
                 // 7. Request Signature from Wallet
-                console.log("Requesting signature via WalletConnect...");
-                const wcChainId = (network === 'mainnet' || network === 'main') ? 'bch:mainnet' : 'bch:testnet';
-                signedHex = await walletConnectService.requestSignature(unsignedHex as string, wcChainId);
+                console.log("Requesting signature via WalletConnect (Structured)...");
+                // Note: The service now uses the approved chain from the session, but we pass the correct mapping here as well
+                const wcChainId = (network === 'mainnet' || network === 'main') ? 'bch:bitcoincash' : 'bch:bchtest';
+
+                console.log("WC PAYLOAD:", {
+                    transaction,
+                    sourceOutputs,
+                    chainId: wcChainId
+                });
+
+                signedHex = await walletConnectService.requestSignature(transaction, sourceOutputs, wcChainId);
                 console.log("Signed Hex (Post-Sign):", signedHex);
             }
 
