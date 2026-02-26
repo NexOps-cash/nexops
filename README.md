@@ -11,11 +11,14 @@ NexOps Protocol is a high-performance, AI-driven development and operations laye
 
 ## 🚀 Key Features
 
-- **🧠 AI-Assisted Contract Generation**: Transform complex business logic into validated CashScript code using state-of-the-art LLMs (Gemini, Groq).
-- **🛡️ Automated Audit Engine**: Real-time security scanning and vulnerability detection tailored for the BCH VM (Bitauth).
-- **⚡ Unified Deployment Pipeline**: Seamlessly bridge from development to mainnet with integrated WalletConnect support and automated fee estimation.
-- **📊 Operational Intelligence**: Deep visibility into contract states, UTXO management, and protocol health via an intuitive workbench.
-- **🛠️ Developer-Centric IDE**: Monaco-powered editor with full syntax highlighting, real-time compilation, and an integrated debugging console.
+- **🧠 AI-Assisted Contract Generation**: Transform complex business logic into validated CashScript code using state-of-the-art LLMs.
+- **🛡️ Automated Audit & Auto-Fix**: Real-time security scanning with an integrated feedback loop to correct logic and compile errors.
+- **⚡ Guided Interaction Flow**: A robust 3-step progressive stepper (Connect -> Fund -> Run) that automates the transition from compilation to live on-chain interaction.
+- **🔗 Multi-Wallet Broadcast Engine**: Full integration with WalletConnect v2 and temporary "Burner" wallets for seamless Chipnet testing.
+- **📊 Operational Intelligence**: Real-time UTXO monitoring, automated faucet funding, and opcode-level execution simulation with stack visualization.
+- **🧩 Smart Contract Wizards**: Access high-level templates for Treasuries, Governance, and Escrows, generating production-ready code in seconds.
+- **🏛️ Verified Global Registry**: Publish and share audited contracts with the community to promote open, secure, and reusable smart contract patterns.
+- **☁️ Persistent Cloud Sync**: Reliable project storage with a "local-first" priority and automatic Supabase cloud synchronization.
 
 ---
 
