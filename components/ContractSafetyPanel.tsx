@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle, AlertCircle, AlertTriangle, Lock, FileCode } from 'lucide-react';
 import { ValidationResult } from '../services/validationService';
-import { ContractArtifact } from '../services/compilerService';
+import { ContractArtifact } from '../types';
 
 interface ContractSafetyPanelProps {
     artifact: ContractArtifact | null;

@@ -23,9 +23,28 @@ interface DeploymentProps {
     onDeployed?: (address: string, artifact: ContractArtifact, args: string[], fundingUtxo?: UTXO) => void;
     onArtifactsGenerated?: (address: string, artifact: ContractArtifact, args: string[]) => void;
     compact?: boolean;
+    burnerWif?: string;
+    burnerAddress?: string;
+    burnerPubkey?: string;
+    onGenerateBurner?: () => void;
+    isGeneratingBurner?: boolean;
 }
 
-export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected, onConnectWallet, onUpdateProject, onNavigate, onDeployed, onArtifactsGenerated, compact = false }) => {
+export const Deployment: React.FC<DeploymentProps> = ({
+    project,
+    walletConnected,
+    onConnectWallet,
+    onUpdateProject,
+    onNavigate,
+    onDeployed,
+    onArtifactsGenerated,
+    compact = false,
+    burnerWif,
+    burnerAddress,
+    burnerPubkey,
+    onGenerateBurner,
+    isGeneratingBurner = false
+}) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0);
@@ -295,6 +314,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                 setConstructorArgs(args);
                                 setConstructorValidations(validations);
                             }}
+                            burnerWif={burnerWif}
+                            burnerAddress={burnerAddress}
+                            burnerPubkey={burnerPubkey}
+                            onGenerateBurner={onGenerateBurner}
+                            isGeneratingBurner={isGeneratingBurner}
                         />
                     )}
 
@@ -525,6 +549,11 @@ export const Deployment: React.FC<DeploymentProps> = ({ project, walletConnected
                                         setConstructorArgs(args);
                                         setConstructorValidations(validations);
                                     }}
+                                    burnerWif={burnerWif}
+                                    burnerAddress={burnerAddress}
+                                    burnerPubkey={burnerPubkey}
+                                    onGenerateBurner={onGenerateBurner}
+                                    isGeneratingBurner={isGeneratingBurner}
                                 />
                             </div>
 

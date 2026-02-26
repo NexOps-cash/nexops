@@ -3,6 +3,14 @@ export enum ChainType {
   BCH_TESTNET = 'BCH Chipnet',
 }
 
+export interface ExecutionRecord {
+  txid: string;
+  funcName: string;
+  args: string[];
+  timestamp: number;
+  network: string;
+}
+
 export interface ContractArtifact {
   bytecode: string;
   scriptHash?: string;
@@ -75,6 +83,7 @@ export interface Project {
   fixInstructions?: string;
   deployedArtifact?: ContractArtifact;
   constructorArgs?: string[];
+  executionHistory?: ExecutionRecord[];
 }
 
 export interface GenerationResponse {

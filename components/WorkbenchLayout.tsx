@@ -34,7 +34,7 @@ const ActivityBarItem = ({
     <div className="relative group flex justify-center">
         <button
             onClick={onClick}
-            className={`p-3 w-12 flex justify-center items-center transition-colors relative ${isActive ? 'text-nexus-cyan' : 'text-slate-500 hover:text-slate-300'
+            className={`p-2.5 w-12 flex justify-center items-center transition-colors relative ${isActive ? 'text-nexus-cyan' : 'text-slate-500 hover:text-slate-300'
                 }`}
         >
             <Icon size={24} strokeWidth={isActive ? 2 : 1.5} />

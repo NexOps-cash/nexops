@@ -5,7 +5,7 @@ import { Button, Tabs, getFileIcon, Badge, Modal } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
-import { Project, ProjectFile, CodeVersion } from '../types';
+import { Project, ProjectFile, CodeVersion, ExecutionRecord } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
@@ -14,7 +14,7 @@ import {
     FileCode, Zap, Cpu, Loader2, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getExplorerLink, fetchUTXOs } from '../services/blockchainService';
+import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript } from '../services/compilerService';
@@ -28,6 +28,7 @@ import { ProblemsPanel, Problem } from '../components/ProblemsPanel';
 import { Deployment } from './Deployment';
 import { AIPanel } from '../components/AIPanel';
 import { AuditReport, Vulnerability } from '../types';
+import LocalWalletService from '../services/localWalletService';
 import { ArtifactInspector } from '../components/ArtifactInspector';
 import { FlowBuilder, FlowPalette } from '../components/flow/FlowBuilder';
 import { FlowGraph } from '../components/flow/FlowGraph';
@@ -119,6 +120,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
     const [fileToDelete, setFileToDelete] = useState<string | null>(null);
     const [fileToClose, setFileToClose] = useState<string | null>(null);
 
+    // Global Burner State
+    const [burnerWif, setBurnerWif] = useState<string>('');
+    const [burnerAddress, setBurnerAddress] = useState<string>('');
+    const [burnerPubkey, setBurnerPubkey] = useState<string>('');
+    const [isGeneratingBurner, setIsGeneratingBurner] = useState(false);
+
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
     const mainContractFile = useMemo(() => {
@@ -184,6 +191,43 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
             setFundingUtxo(null);
         }
     }, [project.id]); // Only re-run when switching projects
+
+    // Global funding monitor: Detect funding regardless of active view
+    useEffect(() => {
+        if (!deployedAddress) return;
+
+        let unsub: (() => void) | null = null;
+
+        const monitor = async () => {
+            console.log(`[GlobalMonitor] Watching ${deployedAddress.slice(0, 10)}...`);
+            unsub = await subscribeToAddress(deployedAddress, (utxos) => {
+                const total = utxos.reduce((sum, u) => sum + u.value, 0);
+                // Logic: If the PROJECT doesn't have a persistent deployedAddress yet, 
+                // but we have a tentative one (deployedAddress state), this is "Initial Funding"
+                if (total > 0 && !project.deployedAddress) {
+                    console.log(`[GlobalMonitor] Initial funding detected!`);
+                    const utxo = utxos.find(u => u.height > 0) || utxos[0];
+                    setFundingUtxo(utxo);
+                    setShowLiveModal(true);
+
+                    // Force update project to 'Deployed' status
+                    onUpdateProject({
+                        ...project,
+                        deployedAddress: deployedAddress,
+                        deployedArtifact: deployedArtifact,
+                        constructorArgs: constructorArgs,
+                        lastModified: Date.now()
+                    });
+
+                    addLog('SYSTEM', `[Network] Success! Funding detected for ${deployedAddress}.`);
+                    toast.success("Contract Live!", { id: 'live_toast' });
+                }
+            });
+        };
+
+        monitor();
+        return () => { if (unsub) unsub(); };
+    }, [deployedAddress, !!project.deployedAddress, project.id]);
 
     const addLog = (channel: TerminalChannel, message: string | string[]) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -1155,6 +1199,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                             lastModified: Date.now()
                         });
                     }}
+                    burnerWif={burnerWif}
+                    burnerAddress={burnerAddress}
+                    burnerPubkey={burnerPubkey}
+                    onGenerateBurner={handleGenerateBurner}
+                    isGeneratingBurner={isGeneratingBurner}
+                    history={project.executionHistory}
+                    onRecordTransaction={handleRecordTransaction}
                 />
             )}
         </div>
@@ -1191,6 +1242,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
                 setShowLiveModal(true);
             }}
             onNavigate={(view) => setActiveView(view)}
+            burnerWif={burnerWif}
+            burnerAddress={burnerAddress}
+            burnerPubkey={burnerPubkey}
+            onGenerateBurner={handleGenerateBurner}
+            isGeneratingBurner={isGeneratingBurner}
         />
     );
 
@@ -1511,6 +1567,34 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({ project, onU
         );
     };
 
+
+    const handleRecordTransaction = (record: ExecutionRecord) => {
+        const history = [...(project.executionHistory || []), record];
+        onUpdateProject({
+            ...project,
+            executionHistory: history,
+            lastModified: Date.now()
+        });
+        addLog('SYSTEM', `[History] Transaction recorded: ${record.txid.slice(0, 8)}... (${record.funcName})`);
+    };
+
+    const handleGenerateBurner = async () => {
+        setIsGeneratingBurner(true);
+        try {
+            const wif = await LocalWalletService.generateBurnerWIF();
+            const address = await LocalWalletService.getAddressFromWIF(wif);
+            const pubkey = await LocalWalletService.getPublicKeyFromWIF(wif);
+            setBurnerWif(wif);
+            setBurnerAddress(address);
+            setBurnerPubkey(pubkey);
+            addLog('SYSTEM', `[Wallet] New ephemeral burner generated: ${address}`);
+        } catch (e) {
+            console.error("Failed to generate burner:", e);
+            addLog('SYSTEM', `[Error] Burner generation failed.`);
+        } finally {
+            setIsGeneratingBurner(false);
+        }
+    };
 
     const renderBottomPanel = () => (
         <NamedTaskTerminal

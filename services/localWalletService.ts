@@ -28,6 +28,29 @@ class LocalWalletService {
     /**
      * Derive the testnet CashAddress from a WIF string.
      */
+    /**
+     * Derive the compressed public key (hex) from a WIF string.
+     */
+    static async getPublicKeyFromWIF(wif: string): Promise<string> {
+        const decoded = decodePrivateKeyWif(wif);
+        if (typeof decoded === 'string') {
+            throw new Error(`Invalid WIF: ${decoded}`);
+        }
+
+        const secp256k1 = await instantiateSecp256k1();
+        const pk = secp256k1.derivePublicKeyCompressed(decoded.privateKey);
+
+        if (typeof pk === 'string') {
+            throw new Error(`Public Key Derivation Failed: ${pk}`);
+        }
+
+        // Return as hex string
+        return Array.from(pk).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    /**
+     * Derive the testnet CashAddress from a WIF string.
+     */
     static async getAddressFromWIF(wif: string): Promise<string> {
         const decoded = decodePrivateKeyWif(wif);
         if (typeof decoded === 'string') {

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ContractArtifact } from '../types';
+import { ContractArtifact, ExecutionRecord } from '../types';
 import { Button, Badge, Modal, Input, Card } from './UI';
 import {
     Play, Terminal, Activity, CheckCircle,
     ArrowRight, Wallet, ChevronRight, AlertCircle,
-    Cpu, Hash, ArrowLeft, Loader2, ShieldAlert
+    Cpu, Hash, ArrowLeft, Loader2, ShieldAlert,
+    ExternalLink, History, Clock, Zap
 } from 'lucide-react';
 import { getExplorerLink, fetchUTXOs, subscribeToAddress } from '../services/blockchainService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
@@ -21,6 +22,15 @@ interface TransactionBuilderProps {
     network?: string;
     initialUtxo?: any;
     onConfigChange?: (args: string[]) => void;
+    // Props for burner (lifted to ProjectWorkspace)
+    burnerWif?: string;
+    burnerAddress?: string;
+    burnerPubkey?: string;
+    onGenerateBurner?: () => void;
+    isGeneratingBurner?: boolean;
+    // Transaction History Props
+    history?: ExecutionRecord[];
+    onRecordTransaction?: (record: ExecutionRecord) => void;
 }
 
 interface FunctionInput {
@@ -36,7 +46,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     wcSession,
     network = 'chipnet',
     initialUtxo,
-    onConfigChange
+    onConfigChange,
+    burnerWif,
+    burnerAddress,
+    burnerPubkey,
+    onGenerateBurner,
+    isGeneratingBurner = false,
+    history = [],
+    onRecordTransaction
 }) => {
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,12 +69,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
     // Wallet State
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(walletConnectService.getConnectionStatus());
+    const isWCConnected = connectionStatus === ConnectionStatus.CONNECTED && walletConnectService.isConnected();
+    const isWCExpired = connectionStatus === ConnectionStatus.EXPIRED;
+    const isWCDisconnected = connectionStatus === ConnectionStatus.DISCONNECTED;
 
-    // Burner Wallet State
+    // Burner Wallet State (Now from props)
     const [signingMethod, setSigningMethod] = useState<'walletconnect' | 'burner'>('walletconnect');
-    const [burnerWif, setBurnerWif] = useState<string>('');
-    const [burnerAddress, setBurnerAddress] = useState<string>('');
     const [isFundingBurner, setIsFundingBurner] = useState<boolean>(false);
+    const [isBridging, setIsBridging] = useState<boolean>(false);
 
     // UTXO State
     const [contractUtxos, setContractUtxos] = useState<any[] | null>(initialUtxo ? [initialUtxo] : null);
@@ -89,6 +108,50 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             setInternalConstructorArgs(new Array(constructorInputs.length).fill(''));
         }
     }, [constructorArgs, constructorInputs]);
+
+    // AUTO-FILL PUBKEY LOGIC
+    useEffect(() => {
+        const autoFillPubkeys = async () => {
+            if (constructorInputs.length === 0) return;
+
+            let updated = false;
+            const newArgs = [...internalConstructorArgs];
+
+            for (let i = 0; i < constructorInputs.length; i++) {
+                const input = constructorInputs[i];
+                if (input.type === 'pubkey') {
+                    // Only fill if empty or matches expected pattern but we have better info
+                    if (signingMethod === 'burner' && burnerPubkey) {
+                        if (newArgs[i] !== burnerPubkey) {
+                            newArgs[i] = burnerPubkey;
+                            updated = true;
+                        }
+                    } else if (signingMethod === 'walletconnect' && walletConnectService.isConnected()) {
+                        // Deriving from WalletConnect session
+                        const session = walletConnectService.getSession();
+                        // Search for pubkey in namespaces/accounts metadata if available
+                        // Most BCH wallets don't expose it directly in standard WC strings, 
+                        // but some provide it in session namespaces metadata
+                        const bchNS = session?.namespaces?.['bch'];
+                        const pk = (bchNS as any)?.metadata?.pubkey || (bchNS as any)?.metadata?.publicKey;
+
+                        if (pk && newArgs[i] !== pk) {
+                            newArgs[i] = pk;
+                            updated = true;
+                        }
+                    }
+                }
+            }
+
+            if (updated) {
+                console.log("[Autofill] Populated pubkey constructor arguments from wallet session.");
+                setInternalConstructorArgs(newArgs);
+                onConfigChange?.(newArgs);
+            }
+        };
+
+        autoFillPubkeys();
+    }, [signingMethod, burnerPubkey, constructorInputs, isWCConnected]);
 
     // Reset state when modal opens
     const openModal = () => {
@@ -324,7 +387,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     };
 
     // Bridge funds from Burner to Contract
-    const [isBridging, setIsBridging] = useState(false);
 
     const handleBridgeFunds = async () => {
         if (!burnerWif || !deployedAddress) return;
@@ -387,15 +449,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             setIsBridging(false);
         }
     };
-    const handleGenerateBurner = async () => {
-        try {
-            const wif = await LocalWalletService.generateBurnerWIF();
-            const address = await LocalWalletService.getAddressFromWIF(wif);
-            setBurnerWif(wif);
-            setBurnerAddress(address);
-        } catch (e) {
-            console.error("Failed to generate burner:", e);
-        }
+    const handleGenerateBurner = () => {
+        onGenerateBurner?.();
     };
 
     // --- Real Execution Logic ---
@@ -448,11 +503,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
         try {
             // Import dynamically to avoid SSR/Init issues if any
-            const { Contract, ElectrumNetworkProvider, SignatureTemplate } = await import('cashscript');
+            const { Contract, ElectrumNetworkProvider, SignatureTemplate, Network: CashScriptNetwork } = await import('cashscript');
 
             // Reuse existing connection if possible, or new one
             // Note: ElectrumNetworkProvider manages its own connection
-            const provider = new ElectrumNetworkProvider(network as any);
+            // Force Chipnet and the EXACT same server used by the watcher
+            // to ensure UTXO visibility and successful broadcasting.
+            const provider = new ElectrumNetworkProvider(CashScriptNetwork.CHIPNET, {
+                hostname: 'chipnet.imaginary.cash'
+            });
+            console.log("Provider initialized with chipnet.imaginary.cash");
 
             // 2. Initialize Contract
             // Use INTERNAL constructor args (can be edited by user)
@@ -562,15 +622,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             console.log("Using wallet address for output:", walletAddress);
 
             if (walletAddress && walletAddress !== 'Not Connected') {
-                // Ensure correct prefix for the network
-                const addressWithPrefix = (network === 'mainnet' || network === 'main')
-                    ? (walletAddress.startsWith('bitcoincash:') ? walletAddress : `bitcoincash:${walletAddress}`)
-                    : (walletAddress.startsWith('bchtest:') ? walletAddress : `bchtest:${walletAddress}`);
-
-                // Send the sweep amount (minus fee) back to the wallet
-                txBuilder.addOutput({ to: addressWithPrefix, amount: sendAmount });
+                // Use the wallet address directly (already has correct prefix and checksum)
+                txBuilder.addOutput({ to: walletAddress, amount: sendAmount });
             } else {
-                // Fallback to contract if no wallet, though usually we want to sweep
+                // Fallback to contract if no wallet
                 txBuilder.addOutput({ to: contract.address, amount: sendAmount });
             }
 
@@ -595,12 +650,24 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             }
 
             // 8. Broadcast
+            console.log("Selected UTXOs:", selectedUtxos);
+            console.log("Network:", network);
+            console.log("Provider network:", (provider as any).network);
             console.log("Broadcasting...");
             const txid = await provider.sendRawTransaction(signedHex);
 
             setExecutionResult({
                 success: true,
                 txid: txid
+            });
+
+            // Record transaction to history
+            onRecordTransaction?.({
+                txid: txid,
+                funcName: selectedFunction,
+                args: inputs.map(i => i.value),
+                timestamp: Date.now(),
+                network: network
             });
 
         } catch (error: any) {
@@ -625,8 +692,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const getWalletAddress = () => {
         const fullAccount = walletConnectService.getAccount();
         if (!fullAccount) return 'Not Connected';
-        // Format: namespace:chain:address
+
         const parts = fullAccount.split(':');
+
+        // WalletConnect format typically is namespace:chain:prefix:payload
+        // We need the last two parts to form a valid CashAddr (prefix:payload)
+        if (parts.length >= 4) {
+            return parts.slice(-2).join(':');
+        }
+
+        // Fallback for simpler formats
         return parts.length > 2 ? parts[parts.length - 1] : fullAccount;
     };
 
@@ -732,9 +807,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     }, []);
 
     const renderStep3_Preview = () => {
-        const isConnected = connectionStatus === ConnectionStatus.CONNECTED && walletConnectService.isConnected();
-        const isExpired = connectionStatus === ConnectionStatus.EXPIRED;
-        const isDisconnected = connectionStatus === ConnectionStatus.DISCONNECTED;
+        // Use component level helpers
+        const isConnected = isWCConnected;
+        const isExpired = isWCExpired;
+        const isDisconnected = isWCDisconnected;
 
         const networkPrefix = (network === 'mainnet' || network === 'main') ? 'bitcoincash:' : 'bchtest:';
 
@@ -1133,6 +1209,63 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         </div>
     );
 
+    const renderHistory = () => {
+        if (!history || history.length === 0) return null;
+
+        return (
+            <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center space-x-2">
+                        <History size={12} className="text-nexus-cyan" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution History</span>
+                    </div>
+                    <Badge variant="ghost" className="text-[10px] opacity-50 uppercase font-black">{history.length} SPENDS</Badge>
+                </div>
+
+                <div className="space-y-2">
+                    {[...history].reverse().map((record, idx) => (
+                        <div
+                            key={idx}
+                            className="bg-black/40 border border-white/5 rounded-xl p-3 group hover:border-nexus-cyan/30 transition-all"
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                    <div className="w-6 h-6 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20">
+                                        <Play size={10} className="text-nexus-cyan" />
+                                    </div>
+                                    <span className="font-mono text-xs font-black text-white">{record.funcName}</span>
+                                </div>
+                                <div className="flex items-center space-x-1.5 text-slate-500">
+                                    <Clock size={10} />
+                                    <span className="text-[9px] font-bold uppercase tracking-tighter">
+                                        {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 mr-2">
+                                    {record.args.map((arg, i) => (
+                                        <span key={i} className="text-[8px] font-mono px-1.5 py-0.5 bg-white/5 text-slate-400 rounded border border-white/5 truncate max-w-[80px]">
+                                            {arg}
+                                        </span>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => window.open(getExplorerLink(record.txid), '_blank')}
+                                    className="p-1.5 bg-white/5 hover:bg-nexus-cyan/10 text-slate-500 hover:text-nexus-cyan rounded-lg border border-white/5 hover:border-nexus-cyan/20 transition-all flex items-center space-x-1 shrink-0"
+                                >
+                                    <span className="text-[9px] font-black tracking-widest uppercase ml-1">View</span>
+                                    <ExternalLink size={10} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
     // -- Main Render --
     return (
         <div className="flex flex-col h-full">
@@ -1180,7 +1313,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 )}
 
                 {totalBalance === 0 && (
-                    <div className="mt-6 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-2">
+                    <div className="mt-6 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-3">
                         <div className="flex items-center text-yellow-500 text-[11px] font-black uppercase tracking-wider">
                             <AlertCircle className="w-3 h-3 mr-2" />
                             Funding Required
@@ -1188,8 +1321,20 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         <p className="text-[10px] text-slate-400 leading-relaxed">
                             To interact with this contract, you must first send funds to the contract address found in the <span className="text-slate-200">Deploy</span> tab.
                         </p>
+                        <Button
+                            variant="glass"
+                            size="sm"
+                            className="w-full text-[9px] font-black border-yellow-500/20 hover:bg-yellow-500/10 text-yellow-500/70 hover:text-yellow-500"
+                            onClick={() => handleAutoFund(deployedAddress)}
+                            isLoading={isFundingBurner}
+                        >
+                            <Zap size={10} className="mr-2" />
+                            Auto-Fund with Faucet
+                        </Button>
                     </div>
                 )}
+
+                {renderHistory()}
             </div>
 
             {/* Wizard Modal */}

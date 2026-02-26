@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
-import { HelpCircle, AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
-import { ContractArtifact } from '../services/compilerService';
+import React, { useState, useEffect } from 'react';
+import { HelpCircle, AlertCircle, AlertTriangle, CheckCircle, Info, Wallet, Loader2, Play, Activity, Zap, RefreshCw } from 'lucide-react';
+import { ContractArtifact } from '../types';
 import { validateConstructorArg, ValidationResult } from '../services/validationService';
+import { walletConnectService } from '../services/walletConnectService';
+import { Button } from './UI';
 
 interface ConstructionProps {
     inputs: ContractArtifact['constructorInputs'];
     values?: string[]; // Added prop for persistence
     onChange: (args: string[], validations: Record<string, ValidationResult>) => void;
+    burnerWif?: string;
+    burnerAddress?: string;
+    burnerPubkey?: string;
+    onGenerateBurner?: () => void;
+    isGeneratingBurner?: boolean;
 }
 
 // Micro-explanations for common input types
@@ -23,7 +30,16 @@ const getInputExplanation = (name: string, type: string): string => {
     return `Parameter ${name} of type ${type}. This value affects the contract address.`;
 };
 
-export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, onChange }) => {
+export const ConstructorForm: React.FC<ConstructionProps> = ({
+    inputs,
+    values,
+    onChange,
+    burnerWif,
+    burnerAddress,
+    burnerPubkey,
+    onGenerateBurner,
+    isGeneratingBurner = false
+}) => {
     // Initialize from values prop if available
     const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
         const initial: Record<string, string> = {};
@@ -62,40 +78,141 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, o
         onChange(orderedArgs, fieldValidations);
     };
 
-    // Use effect to propagate changes when fields or validations update from user input
-    React.useEffect(() => {
-        const orderedArgs = inputs.map(inp => fieldValues[inp.name] || '');
-        onChange(orderedArgs, fieldValidations);
-    }, [fieldValues, fieldValidations]); // removed onChange and inputs from dependency array to prevent infinite loops if they aren't memoized
+    // AUTO-FILL PUBKEY LOGIC
+    useEffect(() => {
+        if (inputs.length === 0) return;
 
-    const validateField = (name: string, val: string, type: string) => {
-        if (!val) {
-            setFieldValidations(prev => ({ ...prev, [name]: { isValid: true, severity: 'info', message: '' } }));
-            return;
+        let updated = false;
+        const nextValues = { ...fieldValues };
+        const nextValidations = { ...fieldValidations };
+
+        inputs.forEach((input, i) => {
+            if (input.type === 'pubkey') {
+                let pkValue = '';
+
+                // Priority 1: Burner
+                if (burnerPubkey) {
+                    pkValue = burnerPubkey;
+                }
+                // Priority 2: WalletConnect
+                else if (walletConnectService.isConnected()) {
+                    const session = walletConnectService.getSession();
+                    const bchNS = session?.namespaces?.['bch'];
+                    pkValue = (bchNS as any)?.metadata?.pubkey || (bchNS as any)?.metadata?.publicKey || '';
+                }
+
+                if (pkValue && nextValues[input.name] !== pkValue) {
+                    nextValues[input.name] = pkValue;
+                    nextValidations[input.name] = validateConstructorArg(pkValue, 'pubkey', input.name);
+                    updated = true;
+                }
+            }
+        });
+
+        if (updated) {
+            setFieldValues(nextValues);
+            setFieldValidations(nextValidations);
+
+            // Map back to array for onChange
+            const args = inputs.map(inp => nextValues[inp.name] || '');
+            onChange(args, nextValidations);
         }
+    }, [burnerPubkey, inputs, burnerAddress]); // Re-run when burner changes or wallet connects
 
-        const result = validateConstructorArg(val, type, name);
-        setFieldValidations(prev => ({ ...prev, [name]: result }));
-    };
+    const handleFieldChange = (name: string, value: string, type: string) => {
+        const newValidation = value ? validateConstructorArg(value, type, name) : { isValid: true, severity: 'info', message: '' };
 
-    const onInputChange = (name: string, val: string, type: string) => {
-        const newValidation = val ? validateConstructorArg(val, type, name) : { isValid: true, severity: 'info', message: '' };
-
-        setFieldValues(prev => ({ ...prev, [name]: val }));
+        setFieldValues(prev => ({ ...prev, [name]: value }));
         setFieldValidations(prev => ({ ...prev, [name]: newValidation as ValidationResult }));
+
+        // Propagate immediately
+        const nextValues = { ...fieldValues, [name]: value };
+        const nextValidations = { ...fieldValidations, [name]: newValidation as ValidationResult };
+        const args = inputs.map(inp => nextValues[inp.name] || '');
+        onChange(args, nextValidations);
     };
 
     if (inputs.length === 0) return null;
 
     return (
-        <div className="space-y-3 p-3 bg-white/5 border border-white/10 rounded-lg">
-            <div className="flex items-center justify-between text-xs text-gray-400 font-bold uppercase">
-                <div className="flex items-center">
-                    <HelpCircle className="w-3 h-3 mr-2" />
-                    Configuration
+        <div className="space-y-4">
+            {/* Wallet Integration Section (Early Autofill) */}
+            <div className="p-3 bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-xl mb-4">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-2">
+                        <Wallet size={14} className="text-nexus-cyan" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Identity Provisioning</span>
+                    </div>
+                    {burnerAddress ? (
+                        <div className="flex items-center space-x-1 animate-in fade-in slide-in-from-right-2">
+                            <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span>
+                            <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Active Burner</span>
+                        </div>
+                    ) : walletConnectService.isConnected() ? (
+                        <div className="flex items-center space-x-1 animate-in fade-in slide-in-from-right-2">
+                            <span className="w-1 h-1 rounded-full bg-nexus-cyan animate-pulse"></span>
+                            <span className="text-[8px] font-black text-nexus-cyan uppercase tracking-widest">Wallet Linked</span>
+                        </div>
+                    ) : (
+                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">No Wallet Active</span>
+                    )}
                 </div>
+
+                {!burnerAddress && !walletConnectService.isConnected() ? (
+                    <div className="grid grid-cols-1 gap-2">
+                        <Button
+                            variant="glass"
+                            size="sm"
+                            className="w-full flex items-center justify-center space-x-2 py-3 border-nexus-cyan/20 hover:border-nexus-cyan/50 h-auto"
+                            onClick={onGenerateBurner}
+                            disabled={isGeneratingBurner}
+                        >
+                            {isGeneratingBurner ? (
+                                <Loader2 size={16} className="animate-spin text-nexus-cyan" />
+                            ) : (
+                                <Zap size={16} className="text-nexus-cyan" />
+                            )}
+                            <div className="text-left">
+                                <div className="text-[10px] font-black uppercase text-white leading-none">Generate Burner</div>
+                                <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mt-1">Instant Pubkey Autofill</div>
+                            </div>
+                        </Button>
+                    </div>
+                ) : burnerAddress ? (
+                    <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between group">
+                        <div className="flex items-center space-x-3 truncate mr-4">
+                            <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20 shrink-0">
+                                <Activity size={14} className="text-green-500" />
+                            </div>
+                            <div className="truncate">
+                                <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">Burner Loaded</div>
+                                <div className="text-[8px] font-mono text-slate-500 truncate">{burnerAddress}</div>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className="px-1.5 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[8px] font-bold uppercase tracking-widest">Sync</div>
+                            <button className="p-1 hover:bg-white/5 rounded transition-colors" onClick={onGenerateBurner}>
+                                <RefreshCw size={10} className="text-slate-500" />
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center space-x-3 truncate">
+                            <div className="w-8 h-8 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20 shrink-0">
+                                <Wallet size={14} className="text-nexus-cyan" />
+                            </div>
+                            <div className="truncate">
+                                <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">WalletConnect Session</div>
+                                <div className="text-[8px] font-mono text-slate-500 truncate">{walletConnectService.getSession()?.peer?.metadata?.name || 'External Wallet'}</div>
+                            </div>
+                        </div>
+                        <CheckCircle size={14} className="text-nexus-cyan shrink-0 ml-2" />
+                    </div>
+                )}
             </div>
-            <div className="space-y-3">
+
+            <div className="space-y-4">
                 {inputs.map((inp, idx) => {
                     const validation = fieldValidations[inp.name];
                     const hasValue = !!fieldValues[inp.name];
@@ -134,7 +251,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({ inputs, values, o
 
                             <input
                                 value={fieldValues[inp.name] || ''}
-                                onChange={(e) => onInputChange(inp.name, e.target.value, inp.type)}
+                                onChange={(e) => handleFieldChange(inp.name, e.target.value, inp.type)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleApply()}
                                 className={`w-full bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors`}
                                 placeholder={`Value for ${inp.name}`}

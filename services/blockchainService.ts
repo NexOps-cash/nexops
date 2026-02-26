@@ -172,16 +172,13 @@ class FundingWatcher {
                 if (totalValue >= this.requiredAmount) {
                     console.log('[Watcher] Funding Detected! UTXOs found:', utxos);
                     this.emit({
-                        status: confirmedValue >= this.requiredAmount ? 'confirmed' : 'monitoring',
+                        status: 'confirmed', // Accept 0-conf for demo UX
                         utxos,
                         totalValue,
                         txid: utxos[0]?.txid
                     });
 
-                    if (confirmedValue >= this.requiredAmount) {
-                        return; // Stop polling only if fully confirmed
-                    }
-                    return; // Stop polling since we have enough total funds (Demo UX accepts unconfirmed)
+                    return; // Stop polling since we have enough total funds
                 } else {
                     this.emit({
                         status: 'monitoring',
