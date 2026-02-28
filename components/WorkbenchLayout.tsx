@@ -2,7 +2,7 @@ import React, { useState, ReactNode } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
     Files, ShieldCheck, BoxSelect, TerminalSquare,
-    Settings, Play, Bot, FileCode, Rocket, GitBranch, Home
+    Settings, Play, Bot, FileCode, Rocket, GitBranch, Home, Wallet
 } from 'lucide-react';
 import { StatusBar } from './StatusBar';
 import { StatusBarState } from '../types';
@@ -11,8 +11,8 @@ interface WorkbenchLayoutProps {
     sidebarContent: ReactNode;
     editorContent: ReactNode;
     bottomPanelContent: ReactNode;
-    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW';
-    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW') => void;
+    activeView: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW' | 'WALLET';
+    onViewChange: (view: 'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW' | 'WALLET') => void;
     problemsCount?: number;
     statusBarState?: StatusBarState;
     onNavigateHome?: () => void;
@@ -114,6 +114,12 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                             isActive={activeView === 'FLOW'}
                             onClick={() => onViewChange('FLOW')}
                         />
+                        <ActivityBarItem
+                            icon={Wallet}
+                            label="Wallet Manager"
+                            isActive={activeView === 'WALLET'}
+                            onClick={() => onViewChange('WALLET')}
+                        />
                     </div>
                     <div className="flex-shrink-0 pb-2 border-t border-slate-800/50">
                         <ActivityBarItem
@@ -139,6 +145,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                     {activeView === 'DEPLOY' && 'Deploy Contract'}
                                     {activeView === 'INTERACT' && 'Transaction Builder'}
                                     {activeView === 'FLOW' && 'Flow Palette'}
+                                    {activeView === 'WALLET' && 'Global Identities'}
                                 </span>
                             </div>
                             <div className="flex-1 overflow-hidden relative">

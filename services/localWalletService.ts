@@ -6,6 +6,7 @@ import {
     instantiateRipemd160,
     encodeCashAddress
 } from '@bitauth/libauth';
+import { LocalWallet } from '../types';
 
 // Ephemeral Burner Wallet Service
 // STRICTLY NON-CUSTODIAL: Keys are kept purely in React state / memory.
@@ -83,6 +84,24 @@ class LocalWalletService {
             return (encodeResult as any).address;
         }
         throw new Error(JSON.stringify(encodeResult));
+    }
+
+    /**
+     * Create a full wallet object from a name.
+     */
+    static async createWallet(name: string): Promise<LocalWallet> {
+        const wif = await this.generateBurnerWIF();
+        const address = await this.getAddressFromWIF(wif);
+        const pubkey = await this.getPublicKeyFromWIF(wif);
+
+        return {
+            id: crypto.randomUUID(),
+            name,
+            wif,
+            pubkey,
+            address,
+            network: 'chipnet'
+        };
     }
 }
 

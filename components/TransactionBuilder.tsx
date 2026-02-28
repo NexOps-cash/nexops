@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ContractArtifact, ExecutionRecord } from '../types';
+import { ContractArtifact, ExecutionRecord, Project } from '../types';
+import { useWallet } from '../contexts/WalletContext';
 import { Button, Badge, Modal, Input, Card } from './UI';
 import {
     Play, Terminal, Activity, CheckCircle,
@@ -23,6 +24,7 @@ interface TransactionBuilderProps {
     network?: string;
     initialUtxo?: any;
     onConfigChange?: (args: string[]) => void;
+    project: Project;
     // Props for burner (lifted to ProjectWorkspace)
     burnerWif?: string;
     burnerAddress?: string;
@@ -54,8 +56,10 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     onGenerateBurner,
     isGeneratingBurner = false,
     history = [],
-    onRecordTransaction
+    onRecordTransaction,
+    project
 }) => {
+    const { wallets, activeWallet } = useWallet();
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -737,9 +741,32 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 <Button variant="ghost" onClick={() => setCurrentStep(1)} size="sm" icon={<ArrowLeft className="w-4 h-4" />}>
                     Back
                 </Button>
-                <Button onClick={() => setCurrentStep(3)} icon={<ArrowRight className="w-4 h-4" />}>
-                    Next: Preview
-                </Button>
+                <div>
+                    {selectedFunction && project.deploymentRecord && (
+                        (() => {
+                            const isOwnerFunc = selectedFunction.toLowerCase().includes('release') || selectedFunction.toLowerCase().includes('owner');
+                            const isFunderFunc = selectedFunction.toLowerCase().includes('refund') || selectedFunction.toLowerCase().includes('funder');
+
+                            const requiredId = isOwnerFunc ? project.deploymentRecord.ownerWalletId :
+                                isFunderFunc ? project.deploymentRecord.funderWalletId : null;
+
+                            const isMismatch = requiredId && activeWallet?.id !== requiredId;
+
+                            if (isMismatch) {
+                                return (
+                                    <div className="inline-flex items-center space-x-2 px-3 py-1 bg-nexus-pink/10 border border-nexus-pink/20 rounded-lg text-[10px] text-nexus-pink font-bold mr-4 animate-pulse">
+                                        <ShieldAlert size={12} />
+                                        <span>Identity Mismatch: {isOwnerFunc ? 'Owner' : 'Funder'} Role</span>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()
+                    )}
+                    <Button onClick={() => setCurrentStep(3)} icon={<ArrowRight className="w-4 h-4" />}>
+                        Next: Preview
+                    </Button>
+                </div>
             </div>
         </div>
     );

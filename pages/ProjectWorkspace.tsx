@@ -46,6 +46,9 @@ interface ChatMessage {
     stage?: string;
 }
 
+import { WalletSidebar } from '../components/WalletSidebar';
+import { useWallet } from '../contexts/WalletContext';
+
 interface ProjectWorkspaceProps {
     project: Project;
     onUpdateProject: (p: Project) => void;
@@ -85,7 +88,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             walletConnectService.off('connection_status_changed', handleStatusChange);
         };
     }, []);
-    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW'>('EXPLORER');
+    const [activeView, setActiveView] = useState<'EXPLORER' | 'AUDITOR' | 'DEBUG' | 'DEPLOY' | 'INTERACT' | 'FLOW' | 'WALLET'>('EXPLORER');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
 
     // Micro-animations State
@@ -1438,6 +1441,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 isGeneratingBurner={isGeneratingBurner}
                 history={history}
                 onRecordTransaction={handleRecordTransaction}
+                project={project}
             />
         );
 
@@ -1912,7 +1916,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                             activeView === 'DEBUG' ? renderSidebarDebug() :
                                 activeView === 'FLOW' ? renderSidebarFlow() :
                                     activeView === 'INTERACT' ? renderSidebarInteract() :
-                                        renderSidebarDeploy()
+                                        activeView === 'WALLET' ? <WalletSidebar /> :
+                                            renderSidebarDeploy()
                 }
                 editorContent={renderEditorArea()}
                 bottomPanelContent={renderBottomPanel()}

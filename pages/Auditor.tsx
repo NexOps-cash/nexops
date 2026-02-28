@@ -193,6 +193,7 @@ export const Auditor: React.FC<AuditorProps> = ({
                         deployedAddress={deployedAddress}
                         constructorArgs={constructorArgs}
                         wcSession={wcSession}
+                        project={project!}
                     />
                 </div>
             ) : (

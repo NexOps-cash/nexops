@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { HelpCircle, AlertCircle, AlertTriangle, CheckCircle, Info, Wallet, Loader2, Play, Activity, Zap, RefreshCw } from 'lucide-react';
+import { HelpCircle, AlertCircle, AlertTriangle, CheckCircle, Info, Wallet, Loader2, Play, Activity, Zap, RefreshCw, User, ChevronDown } from 'lucide-react';
 import { ContractArtifact } from '../types';
 import { validateConstructorArg, ValidationResult } from '../services/validationService';
 import { walletConnectService } from '../services/walletConnectService';
+import { useWallet } from '../contexts/WalletContext';
 import { Button } from './UI';
 import toast from 'react-hot-toast';
 
@@ -54,6 +55,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
 
     const [fieldValidations, setFieldValidations] = useState<Record<string, ValidationResult>>({});
     const [showTooltip, setShowTooltip] = useState<string | null>(null);
+    const { wallets, activeWallet } = useWallet();
 
     // Sync state if external values change (e.g. edited in one view and switched to another)
     React.useEffect(() => {
@@ -177,98 +179,43 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* Wallet Integration Section (Early Autofill) */}
-            <div className="p-3 bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-xl mb-4">
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                        <Wallet size={14} className="text-nexus-cyan" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Identity Provisioning</span>
+            {/* Global Identity Selection (Quick Set) */}
+            {wallets.length > 0 && (
+                <div className="p-3 bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-xl mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                            <Wallet size={14} className="text-nexus-cyan" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Identity Selection</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{wallets.length} Identities Available</span>
+                        </div>
                     </div>
-                    {burnerAddress ? (
-                        <div className="flex items-center space-x-1 animate-in fade-in slide-in-from-right-2">
-                            <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span>
-                            <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Active Burner</span>
-                        </div>
-                    ) : walletConnectService.isConnected() ? (
-                        <div className="flex items-center space-x-1 animate-in fade-in slide-in-from-right-2">
-                            <span className="w-1 h-1 rounded-full bg-nexus-cyan animate-pulse"></span>
-                            <span className="text-[8px] font-black text-nexus-cyan uppercase tracking-widest">Wallet Linked</span>
-                        </div>
-                    ) : (
-                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">No Wallet Active</span>
-                    )}
-                </div>
 
-                <div className="space-y-2">
-                    {/* Burner Options - Always show unless burner is explicitly loaded */}
-                    {!burnerAddress ? (
-                        <Button
-                            variant="glass"
-                            size="sm"
-                            className="w-full flex items-center justify-center space-x-2 py-3 border-nexus-cyan/20 hover:border-nexus-cyan/50 h-auto"
-                            onClick={onGenerateBurner}
-                            disabled={isGeneratingBurner}
-                        >
-                            {isGeneratingBurner ? (
-                                <Loader2 size={16} className="animate-spin text-nexus-cyan" />
-                            ) : (
-                                <Zap size={16} className="text-nexus-cyan" />
-                            )}
-                            <div className="text-left">
-                                <div className="text-[10px] font-black uppercase text-white leading-none">Generate Burner</div>
-                                <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mt-1">Instant Pubkey Autofill</div>
-                            </div>
-                        </Button>
-                    ) : (
-                        <div className="p-2 bg-black/40 border border-white/5 rounded-lg flex items-center justify-between group">
-                            <div className="flex items-center space-x-3 truncate mr-4">
-                                <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20 shrink-0">
-                                    <Activity size={14} className="text-green-500" />
-                                </div>
-                                <div className="truncate">
-                                    <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">Burner Loaded</div>
-                                    <div className="text-[8px] font-mono text-slate-500 truncate">{burnerAddress}</div>
-                                </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <button
-                                    onClick={() => autoFillFromSource('burner')}
-                                    className="px-2 py-0.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded text-[9px] font-black uppercase tracking-widest hover:bg-green-500/20 transition-all active:scale-95"
-                                >
-                                    Use
-                                </button>
-                                <button className="p-1 hover:bg-white/5 rounded transition-colors" onClick={onGenerateBurner}>
-                                    <RefreshCw size={10} className="text-slate-500" />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* WalletConnect Status - Complementary */}
-                    {walletConnectService.isConnected() && (
-                        <div className="p-2 bg-black/40 border border-nexus-cyan/10 rounded-lg flex items-center justify-between animate-in slide-in-from-top-2">
-                            <div className="flex items-center space-x-3 truncate">
-                                <div className="w-8 h-8 rounded-full bg-nexus-cyan/10 flex items-center justify-center border border-nexus-cyan/20 shrink-0">
-                                    <Wallet size={14} className="text-nexus-cyan" />
-                                </div>
-                                <div className="truncate">
-                                    <div className="text-[10px] font-black text-white uppercase tracking-tighter truncate">WalletConnect Session</div>
-                                    <div className="text-[8px] font-mono text-slate-400 truncate">{walletConnectService.getSession()?.peer?.metadata?.name || 'External Wallet'}</div>
-                                </div>
-                            </div>
-                            <div className="flex items-center space-x-3">
-                                <button
-                                    onClick={() => autoFillFromSource('walletconnect')}
-                                    className="px-2 py-0.5 bg-nexus-cyan/10 text-nexus-cyan border border-nexus-cyan/20 rounded text-[9px] font-black uppercase tracking-widest hover:bg-nexus-cyan/20 transition-all active:scale-95"
-                                >
-                                    Use
-                                </button>
-                                <CheckCircle size={14} className="text-nexus-cyan shrink-0" />
-                            </div>
-                        </div>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                        {wallets.map(w => (
+                            <button
+                                key={w.id}
+                                onClick={() => {
+                                    // Try to find the first empty pubkey field and fill it
+                                    const firstEmptyPk = inputs.find(inp => inp.type === 'pubkey' && !fieldValues[inp.name]);
+                                    if (firstEmptyPk) {
+                                        handleFieldChange(firstEmptyPk.name, w.pubkey, 'pubkey');
+                                        toast.success(`Assigned ${w.name} to ${firstEmptyPk.name}`);
+                                    } else {
+                                        // If none empty, toast instructions
+                                        toast.error("No empty public key fields. Use per-field selector.");
+                                    }
+                                }}
+                                className="px-3 py-1.5 bg-black/40 border border-white/10 hover:border-nexus-cyan/50 rounded-lg text-[10px] font-bold text-slate-300 transition-all flex items-center space-x-2 hover:text-white"
+                            >
+                                <User size={12} className="text-nexus-cyan" />
+                                <span>{w.name}</span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="space-y-4">
                 {inputs.map((inp, idx) => {
@@ -307,14 +254,38 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                 </div>
                             )}
 
-                            <div className="relative group/input">
+                            <div className="relative group/input flex gap-2">
                                 <input
                                     value={fieldValues[inp.name] || ''}
                                     onChange={(e) => handleFieldChange(inp.name, e.target.value, inp.type)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleApply()}
-                                    className={`w-full bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors pr-24`}
+                                    className={`flex-1 bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors pr-24`}
                                     placeholder={`Value for ${inp.name}`}
                                 />
+                                {(inp.type === 'pubkey' || inp.type === 'address') && wallets.length > 0 && (
+                                    <div className="relative">
+                                        <select
+                                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                            onChange={(e) => {
+                                                const w = wallets.find(wall => wall.id === e.target.value);
+                                                if (w) {
+                                                    const val = inp.type === 'pubkey' ? w.pubkey : w.address;
+                                                    handleFieldChange(inp.name, val, inp.type);
+                                                }
+                                            }}
+                                            value=""
+                                        >
+                                            <option value="" disabled>Select Wallet</option>
+                                            {wallets.map(w => (
+                                                <option key={w.id} value={w.id}>{w.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="h-full px-2 bg-nexus-cyan/10 border border-nexus-cyan/20 rounded flex items-center space-x-1 text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
+                                            <User size={12} />
+                                            <ChevronDown size={10} />
+                                        </div>
+                                    </div>
+                                )}
                                 {inp.type === 'pubkey' && walletConnectService.isConnected() && (
                                     <button
                                         onClick={async () => {
@@ -329,7 +300,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                         }}
                                         className="absolute right-1 top-1 bottom-1 px-2 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 border border-nexus-cyan/20 rounded text-[8px] font-black uppercase text-nexus-cyan transition-all active:scale-95"
                                     >
-                                        Auto-Fill
+                                        Web3
                                     </button>
                                 )}
                             </div>

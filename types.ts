@@ -84,6 +84,7 @@ export interface Project {
   deployedArtifact?: ContractArtifact;
   constructorArgs?: string[];
   executionHistory?: ExecutionRecord[];
+  deploymentRecord?: DeploymentRecord;
 }
 
 export interface GenerationResponse {
@@ -104,4 +105,21 @@ export interface StatusBarState {
 export interface BYOKSettings {
   apiKey: string;
   provider: 'groq' | 'openrouter';
+}
+
+export interface LocalWallet {
+  id: string;
+  name: string;
+  wif: string;
+  pubkey: string;
+  address: string;
+  network: 'chipnet' | 'mainnet';
+  balance?: number; // Cached balance in sats
+}
+
+export interface DeploymentRecord {
+  contractAddress: string;
+  ownerWalletId: string;
+  funderWalletId: string;
+  timestamp: number;
 }

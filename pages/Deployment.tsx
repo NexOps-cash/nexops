@@ -12,7 +12,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
 import { pollForFunding, getExplorerLink, FundingStatus, UTXO, fetchUTXOs } from '../services/blockchainService';
-import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap } from 'lucide-react';
+import { useWallet } from '../contexts/WalletContext';
+import { DeploymentRecord } from '../types';
+import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
@@ -53,6 +55,8 @@ export const Deployment: React.FC<DeploymentProps> = ({
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0);
     const [txHash, setTxHash] = useState<string | null>(null);
+
+    const { wallets } = useWallet();
 
     // Artifact State
     const [artifact, setArtifact] = useState<ContractArtifact | null>(null);
@@ -214,6 +218,32 @@ export const Deployment: React.FC<DeploymentProps> = ({
         setDeploymentStep(1); // Prepared
 
         try {
+            // 0. Identity Guard: Detect Owner and Funder wallets
+            const ownerInput = artifact?.constructorInputs.find(i => i.name.toLowerCase().includes('owner'));
+            const funderInput = artifact?.constructorInputs.find(i => i.name.toLowerCase().includes('funder'));
+
+            let ownerWalletId = '';
+            let funderWalletId = '';
+
+            if (ownerInput) {
+                const ownerVal = constructorArgs[artifact!.constructorInputs.indexOf(ownerInput)];
+                const w = wallets.find(wall => wall.pubkey === ownerVal || wall.address === ownerVal);
+                if (w) ownerWalletId = w.id;
+            }
+
+            if (funderInput) {
+                const funderVal = constructorArgs[artifact!.constructorInputs.indexOf(funderInput)];
+                const w = wallets.find(wall => wall.pubkey === funderVal || wall.address === funderVal);
+                if (w) funderWalletId = w.id;
+            }
+
+            if (ownerWalletId && funderWalletId && ownerWalletId === funderWalletId) {
+                if (!confirm("IDENTITY GUARD WARNING: You are using the SAME wallet for both Owner and Funder. This is often an anti-pattern in smart contracts (Self-Funding). Proceed anyway?")) {
+                    setIsDeploying(false);
+                    return;
+                }
+            }
+
             // Construct Payment Request URI (BIP-21)
             const amountBch = fundingAmount / 100_000_000;
             const uri = `${derivedAddress}?amount=${amountBch}&label=NexOps%20Deployment`;
@@ -240,9 +270,25 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         const utxo = status.utxos.find(u => u.txid === status.txid) || status.utxos[0];
                         setFundingUtxo(utxo);
 
-                        // Success Callback
+                        // Update Project with Deployment Record
+                        const record: DeploymentRecord = {
+                            contractAddress: derivedAddress!,
+                            ownerWalletId,
+                            funderWalletId,
+                            timestamp: Date.now()
+                        };
+
+                        onUpdateProject({
+                            ...project,
+                            deployedAddress: derivedAddress!,
+                            deployedArtifact: artifact!,
+                            constructorArgs,
+                            deploymentRecord: record,
+                            lastModified: Date.now()
+                        });
+
                         if (onDeployed && artifact) {
-                            onDeployed(derivedAddress, artifact, constructorArgs, utxo);
+                            onDeployed(derivedAddress!, artifact, constructorArgs, utxo);
                         }
                     }
                 },
