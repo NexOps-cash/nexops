@@ -275,6 +275,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             contractAddress: derivedAddress!,
                             ownerWalletId,
                             funderWalletId,
+                            constructorArgs: [...constructorArgs], // Deep copy to ensure persistence
                             timestamp: Date.now()
                         };
 

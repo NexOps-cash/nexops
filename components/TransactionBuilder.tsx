@@ -60,6 +60,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     project
 }) => {
     const { wallets, activeWallet } = useWallet();
+    const [selectedGlobalWalletId, setSelectedGlobalWalletId] = useState<string | null>(null);
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -259,6 +260,54 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             unsubs.forEach(unsub => unsub());
         };
     }, [deployedAddress, burnerAddress]);
+
+    // Auto-select recommended wallet based on deployment record
+    useEffect(() => {
+        if (selectedFunction && project.deploymentRecord) {
+            const isOwnerFunc = selectedFunction.toLowerCase().includes('release') || selectedFunction.toLowerCase().includes('owner');
+            const isFunderFunc = selectedFunction.toLowerCase().includes('refund') || selectedFunction.toLowerCase().includes('funder');
+
+            const recommendedId = isOwnerFunc ? project.deploymentRecord.ownerWalletId :
+                isFunderFunc ? project.deploymentRecord.funderWalletId : null;
+
+            if (recommendedId) {
+                console.log(`[Interaction] Auto-selecting recommended wallet (${recommendedId}) for ${selectedFunction}`);
+                setSelectedGlobalWalletId(recommendedId);
+                setSigningMethod('burner'); // Treat global wallets as local 'burner' types for signing logic
+
+                // NEW: Auto-fill function arguments if they are pubkey or address
+                const wallet = wallets.find(w => w.id === recommendedId);
+                if (wallet) {
+                    setInputs(prev => prev.map(input => {
+                        if (input.type === 'pubkey') return { ...input, value: wallet.pubkey };
+                        if (input.type === 'address') return { ...input, value: wallet.address };
+                        return input;
+                    }));
+                }
+            } else if (activeWallet) {
+                setSelectedGlobalWalletId(activeWallet.id);
+            }
+        }
+    }, [selectedFunction, project.deploymentRecord, activeWallet, wallets]);
+
+    // Secondary Auto-fill when manually switching wallets in builder
+    useEffect(() => {
+        if (selectedGlobalWalletId && signingMethod === 'burner') {
+            const wallet = wallets.find(w => w.id === selectedGlobalWalletId);
+            if (wallet) {
+                setInputs(prev => prev.map(input => {
+                    // Only auto-fill if the type matches and currently empty (or looks like another wallet's PK)
+                    if (input.type === 'pubkey' && (!input.value || input.value.length === 66)) {
+                        return { ...input, value: wallet.pubkey };
+                    }
+                    if (input.type === 'address' && (!input.value || input.value.length > 30)) {
+                        return { ...input, value: wallet.address };
+                    }
+                    return input;
+                }));
+            }
+        }
+    }, [selectedGlobalWalletId, signingMethod, wallets]);
 
     const loadUtxos = async (manual = false) => {
         if (!deployedAddress) return;
@@ -475,13 +524,24 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             console.log("Provider initialized with chipnet.imaginary.cash");
 
             // 2. Initialize Contract
-            // Use INTERNAL constructor args (can be edited by user)
-            // Sanitize to ensured no undefined values reach CashScript
-            const sanitizedConstructorArgs = internalConstructorArgs.map(arg => arg || '');
+            // NEW: Prioritize persisted constructor args from deploymentRecord to ensure identity stability.
+            // This prevents "Identity Drift" if the user edits the sidebar config after deployment.
+            const deploymentArgs = project.deploymentRecord?.constructorArgs;
+            const sanitizedConstructorArgs = (deploymentArgs || internalConstructorArgs).map(arg => arg || '');
+
             const contract = new Contract(artifact, sanitizedConstructorArgs, { provider }) as any;
 
+            // CRITICAL DEBUGGING: Verify contract initialization matches deployment
+            console.log('[Debug] Initializing contract for execution...');
+            console.log('[Debug] Source of Args:             ', deploymentArgs ? 'Deployment Record (Persisted)' : 'Internal State (Live)');
+            console.log('[Debug] Expected Address (Project):', deployedAddress);
+            console.log('[Debug] Generated Address (Local):  ', contract.address);
+            console.log('[Debug] Constructor Args Used:      ', sanitizedConstructorArgs);
+
             if (deployedAddress && contract.address !== deployedAddress) {
-                console.warn("Warning: initialized contract address differs from derived address:", contract.address, deployedAddress);
+                const errorMsg = `Identity Drift Detected: The contract address generated from your current configuration (${contract.address}) does not match the deployed address (${deployedAddress}). This usually means your identity keys have changed since deployment. Script verification will likely fail.`;
+                console.error(errorMsg);
+                throw new Error(errorMsg);
             }
             console.log('Contract initialized:', contract);
             console.log('Available functions:', contract.functions); // Debugging line
@@ -494,7 +554,12 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             // If Burner, use real WIF to sign. If WalletConnect, use dummy key to bypass local signing.
             const createWCTemplate = () => {
                 if (signingMethod === 'burner') {
-                    return new SignatureTemplate(burnerWif);
+                    // Try to use selected global wallet first, then fallback to prop
+                    const globalWallet = wallets.find(w => w.id === selectedGlobalWalletId);
+                    const wifToUse = globalWallet?.wif || burnerWif;
+
+                    if (!wifToUse) throw new Error("No private key found for signing. Please generate or select a wallet.");
+                    return new SignatureTemplate(wifToUse);
                 } else {
                     const dummyKey = new Uint8Array(32).fill(1);
                     const wcTemplate = new SignatureTemplate(dummyKey);
@@ -578,7 +643,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 throw new Error(`Insufficient funds: Total selected value (${totalInput} sats) is less than or equal to the fee (${fee} sats).`);
             }
 
-            const walletAddress = signingMethod === 'burner' ? burnerAddress : getWalletAddress();
+            const globalWalletForAddr = wallets.find(w => w.id === selectedGlobalWalletId);
+            const walletAddress = signingMethod === 'burner' ? (globalWalletForAddr?.address || burnerAddress) : getWalletAddress();
             console.log("Using wallet address for output:", walletAddress);
 
             if (walletAddress && walletAddress !== 'Not Connected') {
@@ -901,20 +967,21 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         <div className="space-y-3 pt-2">
                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Configuration</span>
                             <div className="grid grid-cols-1 gap-2">
-                                {constructorInputs.map((input, idx) => (
-                                    <div key={idx} className="flex items-center justify-between p-2.5 bg-black/30 rounded-xl border border-white/5">
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] text-gray-500 font-bold uppercase">{input.name}</span>
-                                            <span className="text-[9px] text-nexus-cyan/60 font-mono truncate max-w-[150px]">{internalConstructorArgs[idx]}</span>
+                                {constructorInputs.map((input, idx) => {
+                                    const deploymentArgs = project.deploymentRecord?.constructorArgs;
+                                    const valueToDisplay = deploymentArgs ? deploymentArgs[idx] : internalConstructorArgs[idx];
+                                    return (
+                                        <div key={idx} className="flex items-center justify-between p-2 bg-nexus-cyan/5 border border-nexus-cyan/10 rounded-lg">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-gray-500 font-bold uppercase">{input.name}</span>
+                                                <span className="text-[9px] text-nexus-cyan/60 font-mono truncate max-w-[150px]">{valueToDisplay}</span>
+                                            </div>
+                                            <Badge variant="ghost" className="text-[8px] opacity-40 border-white/10 uppercase tracking-tighter">
+                                                {deploymentArgs ? 'Immutable' : 'Read Only'}
+                                            </Badge>
                                         </div>
-                                        <button
-                                            onClick={() => setCurrentStep(2)}
-                                            className="text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase"
-                                        >
-                                            Edit
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -974,27 +1041,46 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                                 <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${signingMethod === 'burner' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${signingMethod === 'burner' ? 'bg-nexus-cyan/20 text-nexus-cyan' : 'bg-blue-500/10 text-blue-500'}`}>
                                             <Wallet className="w-4 h-4" />
                                         </div>
                                         <div>
                                             <p className="text-[10px] text-white font-bold leading-none">
-                                                {signingMethod === 'burner' ? 'Burner Wallet' : (wcSession?.peer?.metadata?.name || 'WalletConnect')}
+                                                {signingMethod === 'burner'
+                                                    ? (wallets.find(w => w.id === selectedGlobalWalletId)?.name || 'Local Wallet')
+                                                    : (wcSession?.peer?.metadata?.name || 'WalletConnect')}
                                             </p>
                                             <p className="text-[9px] font-mono text-gray-500 mt-1">
                                                 {signingMethod === 'burner'
-                                                    ? (burnerAddress ? `${burnerAddress.slice(0, 10)}...${burnerAddress.slice(-8)}` : 'Not Generated')
+                                                    ? (() => {
+                                                        const addr = wallets.find(w => w.id === selectedGlobalWalletId)?.address || burnerAddress;
+                                                        return addr ? `${addr.slice(0, 10)}...${addr.slice(-8)}` : 'Not Generated';
+                                                    })()
                                                     : (walletConnectService.getAddress() ? `${walletConnectService.getAddress()?.slice(0, 10)}...${walletConnectService.getAddress()?.slice(-8)}` : 'Not Connected')}
                                             </p>
                                         </div>
                                     </div>
-                                    {signingMethod === 'burner' && !burnerWif && (
-                                        <button
-                                            onClick={onGenerateBurner}
-                                            className="text-[9px] font-black text-nexus-cyan hover:underline uppercase tracking-widest"
-                                        >
-                                            Generate
-                                        </button>
+                                    {signingMethod === 'burner' && (
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                value={selectedGlobalWalletId || ''}
+                                                onChange={(e) => setSelectedGlobalWalletId(e.target.value)}
+                                                className="bg-black/40 text-[9px] text-nexus-cyan font-bold border border-white/10 rounded px-2 py-1 outline-none focus:border-nexus-cyan/40"
+                                            >
+                                                {wallets.map(w => (
+                                                    <option key={w.id} value={w.id}>{w.name}</option>
+                                                ))}
+                                                <option value="" disabled>Other...</option>
+                                            </select>
+                                            {!burnerWif && wallets.length === 0 && (
+                                                <button
+                                                    onClick={onGenerateBurner}
+                                                    className="text-[9px] font-black text-nexus-cyan hover:underline uppercase tracking-widest"
+                                                >
+                                                    Generate
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </div>

@@ -121,5 +121,6 @@ export interface DeploymentRecord {
   contractAddress: string;
   ownerWalletId: string;
   funderWalletId: string;
+  constructorArgs: string[];
   timestamp: number;
 }

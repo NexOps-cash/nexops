@@ -16,36 +16,28 @@ interface WalletContextType {
     getWalletById: (id: string) => LocalWallet | undefined;
 }
 
+const STORAGE_KEY = 'nexops_wallets';
+const ACTIVE_STORAGE_KEY = 'nexops_active_wallet_id';
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'neyops_wallets';
-const ACTIVE_STORAGE_KEY = 'neyops_active_wallet_id';
-
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [wallets, setWallets] = useState<LocalWallet[]>([]);
-    const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
-
-    // 1. Initial Load
-    useEffect(() => {
-        const savedWallets = localStorage.getItem(STORAGE_KEY);
-        const savedActiveId = localStorage.getItem(ACTIVE_STORAGE_KEY);
-
-        if (savedWallets) {
-            try {
-                const parsed = JSON.parse(savedWallets);
-                setWallets(parsed);
-                if (savedActiveId && parsed.find((w: LocalWallet) => w.id === savedActiveId)) {
-                    setActiveWalletId(savedActiveId);
-                } else if (parsed.length > 0) {
-                    setActiveWalletId(parsed[0].id);
-                }
-            } catch (e) {
-                console.error("Failed to parse wallets from localStorage", e);
-            }
+    const [wallets, setWallets] = useState<LocalWallet[]>(() => {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        try {
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            console.error("Failed to parse wallets from localStorage", e);
+            return [];
         }
-    }, []);
+    });
 
-    // 2. Persistence
+    const [activeWalletId, setActiveWalletId] = useState<string | null>(() => {
+        const saved = localStorage.getItem(ACTIVE_STORAGE_KEY);
+        return saved || null;
+    });
+
+    // Persistence
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(wallets));
     }, [wallets]);
@@ -53,6 +45,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     useEffect(() => {
         if (activeWalletId) {
             localStorage.setItem(ACTIVE_STORAGE_KEY, activeWalletId);
+        } else {
+            localStorage.removeItem(ACTIVE_STORAGE_KEY);
         }
     }, [activeWalletId]);
 
