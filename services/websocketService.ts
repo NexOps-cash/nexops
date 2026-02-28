@@ -34,8 +34,9 @@ export interface WSMessage {
 
     // context (BYOK)
     context?: {
-        api_key?: string;
-        provider?: string;
+        groq_key?: string;
+        openrouter_key?: string;
+        security_level?: 'low' | 'medium' | 'high';
         use_rag?: boolean;
     };
 

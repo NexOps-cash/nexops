@@ -616,8 +616,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 setTimeout(() => {
                     if (websocketService.isConnected()) {
                         websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
-                            api_key: byokSettings.apiKey,
-                            provider: byokSettings.provider,
+                            groq_key: byokSettings.provider === 'groq' ? byokSettings.apiKey : '',
+                            openrouter_key: byokSettings.provider === 'openrouter' ? byokSettings.apiKey : '',
+                            security_level: 'high',
                             use_rag: false
                         });
                     } else {
@@ -627,8 +628,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 }, 1000);
             } else {
                 websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
-                    api_key: byokSettings.apiKey,
-                    provider: byokSettings.provider,
+                    groq_key: byokSettings.provider === 'groq' ? byokSettings.apiKey : '',
+                    openrouter_key: byokSettings.provider === 'openrouter' ? byokSettings.apiKey : '',
+                    security_level: 'high',
                     use_rag: false
                 });
             }
@@ -672,10 +674,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
         updates.forEach(update => {
             const existingIndex = updatedFiles.findIndex(f => f.name === update.name);
-            if (existingIndex !== -1) {
+            if (existingIndex !== -1 && update.content !== undefined) {
                 originalStates.push({ name: update.name, content: updatedFiles[existingIndex].content });
                 updatedFiles[existingIndex] = { ...updatedFiles[existingIndex], content: update.content };
-            } else {
+            } else if (update.content !== undefined) {
                 originalStates.push({ name: update.name, content: null });
                 updatedFiles.push({
                     name: update.name,
@@ -1477,6 +1479,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
+            useExternalGenerator={useExternalGenerator}
+            byokSettings={byokSettings}
             onArtifactsGenerated={(addr, artifact, args) => {
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
@@ -1609,7 +1613,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         let sourceCode = lastCompiledSource;
         if (!sourceCode && artifactData?.contractName) {
             // Find the source file that generated this artifact
-            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content.includes(`contract ${artifactData.contractName}`));
+            const srcFile = project.files.find(f => f.name.endsWith('.cash') && f.content && f.content.includes(`contract ${artifactData.contractName}`));
             if (srcFile) sourceCode = srcFile.content;
             else {
                 // Fallback to active file or first cash file

@@ -1,6 +1,7 @@
 import Groq from "groq-sdk";
 import { GenerationResponse, AuditReport, ProjectFile, BYOKSettings } from "../types";
 import { ragEngine } from "./RagEngine";
+import { websocketService } from "./websocketService";
 
 // Initialize Groq SDK
 const getGroqClient = (byok?: BYOKSettings) => {
@@ -67,33 +68,35 @@ export const generateSmartContract = async (prompt: string, byok?: BYOKSettings)
   PROVIDED CONTEXT:
   ${context}`;
 
-    return {
-        code: "// Generation on Hold",
-        explanation: "mcp is not yet hosted, generation is on hold now"
-    };
-    /*
-        try {
-            const completion = await client.chat.completions.create({
-                messages: [
-                    { role: 'system', content: systemInstruction },
-                    { role: 'user', content: prompt }
-                ],
-                model: MODEL_CODE,
-                temperature: TEMP_CODE,
-                max_tokens: GROQ_LIMITS.code_generation,
-                response_format: { type: "json_object" }
-            });
-    
-            const text = completion.choices[0]?.message?.content;
-            if (!text) throw new Error("No response from AI");
-    
-            return JSON.parse(text) as GenerationResponse;
-    
-        } catch (error) {
-            console.error("Groq Generation Error:", error);
-            throw error;
-        }
-    */
+    // Refusal Gate (Strict MCP Check)
+    if (!websocketService.isConnected()) {
+        return {
+            code: "// Generation on Hold",
+            explanation: "mcp is not yet hosted, generation is on hold now"
+        };
+    }
+
+    try {
+        const completion = await client.chat.completions.create({
+            messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: prompt }
+            ],
+            model: MODEL_CODE,
+            temperature: TEMP_CODE,
+            max_tokens: GROQ_LIMITS.code_generation,
+            response_format: { type: "json_object" }
+        });
+
+        const text = completion.choices[0]?.message?.content;
+        if (!text) throw new Error("No response from AI");
+
+        return JSON.parse(text) as GenerationResponse;
+
+    } catch (error) {
+        console.error("Groq Generation Error:", error);
+        throw error;
+    }
 };
 
 export const chatWithAssistant = async (
@@ -152,10 +155,10 @@ export const chatWithAssistant = async (
 
         const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
 
-        // Strengthen Blockade: If response contains fileUpdates, strip them and notify hold
-        if (result.fileUpdates && result.fileUpdates.length > 0) {
+        // Strengthen Blockade: Allow file updates ONLY if MCP is connected
+        if (result.fileUpdates && result.fileUpdates.length > 0 && !websocketService.isConnected()) {
             return {
-                response: "mcp is not yet hosted, generation is on hold now. " + (result.response || ""),
+                response: "mcp is not yet hosted, generation is on hold now. AI Chat can answer questions, but automated file updates are disabled until the external connection is active.",
                 fileUpdates: []
             };
         }
@@ -205,13 +208,7 @@ Initial workspace for your Bitcoin Cash smart contract.
 };
 
 export const editSmartContract = async (code: string, instruction: string, useExternal: boolean = false, byok?: BYOKSettings): Promise<GenerationResponse> => {
-    return {
-        code: code,
-        explanation: "mcp is not yet hosted, generation is on hold now"
-    };
-
-    /*
-    if (useExternal) {
+    if (useExternal || websocketService.isConnected()) {
         try {
             const response = await fetch('http://localhost:3005/api/edit', {
                 method: 'POST',
@@ -220,15 +217,15 @@ export const editSmartContract = async (code: string, instruction: string, useEx
                     original_code: code,
                     instruction: instruction,
                     context: {
-                        api_key: byok?.apiKey,
-                        provider: byok?.provider,
-                        use_rag: false // Disable internal RAG for generation/edit
+                        groq_key: byok?.provider === 'groq' ? byok.apiKey : '',
+                        openrouter_key: byok?.provider === 'openrouter' ? byok.apiKey : '',
+                        use_rag: false
                     }
                 })
             });
 
             const data = await response.json();
-            console.log("✏️ External Edit Response:", data);
+            console.log("🛠️ External Edit Response:", data);
             if (data.success === false) {
                 return {
                     code: code,
@@ -238,80 +235,70 @@ export const editSmartContract = async (code: string, instruction: string, useEx
 
             const scoreInfo = data.new_report ? ` New Security Score: ${data.new_report.score}` : '';
             return {
-                code: data.edited_code,
+                code: data.edited_code || code,
                 explanation: `✅ Edit Applied Successfully.${scoreInfo}`
             };
         } catch (error) {
             console.error("External Edit Error:", error);
-            throw error;
+            // If websocket is connected but HTTP fails, we still block internal fallback
+            if (websocketService.isConnected()) {
+                return {
+                    code: code,
+                    explanation: "❌ MCP Connection Error: Automated editing is unavailable."
+                };
+            }
         }
     }
 
-    // Fallback to internal Groq
-    const context = ragEngine.retrieveContext(instruction + "\n" + code.slice(0, 500));
-
-    const systemInstruction = `You are a Senior Smart Contract Engineer for Bitcoin Cash (CashScript).
-    Your task is to EDIT the provided smart contract based on the user's instruction.
-    
-    REFERENCE CONTEXT:
-    ${context || "No specific context retrieved."}
-
-    1. Apply the requested edit precisely.
-    2. Return the COMPLETE modified contract code.
-    3. Add brief comments explaining the changes.
-    4. RETURN FORMATTED CODE with proper newlines and indentation.
-    
-    Return JSON with the edited code and a summary of changes.
-    Schema: { "code": "...", "explanation": "..." }
-    
-    CRITICAL: YOUR ENTIRE RESPONSE MUST BE A SINGLE VALID JSON OBJECT. NO PREAMBLE. NO MARKDOWN CODE BLOCKS AROUND THE JSON.`;
-
-    try {
-        const client = getGroqClient(byok);
-        const completion = await client.chat.completions.create({
-            messages: [
-                { role: 'system', content: systemInstruction },
-                { role: 'user', content: `Edit this contract:\n\n${code}\n\nInstruction: ${instruction}` }
-            ],
-            model: MODEL_CODE,
-            max_tokens: GROQ_LIMITS.code_fix,
-            response_format: { type: "json_object" }
-        });
-
-        const text = completion.choices[0]?.message?.content;
-        if (!text) throw new Error("No response from AI");
-
-        const result = JSON.parse(text);
-        return {
-            code: result.code || code,
-            explanation: result.explanation || "Edit applied."
-        };
-    } catch (error) {
-        console.error("Groq Edit Error:", error);
-        throw error;
-    }
-    */
+    // BYOK Allowed
+    return {
+        code: code,
+        explanation: "mcp is not yet hosted, generation is on hold now"
+    };
 };
 
 export const fixSmartContract = async (code: string, instructions: string, useExternal: boolean = false, issue?: any, byok?: BYOKSettings): Promise<GenerationResponse> => {
+    if (useExternal || websocketService.isConnected()) {
+        try {
+            const response = await fetch('http://localhost:3005/api/repair', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_code: code,
+                    instruction: instructions,
+                    issue: issue,
+                    context: {
+                        groq_key: byok?.provider === 'groq' ? byok.apiKey : '',
+                        openrouter_key: byok?.provider === 'openrouter' ? byok.apiKey : '',
+                        use_rag: false
+                    }
+                })
+            });
+
+            const data = await response.json();
+            console.log("🔧 External Repair (Fix) Response:", data);
+            if (data.success) {
+                return {
+                    code: data.fixed_code || code,
+                    explanation: "✅ AI Fix Applied via External Engine."
+                };
+            }
+        } catch (error) {
+            console.error("External Fix Error:", error);
+            if (websocketService.isConnected()) {
+                return {
+                    code: code,
+                    explanation: "❌ MCP Connection Error: Automated fixes are unavailable."
+                };
+            }
+        }
+    }
+
+
     return {
         code: code,
         explanation: "mcp is not yet hosted, automated fixes are on hold now"
     };
-    /*
-        if (useExternal) {
-            // ... (existing code commented out)
-        }
-    
-        // Retrieve context based on the code/instructions to help the fix
-        // ...
-        try {
-            // ...
-        } catch (error) {
-            console.error("Groq Fix Error:", error);
-            throw error;
-        }
-    */
 };
 
 export const auditSmartContract = async (code: string, useExternal: boolean = false, intent: string = '', effective_mode: string = '', byok?: BYOKSettings): Promise<AuditReport> => {
@@ -325,8 +312,8 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
                     ...(intent ? { intent } : {}),
                     ...(effective_mode ? { effective_mode } : {}),
                     context: {
-                        api_key: byok?.apiKey,
-                        provider: byok?.provider,
+                        groq_key: byok?.provider === 'groq' ? byok.apiKey : '',
+                        openrouter_key: byok?.provider === 'openrouter' ? byok.apiKey : '',
                         use_rag: false // Disable internal RAG for auditing
                     }
                 })

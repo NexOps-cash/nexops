@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge, Modal } from '../components/UI';
-import { Project, ChainType } from '../types';
+import { Project, ChainType, BYOKSettings } from '../types';
 import { ContractArtifact } from '../types';
 import { compileCashScript, verifyDeterminism } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
@@ -28,6 +28,8 @@ interface DeploymentProps {
     burnerPubkey?: string;
     onGenerateBurner?: () => void;
     isGeneratingBurner?: boolean;
+    useExternalGenerator?: boolean;
+    byokSettings?: BYOKSettings;
 }
 
 export const Deployment: React.FC<DeploymentProps> = ({
@@ -43,7 +45,9 @@ export const Deployment: React.FC<DeploymentProps> = ({
     burnerAddress,
     burnerPubkey,
     onGenerateBurner,
-    isGeneratingBurner = false
+    isGeneratingBurner = false,
+    useExternalGenerator = false,
+    byokSettings
 }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
@@ -163,7 +167,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
         setIsFixing(true);
         try {
             const prompt = `Fix the following CashScript compiler error in the contract.\nError: ${compilationError} `;
-            const result = await fixSmartContract(project.contractCode, prompt);
+            const result = await fixSmartContract(project.contractCode, prompt, useExternalGenerator, null, byokSettings);
 
             onUpdateProject({
                 ...project,
