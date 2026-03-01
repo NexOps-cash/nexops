@@ -27,9 +27,11 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncin
                 className="flex items-center space-x-3 cursor-pointer group"
                 onClick={() => onNavigate('home')}
             >
-                <div className="w-9 h-9 bg-nexus-cyan/20 border border-nexus-cyan/30 rounded-lg flex items-center justify-center group-hover:bg-nexus-cyan/30 transition-all">
-                    <ShieldCheck className="w-5 h-5 text-nexus-cyan" />
-                </div>
+                <img
+                    src="/dist/assets/Gemini_Generated_Image_3rwexy3rwexy3rwe.png"
+                    alt="NexOps Logo"
+                    className="w-10 h-10 object-contain rounded-lg"
+                />
                 <span className="text-white font-black tracking-tighter text-xl">NexOps</span>
             </div>
 

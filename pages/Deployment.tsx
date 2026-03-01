@@ -205,12 +205,12 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
     const handleDeploy = async () => {
         if (!isAuditPassed) {
-            alert(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
+            toast.error(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
             return;
         }
 
         if (!derivedAddress) {
-            alert("Address derivation failed. check inputs.");
+            toast.error("Address derivation failed. check inputs.");
             return;
         }
 
@@ -476,7 +476,6 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             <span className="text-nexus-cyan bg-nexus-900 border border-nexus-700 px-3 py-2 rounded font-mono text-xs flex-1 truncate">{derivedAddress || project?.deployedAddress}</span>
                             <Button
                                 variant="glass"
-                                size="sm"
                                 className="h-9 w-9 p-0 flex-shrink-0"
                                 onClick={() => {
                                     navigator.clipboard.writeText(derivedAddress || project?.deployedAddress || '');
@@ -490,7 +489,6 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             <Button
                                 variant="primary"
                                 className="flex-1 text-[10px] font-bold uppercase shadow-[0_0_15px_rgba(0,229,255,0.2)]"
-                                size="sm"
                                 onClick={() => onNavigate?.('INTERACT')}
                                 icon={<Play className="w-3 h-3" />}
                             >
@@ -499,7 +497,6 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             <Button
                                 variant="secondary"
                                 className="flex-1 text-[10px] font-bold uppercase"
-                                size="sm"
                                 onClick={() => window.open(getExplorerLink(txHash || project?.deployedAddress || ''), '_blank')}
                                 icon={<ExternalLink className="w-3 h-3" />}
                             >
@@ -509,7 +506,6 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         <Button
                             variant="glass"
                             className="w-full mt-2 text-[10px] border-nexus-cyan/20 opacity-40 hover:opacity-100"
-                            size="sm"
                             onClick={() => {
                                 setDeploymentStep(0);
                                 setFundingUtxo(null);
@@ -553,14 +549,13 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                         {compilationError}
                                     </div>
                                     <div className="flex flex-col sm:flex-row justify-center gap-3">
-                                        <Button variant="secondary" onClick={handlePrepare} size="sm">Retry Compilation</Button>
+                                        <Button variant="secondary" onClick={handlePrepare}>Retry Compilation</Button>
                                         <Button
                                             variant="secondary"
                                             className="border-nexus-cyan text-nexus-cyan hover:bg-nexus-cyan/10"
                                             icon={<Wand2 className="w-4 h-4" />}
                                             onClick={handleAutoFix}
                                             isLoading={isFixing}
-                                            size="sm"
                                         >
                                             Auto-Fix Error
                                         </Button>
@@ -639,7 +634,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                 derivedAddress={derivedAddress}
                             />
 
-                            <Button size="sm" variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
+                            <Button variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
                                 Re-Compile & Configure
                             </Button>
                         </div>
@@ -723,14 +718,14 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                                 {wcSession?.peer?.metadata?.name || "Unknown Wallet"}
                                             </h4>
                                             <div className="flex items-center mt-1 space-x-2">
-                                                <Badge variant="neutral" className="text-[10px] py-0 px-1.5 h-4">Chipnet</Badge>
+                                                <Badge variant="info" className="text-[10px] py-0 px-1.5 h-4">Chipnet</Badge>
                                                 <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
                                                     {walletAddress}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
-                                    <Button variant="glass" size="sm" onClick={handleDisconnectWC} className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full">
+                                    <Button variant="glass" onClick={handleDisconnectWC} className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full">
                                         <XCircle className="w-4 h-4" />
                                     </Button>
                                 </div>

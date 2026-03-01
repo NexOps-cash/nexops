@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShieldCheck, Download, Star, Code2, Users, FileWarning, Eye, ChevronDown, ChevronUp } from 'lucide-react';
-import { Card, Input } from '../components/UI';
+import { Search, ShieldCheck, Download, Star, Code2, User, FileWarning, Eye, ChevronDown, ChevronUp, Github, Tag, Calendar, Layers, X, Copy, Check, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface RegistryPageProps {
     onLoadContract?: (contract: any) => void;
@@ -12,7 +13,8 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
     const [contracts, setContracts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [selectedContract, setSelectedContract] = useState<any | null>(null);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         fetchContracts();
@@ -31,27 +33,16 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
             setContracts(data || []);
         } catch (err: any) {
             console.error('Error fetching registry:', err);
-            setError(err.message || 'Failed to connect to Supabase. Your project might be paused or there is a network issue.');
+            setError(err.message || 'Failed to connect to Supabase.');
         } finally {
             setLoading(false);
         }
     };
 
-    const copySource = (code: string) => {
-        navigator.clipboard.writeText(code);
-        // We could add a toast here, but relying on visual feedback for now
-    };
-
-    const downloadContract = (contract: any) => {
-        const blob = new Blob([contract.source_code], { type: 'text/plain' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${contract.title.toLowerCase().replace(/\s+/g, '_')}.cash`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-    };
+    const categories = [
+        'Vault', 'Savings', 'Timelock', 'Escrow', 'Multi-sig', 'Trade',
+        'Crowdfunding', 'Assurance', 'DeFi', 'Payments', 'Covenants'
+    ];
 
     const filteredContracts = contracts.filter(c =>
         c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -59,251 +50,271 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
         c.tags.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    return (
-        <div className="h-full w-full bg-nexus-900 overflow-auto p-8">
-            <div className="max-w-6xl mx-auto space-y-8">
+    const copyCode = (code: string) => {
+        navigator.clipboard.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-6">
-                    <div>
-                        <h1 className="text-3xl font-black text-white flex items-center tracking-tight mb-1">
-                            <ShieldCheck className="w-8 h-8 text-green-400 mr-3" />
-                            Verified Registry
-                        </h1>
-                        <p className="text-slate-500 text-sm">
-                            Infrastructure-grade smart contracts audited for the BCH ecosystem.
-                        </p>
-                    </div>
-                    <div className="w-full md:w-80 relative group">
-                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                            <Search className="w-4 h-4 text-slate-500 group-focus-within:text-nexus-cyan transition-colors" />
+    const downloadContract = (contract: any) => {
+        const code = contract.source_code || contract.code;
+        const blob = new Blob([code], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${contract.title.toLowerCase().replace(/\s+/g, '-')}.cash`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="h-full bg-bch-dark selection:bg-bch-green/30 text-white overflow-y-auto">
+            <main className="max-w-7xl mx-auto px-6 py-12 md:py-24">
+                {/* Hero Section */}
+                <div className="mb-16 text-center md:text-left transition-all duration-700 animate-in fade-in slide-in-from-bottom-8">
+                    <h2 className="text-5xl md:text-7xl font-display font-bold mb-8 leading-tight tracking-tight">
+                        The era of <span className="text-bch-green">Programmable</span> Cash.
+                    </h2>
+                    <p className="text-xl text-white/60 max-w-2xl mb-12 font-medium leading-relaxed">
+                        Explore, verify, and deploy secure smart contracts on the Bitcoin Cash network.
+                        Built for developers, by developers.
+                    </p>
+
+                    {/* Search & Filters */}
+                    <div className="space-y-8">
+                        <div className="relative max-w-2xl group">
+                            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-bch-green transition-colors" size={20} />
+                            <input
+                                type="text"
+                                placeholder="Search contracts by name or description..."
+                                className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 pl-14 pr-6 focus:outline-none focus:border-bch-green/30 focus:ring-1 focus:ring-bch-green/20 transition-all placeholder:text-white/20 text-lg md:text-xl"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
                         </div>
-                        <input
-                            type="text"
-                            placeholder="Find contracts..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-nexus-800/40 backdrop-blur-md border border-white/10 focus:border-nexus-cyan/50 focus:ring-1 focus:ring-nexus-cyan/20 h-10 pl-10 pr-4 rounded-lg text-sm text-slate-200 outline-none transition-all"
-                        />
+
+                        <div className="flex flex-wrap gap-3">
+                            {categories.map(tag => (
+                                <button
+                                    key={tag}
+                                    className="px-5 py-2 rounded-full text-xs font-bold border bg-white/5 text-white/80 border-white/10 hover:border-bch-green/30 hover:text-white transition-all flex items-center gap-2 group/tag"
+                                >
+                                    <Tag size={12} className="text-white/40 group-hover/tag:text-bch-green transition-colors" />
+                                    {tag}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                {/* Filter Chips & Metrics Telemetry Strip */}
-                <div className="flex flex-col space-y-6">
-                    <div className="flex flex-wrap gap-2">
-                        {['All', 'Verified', 'Community', 'Most Downloaded', 'Recently Added'].map((filter) => (
-                            <button
-                                key={filter}
-                                className={`px-4 py-1.5 rounded-full text-[11px] uppercase tracking-[0.15em] transition-all transform active:scale-95 border ${filter === 'All'
-                                    ? 'bg-nexus-cyan/15 border-nexus-cyan/40 text-nexus-cyan font-black shadow-[0_0_15px_rgba(34,211,238,0.15)]'
-                                    : 'bg-white/5 border-white/5 text-slate-500 hover:border-white/10 hover:text-slate-300 hover:scale-105'
-                                    }`}
+                {/* Grid */}
+                {loading ? (
+                    <div className="py-24 flex justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-bch-green"></div>
+                    </div>
+                ) : filteredContracts.length === 0 ? (
+                    <div className="py-20 text-center bg-white/5 rounded-3xl border border-dashed border-white/10">
+                        <p className="text-white/20 font-medium">No contracts found matching your criteria.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredContracts.map((contract, index) => (
+                            <div
+                                key={contract.id}
+                                onClick={() => setSelectedContract(contract)}
+                                className="group relative bg-white/5 glass-panel rounded-[32px] p-8 cursor-pointer hover:bg-white/10 transition-all border border-white/5 hover:border-bch-green/30 hover:-translate-y-1 duration-300"
                             >
-                                {filter}
-                            </button>
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="p-4 rounded-2xl bg-bch-green/10 text-bch-green group-hover:bg-bch-green group-hover:text-bch-dark transition-all duration-300 transform group-hover:scale-110">
+                                        <Code2 size={28} />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {contract.tags?.slice(0, 2).map((t: string) => (
+                                            <span key={t} className="text-[10px] uppercase tracking-widest font-black text-white group-hover:text-bch-green/60 transition-colors">
+                                                {t}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <h3 className="text-2xl font-display font-bold mb-3 group-hover:text-bch-green transition-colors tracking-tight">
+                                    {contract.title}
+                                </h3>
+                                <p className="text-white/40 text-sm line-clamp-2 mb-8 leading-relaxed font-medium">
+                                    {contract.description}
+                                </p>
+
+                                <div className="flex items-center justify-between pt-6 border-t border-white/5">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-white/20 group-hover:text-white/40 transition-colors">
+                                        <User size={14} />
+                                        <span>{contract.author || 'Satoshi_Fan'}</span>
+                                    </div>
+                                    <div className="text-xs font-mono font-bold text-bch-green/50 group-hover:text-bch-green transition-colors">
+                                        v{contract.version}
+                                    </div>
+                                </div>
+                            </div>
                         ))}
                     </div>
+                )}
+            </main>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 border-y border-white/5">
-                        <div className="p-4 border-r border-white/5">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Telemetry: Assets</div>
-                            <div className="text-3xl font-black text-white">{contracts.length}</div>
-                        </div>
-                        <div className="p-4 border-r border-white/5">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Security Status</div>
-                            <div className="text-3xl font-black text-green-400 flex items-center">
-                                {contracts.length} <span className="text-[10px] ml-2 opacity-50 font-mono italic">Verified</span>
-                            </div>
-                        </div>
-                        <div className="p-4 border-r border-white/5">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Active Interactions</div>
-                            <div className="text-3xl font-black text-nexus-cyan">2.8K</div>
-                        </div>
-                        <div className="p-4">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-1">Verified Nodes</div>
-                            <div className="text-3xl font-black text-nexus-purple">12</div>
-                        </div>
-                    </div>
-                </div>
+            {/* Modal */}
+            {selectedContract && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-300">
+                    <div
+                        onClick={() => setSelectedContract(null)}
+                        className="absolute inset-0 bg-bch-dark/80 backdrop-blur-2xl"
+                    />
 
-                <div className="space-y-4">
-                    {loading ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-500 space-y-4">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-nexus-cyan"></div>
-                            <p className="text-[10px] uppercase font-bold tracking-[0.2em]">Authenticating with Registry...</p>
-                        </div>
-                    ) : error ? (
-                        <div className="text-center py-20 bg-red-500/5 rounded-xl border border-red-500/20 max-w-2xl mx-auto">
-                            <FileWarning className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                            <h3 className="text-white font-bold mb-2">Connection Failure</h3>
-                            <p className="text-slate-400 text-sm mb-6 px-8">
-                                {error}
-                                <br />
-                                <span className="text-[10px] opacity-60 mt-2 block italic">Tip: Check if your Supabase project is paused in the dashboard.</span>
-                            </p>
-                            <button
-                                onClick={fetchContracts}
-                                className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-lg text-sm font-bold transition-all"
-                            >
-                                Retry Connection
-                            </button>
-                        </div>
-                    ) : filteredContracts.length === 0 ? (
-                        <div className="text-center py-20 bg-nexus-800/50 rounded-xl border border-dashed border-slate-700">
-                            <p className="text-slate-400">No contracts found matching your search.</p>
-                        </div>
-                    ) : (
-                        filteredContracts.map((contract) => (
-                            <div key={contract.id} className="space-y-4">
-                                <div
-                                    className="bg-nexus-800/60 backdrop-blur-sm border border-white/5 hover:border-nexus-cyan/30 p-6 rounded-lg transition-all group flex flex-col lg:flex-row gap-8 items-start lg:items-stretch justify-between"
+                    <div className="relative w-full max-w-7xl h-full max-h-[85vh] bg-bch-surface border border-white/10 rounded-[40px] overflow-hidden flex flex-col md:flex-row shadow-2xl scale-in-center text-left">
+                        {/* Left Side: Metadata (40%) */}
+                        <div className="w-full md:w-[40%] flex-shrink-0 p-10 md:p-14 overflow-y-auto border-b md:border-b-0 md:border-r border-white/5 flex flex-col justify-between">
+                            <div className="space-y-10">
+                                <button
+                                    onClick={() => setSelectedContract(null)}
+                                    className="p-3 rounded-full bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all transform hover:rotate-90 duration-300 active:scale-90"
                                 >
-                                    {/* Left: Metadata Section */}
-                                    <div className="flex-1 text-left space-y-4">
+                                    <X size={24} />
+                                </button>
+
+                                <div className="space-y-10">
+                                    <div className="space-y-8">
                                         <div>
-                                            <div className="flex items-center flex-wrap gap-2 mb-2">
-                                                <h3 className="text-2xl font-black text-white tracking-tight group-hover:text-nexus-cyan transition-colors italic">
-                                                    {contract.title}
-                                                </h3>
-                                                <span className="text-[10px] font-mono font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded border border-white/5">v{contract.version}</span>
-                                                <span className="text-[10px] font-mono font-bold text-nexus-cyan bg-nexus-cyan/5 px-2 py-0.5 rounded border border-nexus-cyan/10 uppercase">Chipnet</span>
+                                            <div className="flex items-center gap-3 text-bch-green mb-3">
+                                                <ShieldCheck size={20} />
+                                                <span className="text-[11px] uppercase tracking-[0.3em] font-black">Verified Contract</span>
                                             </div>
-                                            <div className="flex items-center text-xs text-slate-500 font-medium">
-                                                by <span className="text-nexus-purple ml-1 hover:underline cursor-pointer">@{contract.author || 'anonymous'}</span>
+                                            <h2 className="text-5xl font-display font-bold mb-6 leading-tight tracking-tight">{selectedContract.title}</h2>
+                                            <p className="text-lg text-white/60 leading-relaxed font-medium">{selectedContract.description}</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-8">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] uppercase tracking-[0.2em] text-bch-green font-black">Author</label>
+                                                <div className="flex items-center gap-3 text-base font-bold">
+                                                    <User size={16} className="text-bch-green" />
+                                                    <span>{selectedContract.author || 'CrowdFund_BCH'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] uppercase tracking-[0.2em] text-bch-green font-black">Version</label>
+                                                <div className="flex items-center gap-3 text-base font-bold">
+                                                    <Layers size={16} className="text-bch-green" />
+                                                    <span>{selectedContract.version}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] uppercase tracking-[0.2em] text-bch-green font-black">Created</label>
+                                                <div className="flex items-center gap-3 text-base font-bold">
+                                                    <Calendar size={16} className="text-bch-green" />
+                                                    <span>2024-03-05</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] uppercase tracking-[0.2em] text-bch-green font-black">License</label>
+                                                <div className="flex items-center gap-3 text-base font-bold">
+                                                    <ShieldCheck size={16} className="text-bch-green" />
+                                                    <span>Apache-2.0</span>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
-                                            {contract.description}
-                                        </p>
-
-                                        <div className="flex items-center flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider">
-                                            {contract.tags?.map((tag: string) => (
-                                                <span key={tag} className="text-slate-500 bg-white/5 px-2 py-1 rounded hover:bg-white/10 transition-colors">
-                                                    #{tag}
-                                                </span>
-                                            ))}
-                                        </div>
-
-                                        <div className="flex items-center space-x-4 pt-1">
-                                            <div className="text-[10px] text-slate-600 font-mono">
-                                                Compiler: <span className="text-slate-500 ml-1">{contract.compiler_version || 'cashc v0.13.0'}</span>
-                                            </div>
-                                            <div className="text-[10px] text-slate-600 font-mono">
-                                                Network: <span className="text-slate-500 ml-1">BCH Chipnet</span>
+                                        <div>
+                                            <label className="text-[10px] uppercase tracking-[0.2em] text-white font-black block mb-4">Tags</label>
+                                            <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+                                                {selectedContract.tags?.map((t: string) => (
+                                                    <span key={t} className="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-white">
+                                                        {t}
+                                                    </span>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Right: Security & Action Section */}
-                                    <div className="flex flex-col lg:w-72 border-l border-white/5 lg:pl-8 space-y-6 shrink-0 justify-between items-center lg:items-end">
-                                        <div className="flex flex-col items-center lg:items-end text-center lg:text-right">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={`text-4xl font-black ${(contract.audit?.score || 90) >= 90 ? 'text-green-400' :
-                                                    (contract.audit?.score || 90) >= 70 ? 'text-yellow-400' : 'text-red-400'
-                                                    }`}>
-                                                    {contract.audit?.score || 90}
-                                                </span>
-                                                <div className="flex flex-col items-start leading-none">
-                                                    <span className="text-slate-600 text-[10px] uppercase font-bold tracking-tighter">/ 100</span>
-                                                    {(contract.audit?.score || 90) >= 90 && (
-                                                        <div className="text-green-500/80 text-[10px] flex items-center mt-1">
-                                                            <ShieldCheck className="w-2.5 h-2.5 mr-1" />
-                                                            VERIFIED
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <span className="text-slate-500 text-[10px] font-mono leading-none">NexOps Audit Engine v0.3</span>
-                                        </div>
+                                    <div className="pt-12 flex flex-col gap-4">
+                                        <button
+                                            onClick={() => {
+                                                onLoadContract?.(selectedContract);
+                                                setSelectedContract(null);
+                                            }}
+                                            className="w-full bg-bch-green text-bch-dark font-black py-5 rounded-2xl flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-[0_20px_40px_rgba(0,216,85,0.15)] active:translate-y-0 transform hover:-translate-y-1"
+                                        >
+                                            <Layers size={20} />
+                                            <span className="text-lg">Load to Workspace</span>
+                                        </button>
 
-                                        <div className="flex items-center gap-6 self-center lg:self-end">
-                                            <div className="text-center group/metric">
-                                                <div className="text-white text-base font-black flex items-center justify-center">
-                                                    <Download className="w-3.5 h-3.5 mr-1.5 text-slate-500 group-hover/metric:text-nexus-cyan transition-colors" />
-                                                    {contract.downloads || 0}
-                                                </div>
-                                                <div className="text-slate-500/60 text-[9px] font-black uppercase tracking-[0.2em] mt-1">Loads</div>
-                                            </div>
-                                            <div className="text-center group/metric">
-                                                <div className="text-white text-base font-black flex items-center justify-center">
-                                                    <Star className="w-3.5 h-3.5 mr-1.5 text-slate-500 group-hover/metric:text-yellow-500 transition-colors" />
-                                                    0
-                                                </div>
-                                                <div className="text-slate-500/60 text-[9px] font-black uppercase tracking-[0.2em] mt-1">Stars</div>
-                                            </div>
-                                        </div>
-
-                                        <div className="w-full space-y-3">
+                                        <div className="flex gap-4">
                                             <button
-                                                onClick={() => onLoadContract?.(contract)}
-                                                className="w-full bg-green-500 hover:bg-green-400 text-nexus-900 font-black py-2.5 px-6 rounded-md transition-all transform hover:-translate-y-1 hover:shadow-[0_4px_12px_rgba(34,197,94,0.3)] active:translate-y-0 flex items-center justify-center text-sm"
+                                                onClick={() => downloadContract(selectedContract)}
+                                                className="w-full bg-white/5 border border-white/10 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:bg-white/10 transition-all active:scale-95"
                                             >
-                                                Load to Workspace
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setExpandedId(expandedId === contract.id ? null : contract.id);
-                                                }}
-                                                className="w-full flex items-center justify-center text-slate-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
-                                            >
-                                                {expandedId === contract.id ? <ChevronUp className="w-3.5 h-3.5 mr-1.5" /> : <ChevronDown className="w-3.5 h-3.5 mr-1.5" />}
-                                                {expandedId === contract.id ? "Hide Logic" : "Inspect Logic"}
+                                                <Download size={18} />
+                                                <span>Download</span>
                                             </button>
                                         </div>
                                     </div>
                                 </div>
-
-                                {expandedId === contract.id && (
-                                    <div className="bg-nexus-800/80 border border-nexus-cyan/20 p-6 rounded-lg animate-in slide-in-from-top-4 overflow-hidden relative">
-                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex items-center text-nexus-cyan text-xs font-black uppercase tracking-widest">
-                                                    <Eye className="w-4 h-4 mr-2" />
-                                                    Logic Inspection
-                                                </div>
-                                                <div className="h-4 w-px bg-white/5" />
-                                                <div className="text-[10px] text-slate-600 font-mono flex items-center">
-                                                    <span className="opacity-50 mr-2">HASH:</span>
-                                                    <span className="text-slate-500 uppercase">{contract.id?.slice(0, 12) || 'UNKNOWN'}...</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    onClick={() => copySource(contract.source_code)}
-                                                    className="flex items-center text-[10px] font-bold text-slate-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded border border-white/5"
-                                                >
-                                                    Copy Source
-                                                </button>
-                                                <button
-                                                    onClick={() => downloadContract(contract)}
-                                                    className="flex items-center text-[10px] font-bold text-nexus-cyan hover:text-white transition-colors bg-nexus-cyan/5 px-3 py-1.5 rounded border border-nexus-cyan/10"
-                                                >
-                                                    Download .cash
-                                                </button>
-                                                <div className="text-slate-500 text-[10px] font-mono opacity-50 ml-2">
-                                                    {contract.compiler_version || 'cashc v0.13.0'}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-slate-900/40 rounded-md p-6 border border-white/5 max-h-[500px] overflow-auto custom-scrollbar relative">
-                                            <div className="absolute top-0 right-0 p-2 pointer-events-none">
-                                                <Code2 className="w-12 h-12 text-white/[0.03]" />
-                                            </div>
-                                            <pre className="text-sm font-mono text-slate-300 leading-relaxed text-left whitespace-pre-wrap">
-                                                <code>{contract.source_code}</code>
-                                            </pre>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
-                        ))
-                    )}
+                        </div>
+
+                        {/* Right Side: Code (60%) */}
+                        <div className="flex-1 bg-black/40 flex flex-col min-w-0 min-h-0">
+                            <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-black/20">
+                                <div className="flex items-center gap-5">
+                                    <div className="flex gap-2">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-red-500/30 border border-red-500/10" />
+                                        <div className="w-3.5 h-3.5 rounded-full bg-yellow-500/30 border border-yellow-500/10" />
+                                        <div className="w-3.5 h-3.5 rounded-full bg-green-500/30 border border-green-500/10" />
+                                    </div>
+                                    <span className="text-sm font-mono text-white/30 tracking-tight">{selectedContract.title.toLowerCase().replace(/\s+/g, '-')}.cash</span>
+                                </div>
+                                <button
+                                    onClick={() => copyCode(selectedContract.source_code || selectedContract.code)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-white/60 hover:text-white transition-all border border-white/5"
+                                >
+                                    {copied ? <Check size={14} className="text-bch-green" /> : <Copy size={14} />}
+                                    <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-auto font-mono text-base custom-scrollbar bg-[#050507]">
+                                <SyntaxHighlighter
+                                    language="javascript"
+                                    style={{
+                                        ...atomDark,
+                                        'comment': { ...atomDark['comment'], color: '#5c6370', fontStyle: 'italic' },
+                                        'function': { ...atomDark['function'], color: '#40f0ff', fontWeight: 'bold' },
+                                        'keyword': { ...atomDark['keyword'], color: '#ff79c6', fontWeight: 'bold' },
+                                        'builtin': { color: '#00e5ff', fontWeight: '900' },
+                                        'boolean': { ...atomDark['boolean'], color: '#ffb86c' },
+                                        'number': { ...atomDark['number'], color: '#bd93f9' },
+                                        'string': { ...atomDark['string'], color: '#50fa7b' },
+                                        'operator': { ...atomDark['operator'], color: '#ff79c6' },
+                                    }}
+                                    customStyle={{
+                                        margin: 0,
+                                        padding: '28px',
+                                        background: 'transparent',
+                                        fontSize: '1rem',
+                                        lineHeight: '1.6',
+                                        letterSpacing: '-0.01em'
+                                    }}
+                                    codeTagProps={{
+                                        style: {
+                                            fontFamily: 'JetBrains Mono, Fira Code, monospace'
+                                        }
+                                    }}
+                                >
+                                    {selectedContract.source_code || selectedContract.code}
+                                </SyntaxHighlighter>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div >
+            )}
+        </div>
     );
 };

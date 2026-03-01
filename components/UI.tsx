@@ -83,7 +83,11 @@ export const getFileIcon = (fileName: string) => {
 };
 
 // --- Badge ---
-export const Badge: React.FC<{ variant: 'high' | 'medium' | 'low' | 'info' | 'success'; children: React.ReactNode }> = ({ variant, children }) => {
+export const Badge: React.FC<{
+  variant: 'high' | 'medium' | 'low' | 'info' | 'success';
+  children: React.ReactNode;
+  className?: string;
+}> = ({ variant, children, className = '' }) => {
   const styles = {
     high: "bg-red-900/30 text-red-400 border-red-800",
     medium: "bg-orange-900/30 text-orange-400 border-orange-800",
@@ -93,7 +97,7 @@ export const Badge: React.FC<{ variant: 'high' | 'medium' | 'low' | 'info' | 'su
   };
 
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-mono border ${styles[variant]}`}>
+    <span className={`px-2 py-0.5 rounded text-xs font-mono border ${styles[variant]} ${className}`}>
       {children}
     </span>
   );

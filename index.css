@@ -3,14 +3,18 @@
 @tailwind utilities;
 
 :root {
-    --nexus-900: #0B1120;
-    --nexus-800: #0F172A;
-    --nexus-700: #1E293B;
-    --nexus-cyan: #0EA5E9;
-    --nexus-cyan-soft: rgba(14, 165, 233, 0.15);
-    --nexus-purple: #8B5CF6;
+    --nexus-900: #060807;
+    /* Ultra-dark deep green/black */
+    --nexus-800: #0D0F0E;
+    /* Surface base */
+    --nexus-700: #121413;
+    /* Card/Elevated surface */
+    --nexus-emerald: #00D855;
+    /* Neon Emerald Accent */
+    --nexus-emerald-soft: rgba(0, 216, 85, 0.1);
+    --nexus-emerald-hover: #00BA49;
     --radius-xl: 16px;
-    --spacing-p: 24px;
+    --spacing-p: 28px;
 }
 
 html,

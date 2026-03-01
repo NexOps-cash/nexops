@@ -16,19 +16,32 @@
         extend: {
           fontFamily: {
             sans: ['Inter', 'sans-serif'],
+            display: ['Inter', 'sans-serif'],
             mono: ['JetBrains Mono', 'monospace'],
           },
           colors: {
+            'bch-dark': '#060807',
+            'bch-surface': '#0D0F0E',
+            'bch-green': '#00D855',
             nexus: {
-              900: '#0B1120', // Deeper Protocol Base
-              800: '#0F172A', // SLightly lighter secondary
-              700: '#1E293B',
+              900: '#060807',
+              800: '#0D0F0E',
+              700: '#121413',
+              emerald: '#00D855',
+              'emerald-soft': 'rgba(0, 216, 85, 0.1)',
+              'emerald-hover': '#00BA49',
               cyan: '#0EA5E9',
               purple: '#8B5CF6',
               success: '#10B981',
               warning: '#F59E0B',
               danger: '#EF4444',
             }
+          },
+          backgroundImage: {
+            'bch-gradient': 'linear-gradient(135deg, #00D855 0%, #00BA49 100%)',
+          },
+          boxShadow: {
+            'bch-glow': '0 0 20px rgba(0, 216, 85, 0.3)',
           }
         }
       }

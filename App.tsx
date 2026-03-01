@@ -11,7 +11,7 @@ import { WizardPage } from './pages/WizardPage';
 import { PublishModal } from './components/PublishModal';
 import { TopNav } from './components/TopNav';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, toast } from 'react-hot-toast';
 import { SettingsModal } from './components/SettingsModal';
 import { BYOKSettings } from './types';
 
@@ -225,11 +225,11 @@ const App: React.FC = () => {
 
   const handlePublishToRegistry = async () => {
     if (!user) {
-      alert("Please sign in to publish contracts to the registry.");
+      toast.error("Please sign in to publish contracts to the registry.");
       return;
     }
     if (!activeProject) {
-      alert("No active project to publish.");
+      toast.error("No active project to publish.");
       return;
     }
     setIsPublishModalOpen(true);
@@ -254,16 +254,16 @@ const App: React.FC = () => {
           tags: details.tags,
           author_id: user.id,
           version: "1.0.0",
-          source_hash: activeProject.auditReport?.metadata?.contract_hash || crypto.randomUUID(),
+          source_hash: crypto.randomUUID(), // Use UUID to ensure new entry every time
           visibility: 'verified'
         });
 
       if (error) throw error;
-      alert("Successfully published to the Verified Registry!");
+      toast.success("Successfully published to the Verified Registry!");
       setIsPublishModalOpen(false);
     } catch (err) {
       console.error("Failed to publish contract:", err);
-      alert("Error publishing contract. Check console for details.");
+      toast.error("Error publishing contract. Check console for details.");
     } finally {
       setIsPublishingReg(false);
     }
@@ -299,7 +299,7 @@ const App: React.FC = () => {
     setProjects(prev => [newProject, ...prev]);
     setActiveProjectId(newProject.id);
     setCurrentView('workspace');
-    alert(`Successfully loaded ${contract.title} into your workspace!`);
+    toast.success(`Successfully loaded ${contract.title} into your workspace!`);
   };
 
   const handleNavigateHome = () => {
