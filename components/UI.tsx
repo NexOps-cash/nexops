@@ -168,16 +168,16 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className={`bg-nexus-900 border border-nexus-700 rounded-xl shadow-2xl w-full overflow-hidden animate-in zoom-in-95 duration-200 ${className.includes('max-w-') ? className : `max-w-lg ${className}`}`}>
+      <div className={`bg-nexus-900 border border-nexus-700 rounded-xl shadow-2xl w-full animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] ${className.includes('max-w-') ? className : `max-w-lg ${className}`}`}>
         {(title || onClose) && (
-          <div className="flex justify-between items-center p-4 border-b border-nexus-800 bg-nexus-800/30">
+          <div className="flex justify-between items-center p-4 border-b border-nexus-800 bg-nexus-800/30 flex-shrink-0">
             {title && <h3 className="text-lg font-bold text-white">{title}</h3>}
             <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
               <X size={20} />
             </button>
           </div>
         )}
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
           {children}
         </div>
       </div>

@@ -359,6 +359,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
             <Modal
                 isOpen={showConstructorModal}
                 onClose={() => setShowConstructorModal(false)}
+                className="max-w-2xl"
                 title="Configure Contract Parameters"
             >
                 <div className="space-y-4">
