@@ -58,8 +58,8 @@ The following technologies power the NexOps ecosystem:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/nexops-protocol/nexops-core.git
-   cd nexops-core
+   git clone https://github.com/NexOps-cash/nexops.git
+
    ```
 
 2. Install dependencies:
@@ -70,10 +70,13 @@ The following technologies power the NexOps ecosystem:
 3. Configure Environment Variables:
    Create a `.env.local` file based on the provided configuration:
    ```env
-   VITE_GEMINI_API_KEY=your_key_here
-   VITE_GROQ_API_KEY=your_key_here
+   GROQ_API_KEY=
+   VITE_WALLETCONNECT_PROJECT_ID=
+   VITE_SUPABASE_URL=
+   VITE_SUPABASE_ANON_KEY=
+
    ```
-   Alternatively, use the **BYOK Settings** in the UI to provide your own keys without environment variables.
+
 
 4. Launch the Development Server:
    ```bash
