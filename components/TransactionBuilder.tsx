@@ -530,7 +530,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const deploymentArgs = project.deploymentRecord?.constructorArgs;
             const sanitizedConstructorArgs = (deploymentArgs || internalConstructorArgs).map(arg => arg || '');
 
-            const contract = new Contract(artifact, sanitizedConstructorArgs, { provider }) as any;
+            const contract = new Contract(artifact as any, sanitizedConstructorArgs, { provider }) as any;
 
             // CRITICAL DEBUGGING: Verify contract initialization matches deployment
             console.log('[Debug] Initializing contract for execution...');
@@ -805,7 +805,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             </div>
 
             <div className="flex justify-between pt-4">
-                <Button variant="ghost" onClick={() => setCurrentStep(1)} size="sm" icon={<ArrowLeft className="w-4 h-4" />}>
+                <Button variant="ghost" onClick={() => setCurrentStep(1)} icon={<ArrowLeft className="w-4 h-4" />}>
                     Back
                 </Button>
                 <div>
@@ -874,6 +874,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         const isConnected = isWCConnected;
         const isExpired = isWCExpired;
         const isDisconnected = isWCDisconnected;
+        const hasBurnerSigner = !!(wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif);
 
         const networkPrefix = (network === 'mainnet' || network === 'main') ? 'bitcoincash:' : 'bchtest:';
 
@@ -943,7 +944,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         <div className="pt-4">
                             <Button
                                 variant="glass"
-                                size="sm"
                                 className="w-auto px-6 border-nexus-cyan/20 hover:bg-nexus-cyan/10"
                                 onClick={() => handleAutoFund(deployedAddress)}
                                 isLoading={isFundingBurner}
@@ -959,7 +959,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 <div className="bg-black/20 border border-white/5 rounded-2xl p-5 space-y-4">
                     <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Target Function</span>
-                        <Badge variant="ghost" className="bg-nexus-cyan/10 text-nexus-cyan border-nexus-cyan/20 font-mono py-1 px-3">
+                        <Badge variant="info" className="flex items-center gap-1 bg-nexus-cyan/10 text-nexus-cyan border-nexus-cyan/20 font-mono py-1 px-3">
                             {selectedFunction}()
                         </Badge>
                     </div>
@@ -977,7 +977,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                                 <span className="text-[10px] text-gray-500 font-bold uppercase">{input.name}</span>
                                                 <span className="text-[9px] text-nexus-cyan/60 font-mono truncate max-w-[150px]">{valueToDisplay}</span>
                                             </div>
-                                            <Badge variant="ghost" className="text-[8px] opacity-40 border-white/10 uppercase tracking-tighter">
+                                            <Badge variant="info" className="text-[8px] opacity-40 border-white/10 uppercase tracking-tighter">
                                                 {deploymentArgs ? 'Immutable' : 'Read Only'}
                                             </Badge>
                                         </div>
@@ -1091,7 +1091,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                 {/* BOTTOM ROW: Actions */}
                 <div className="flex items-center justify-between pt-4 border-t border-white/5 mt-4">
-                    <Button variant="ghost" onClick={() => setCurrentStep(2)} size="sm">
+                    <Button variant="ghost" onClick={() => setCurrentStep(2)}>
                         <ArrowLeft className="w-4 h-4 mr-2" /> Back to Args
                     </Button>
                     <div className="flex items-center gap-3">
@@ -1100,8 +1100,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 handleExecute();
                                 setCurrentStep(4);
                             }}
-                            disabled={signingMethod === 'walletconnect' ? !isWCConnected : !(wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif)}
-                            variant={(signingMethod === 'walletconnect' ? isWCConnected : (wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif)) ? 'primary' : 'secondary'}
+                            disabled={signingMethod === 'walletconnect' ? !isConnected : !hasBurnerSigner}
+                            variant={(signingMethod === 'walletconnect' ? isConnected : hasBurnerSigner) ? 'primary' : 'secondary'}
                             icon={<Play className="w-4 h-4" />}
                             className="px-8"
                         >
@@ -1132,11 +1132,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     </div>
 
                     <div className="flex flex-col gap-2 pt-4">
-                        <Button
-                            variant="secondary"
-                            onClick={() => window.open(getExplorerLink(executionResult.txid!), '_blank')}
-                        >
-                            View on Explorer
+                        <Button variant="ghost" onClick={() => window.open(getExplorerLink(history[0].txid), '_blank')}>
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            View Last
                         </Button>
                         <Button onClick={resetFlow}>
                             Make Another Call
@@ -1203,7 +1201,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             >
                                 <RotateCcw className={`w-3 h-3 text-slate-500 ${isFetchingUtxos ? 'animate-spin' : ''}`} />
                             </button>
-                            <Badge variant="warning" className="text-[9px] py-0 h-4">Awaiting Funding</Badge>
+                            <Badge variant="medium" className="px-1 py-0 h-4 min-w-[32px] justify-center">UNFUNDED</Badge>
                         </div>
                     )}
                 </div>
@@ -1249,7 +1247,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         </p>
                         <Button
                             variant="glass"
-                            size="sm"
                             className="w-full text-[9px] font-black border-yellow-500/20 hover:bg-yellow-500/10 text-yellow-500/70 hover:text-yellow-500"
                             onClick={() => handleAutoFund(deployedAddress)}
                             isLoading={isFundingBurner}
@@ -1299,7 +1296,7 @@ export const TransactionHistory: React.FC<{
                     <History size={12} className="text-nexus-cyan" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Execution History</span>
                 </div>
-                <Badge variant="ghost" className="text-[10px] opacity-50 uppercase font-black">{history.length} SPENDS</Badge>
+                <Badge variant="info" className="text-[10px] opacity-50 uppercase font-black">{history.length} SPENDS</Badge>
             </div>
 
             <div className="space-y-2">

@@ -1442,7 +1442,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 deployedAddress={deployedAddress}
                 constructorArgs={constructorArgs}
                 wcSession={walletConnectService.getSession()}
-                network={project.chain.includes('Testnet') ? 'chipnet' : 'mainnet'}
+                network={project.chain.includes('Chipnet') ? 'chipnet' : 'mainnet'}
                 initialUtxo={fundingUtxo}
                 onConfigChange={(newArgs) => {
                     setConstructorArgs(newArgs);

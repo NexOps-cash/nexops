@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Loader2, Play, Copy, Terminal, ChevronDown, Plus } from 'lucide-react';
+import { Send, Paperclip, Loader2, Play, Copy, Terminal, ChevronDown, Plus, RefreshCw } from 'lucide-react';
 import { Button } from './UI';
 import { AuditReportView } from './AuditReportView';
 import { ExplainPanelView } from './ExplainPanelView';
 import { ContractExplanation } from '../services/groqService';
 import { AuditReport, Vulnerability, BYOKSettings } from '../types';
+import { websocketService } from '../services/websocketService';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -15,6 +16,7 @@ interface ChatMessage {
     stage?: string;
     explanationData?: ContractExplanation;
     isReviewing?: boolean;
+    isProgress?: boolean;
 }
 
 interface AIPanelProps {
@@ -43,7 +45,7 @@ export const AIPanel: React.FC<AIPanelProps> = ({
     const scrollRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const availableCommands = ['/generate', '/edit'];
+    const availableCommands = ['/generate', '/edit', '/audit', '/repair'];
 
     // Update input when draftInput changes
     useEffect(() => {
@@ -62,7 +64,7 @@ export const AIPanel: React.FC<AIPanelProps> = ({
     const handleInputChange = (val: string) => {
         setInput(val);
 
-        if (val.startsWith('/')) {
+        if (val.startsWith('/') && isWsConnected) {
             const filtered = availableCommands.filter(cmd => cmd.startsWith(val));
             setFilteredCommands(filtered);
             setShowCommands(filtered.length > 0);
@@ -121,22 +123,18 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                         </div>
                     )}
                     <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${useExternalGenerator ? (isWsConnected ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-red-500') : 'bg-slate-600'}`}></span>
-                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">
-                            {useExternalGenerator ? (isWsConnected ? 'MCP: ACTIVE' : 'MCP: ERROR') : 'INTERNAL RAG'}
+                        <span className={`w-1.5 h-1.5 rounded-full ${isWsConnected ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse' : 'bg-red-500'}`}></span>
+                        <span className={`text-[9px] font-bold uppercase tracking-tighter ${isWsConnected ? 'text-nexus-cyan' : 'text-red-500'}`}>
+                            {isWsConnected ? 'MCP: ACTIVE' : 'MCP: OFFLINE'}
                         </span>
+                        <button
+                            onClick={() => websocketService.connect()}
+                            className="p-1 hover:bg-white/10 rounded transition-colors"
+                            title="Reconnect MCP"
+                        >
+                            <RefreshCw size={10} className={`text-slate-400 hover:text-white transition-colors ${!isWsConnected ? 'animate-spin' : ''}`} />
+                        </button>
                     </div>
-
-                    <button
-                        onClick={() => onToggleExternal && onToggleExternal(!useExternalGenerator)}
-                        className={`
-                            relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none focus:ring-1 focus:ring-nexus-cyan focus:ring-offset-1 focus:ring-offset-black
-                            ${useExternalGenerator ? 'bg-nexus-cyan/40' : 'bg-slate-800'}
-                        `}
-                        title={useExternalGenerator ? "Switch to Internal AI" : "Switch to External Generator"}
-                    >
-                        <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${useExternalGenerator ? 'translate-x-4.5' : 'translate-x-1'}`} />
-                    </button>
                 </div>
             </div>
 
@@ -308,9 +306,9 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                 </div>
                 <div className="flex justify-between items-center mt-1.5 px-1">
                     <span className="text-[9px] text-gray-600">Enter to submit, Shift+Enter for newline</span>
-                    {useExternalGenerator && (
-                        <span className="text-[9px] text-amber-500/80 font-medium">
-                            <code className="bg-amber-500/10 px-1 rounded">/generate</code> create contract · <code className="bg-amber-500/10 px-1 rounded">/edit</code> modify contract
+                    {isWsConnected && (
+                        <span className="text-[9px] text-nexus-cyan/80 font-medium">
+                            <code className="bg-nexus-cyan/10 px-1 rounded">/generate</code> create · <code className="bg-nexus-cyan/10 px-1 rounded">/edit</code> modify · <code className="bg-nexus-cyan/10 px-1 rounded">/audit</code> audit
                         </span>
                     )}
                 </div>

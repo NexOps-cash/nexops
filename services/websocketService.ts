@@ -61,6 +61,10 @@ class WebSocketService extends EventEmitter {
     connect(url?: string) {
         if (url) this.url = url;
 
+        if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
         try {
             this.socket = new WebSocket(this.url);
 
