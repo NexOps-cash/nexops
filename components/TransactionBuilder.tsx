@@ -497,7 +497,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             return;
         }
 
-        if (signingMethod === 'burner' && !burnerWif) {
+        const hasBurnerSigner = !!(wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif);
+        if (signingMethod === 'burner' && !hasBurnerSigner) {
             setExecutionResult({
                 success: false,
                 error: 'Burner wallet not generated.'
@@ -1099,8 +1100,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 handleExecute();
                                 setCurrentStep(4);
                             }}
-                            disabled={signingMethod === 'walletconnect' ? !isConnected : !burnerWif}
-                            variant={(signingMethod === 'walletconnect' ? isConnected : burnerWif) ? 'primary' : 'secondary'}
+                            disabled={signingMethod === 'walletconnect' ? !isWCConnected : !(wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif)}
+                            variant={(signingMethod === 'walletconnect' ? isWCConnected : (wallets.find(w => w.id === selectedGlobalWalletId)?.wif || burnerWif)) ? 'primary' : 'secondary'}
                             icon={<Play className="w-4 h-4" />}
                             className="px-8"
                         >

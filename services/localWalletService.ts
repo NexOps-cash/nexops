@@ -103,6 +103,20 @@ class LocalWalletService {
             network: 'chipnet'
         };
     }
+
+    /**
+     * Derive P2PKH locking bytecode from a compressed public key (hex)
+     */
+    static async getLockingBytecodeFromPubkey(pubkeyHex: string): Promise<string> {
+        const pk = new Uint8Array(pubkeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+        const ripemd160 = await instantiateRipemd160();
+        const hash = ripemd160.hash(sha256.hash(pk));
+
+        // P2PKH: OP_DUP OP_HASH160 <hash160> OP_EQUALVERIFY OP_CHECKSIG
+        // Hex: 76 a9 14 <20-byte-hash> 88 ac
+        const hashHex = Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
+        return `76a914${hashHex}88ac`;
+    }
 }
 
 export default LocalWalletService;

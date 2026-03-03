@@ -14,7 +14,7 @@ import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
 import { pollForFunding, getExplorerLink, FundingStatus, UTXO, fetchUTXOs } from '../services/blockchainService';
 import { useWallet } from '../contexts/WalletContext';
 import { DeploymentRecord } from '../types';
-import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck } from 'lucide-react';
+import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
@@ -157,7 +157,9 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
             setArtifact(result.artifact);
             setIsDeterminismVerified(true);
-            setShowConstructorModal(true); // Open modal on success
+
+            // Auto-advance directly into configuration
+            setShowConstructorModal(true);
 
         } catch (e: any) {
             setCompilationError(e.message);
@@ -209,9 +211,15 @@ export const Deployment: React.FC<DeploymentProps> = ({
             return;
         }
 
-        if (!derivedAddress) {
-            toast.error("Address derivation failed. check inputs.");
-            return;
+        let finalAddress = derivedAddress;
+        if (!finalAddress) {
+            try {
+                finalAddress = deriveContractAddress(artifact!, constructorArgs, Network.TESTNET3);
+                setDerivedAddress(finalAddress);
+            } catch (e: any) {
+                toast.error(`Address derivation failed: ${e.message}`);
+                return;
+            }
         }
 
         setIsDeploying(true);
@@ -387,61 +395,20 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             onClick={() => {
                                 setShowConstructorModal(false);
                                 if (derivedAddress && artifact) {
-                                    if (onArtifactsGenerated) {
-                                        onArtifactsGenerated(derivedAddress, artifact, constructorArgs);
-                                    }
-                                    setShowSuccessModal(true);
+
+                                    // Trigger artifacts generation and navigation
+                                    onArtifactsGenerated?.(derivedAddress, artifact, constructorArgs);
                                 }
                             }}
                             disabled={!derivedAddress || hasCriticalValidationErrors()}
                         >
-                            Confirm & View Address
+                            Confirm Address
                         </Button>
                     </div>
                 </div>
             </Modal>
 
-            {/* SUCCESS MODAL */}
-            <Modal
-                isOpen={showSuccessModal}
-                onClose={() => setShowSuccessModal(false)}
-                title="Artifacts Generated Successfully"
-            >
-                <div className="space-y-4 text-center">
-                    <div className="mx-auto w-16 h-16 bg-green-900/20 rounded-full flex items-center justify-center border border-green-500/50 mb-2">
-                        <CheckCircle className="w-8 h-8 text-green-500" />
-                    </div>
-                    <h4 className="text-xl font-bold text-white">Contract Optimized</h4>
-                    <p className="text-gray-400 text-sm">
-                        Your contract has been compiled and is ready for funding on Testnet.
-                    </p>
-
-                    <div className="bg-nexus-900 p-3 rounded border border-nexus-700 text-left">
-                        <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Derived Address</label>
-                        <div className="flex justify-between items-center bg-black/50 p-2 rounded">
-                            <span className="font-mono text-nexus-cyan text-xs truncate mr-2">{derivedAddress}</span>
-                            <Copy className="w-4 h-4 text-gray-400 cursor-pointer hover:text-white" />
-                        </div>
-                    </div>
-
-                    <div className="flex space-x-3 pt-2">
-                        <Button
-                            variant="secondary"
-                            className="flex-1"
-                            onClick={() => window.open(getExplorerLink(derivedAddress), '_blank')}
-                            icon={<Server className="w-4 h-4" />}
-                        >
-                            View on Explorer
-                        </Button>
-                        <Button
-                            className="flex-1"
-                            onClick={() => setShowSuccessModal(false)}
-                        >
-                            Continue to Funding
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
+            {/* Intermediate success modal removed to streamline UX */}
 
             {/* Config & Artifacts */}
             <div className={compact ? "space-y-3" : "space-y-6"}>
@@ -642,8 +609,12 @@ export const Deployment: React.FC<DeploymentProps> = ({
                 </Card>
             </div>
 
-            {/* Actions */}
             <div className="space-y-6">
+                {/* 
+                  Since we want the user to go directly to funding step and not see a 
+                  temporary "connect wallet" full screen replacement, let's keep the Action list active 
+                  AND initiate connect if not connected when they try to deploy/fund.
+                */}
                 <Card>
                     <h3 className="text-lg font-medium text-white mb-4 flex items-center">
                         <Rocket className="w-5 h-5 mr-2 text-nexus-cyan" />
@@ -661,7 +632,6 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             </Badge>
                         </div>
 
-                        {/* Top Notification: Deployment Blocked (Only if connected or critical) */}
                         {(!isAuditPassed && wcSession) && (
                             <div className="p-4 bg-red-900/10 border border-red-900/50 rounded text-center">
                                 <ShieldAlert className="w-8 h-8 text-red-500 mx-auto mb-2" />
@@ -673,36 +643,27 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             </div>
                         )}
 
-                        {!wcSession ? (
-                            <div className="p-8 glass-panel rounded-2xl border border-white/5 shadow-2xl backdrop-blur-xl">
-                                <div className="flex flex-col items-center justify-center space-y-6">
-                                    <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
-                                        <Wallet className="w-10 h-10 text-nexus-cyan" />
-                                    </div>
-                                    <div className="text-center space-y-2">
-                                        <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Connection Required</h3>
-                                        <p className="text-slate-400 text-sm max-w-[280px]">
-                                            Connect a compatible Bitcoin Cash wallet to deploy this contract.
-                                        </p>
+                        {/* Optional Wallet Connection Bar */}
+                        <div className="space-y-4">
+                            {!wcSession ? (
+                                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center backdrop-blur-md">
+                                    <div className="flex justify-between items-center w-full mb-3">
+                                        <div className="flex items-center space-x-2 text-nexus-cyan text-sm font-bold uppercase tracking-widest">
+                                            <Wallet className="w-4 h-4" />
+                                            <span>Optional Wallet</span>
+                                        </div>
                                     </div>
                                     <Button
-                                        variant="primary"
-                                        className="w-full py-4 uppercase font-black tracking-widest text-sm shadow-[0_0_30px_rgba(0,229,255,0.3)]"
+                                        variant="glass"
+                                        className="w-full py-2 text-xs border-nexus-cyan/30 hover:bg-nexus-cyan/10"
                                         onClick={handleConnectWC}
-                                        icon={isConnecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}
+                                        icon={isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                                         disabled={isConnecting}
                                     >
-                                        {isConnecting ? 'Opening Modal...' : 'WalletConnect (Beta)'}
+                                        {isConnecting ? 'Linking...' : 'Connect Web3 Wallet'}
                                     </Button>
-                                    <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold uppercase tracking-widest pt-2">
-                                        <span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1 text-nexus-cyan" /> Paytaca</span>
-                                        <span className="flex items-center"><CheckCircle className="w-3 h-3 mr-1 text-nexus-cyan" /> Zapit</span>
-                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {/* Connected Wallet Bar */}
+                            ) : (
                                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center backdrop-blur-md">
                                     <div className="flex items-center space-x-3">
                                         {wcSession?.peer?.metadata?.icons?.[0] ? (
@@ -729,105 +690,125 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                         <XCircle className="w-4 h-4" />
                                     </Button>
                                 </div>
+                            )}
 
-                                {!artifact ? (
-                                    <div className="text-center p-8 bg-nexus-900/50 border border-dashed border-nexus-700 rounded-xl">
-                                        <FileCode className="w-8 h-8 text-gray-400 mx-auto mb-3 opacity-30" />
-                                        <p className="text-sm text-gray-500 uppercase font-black tracking-widest">Artifacts Not Compiled</p>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Deployment Phase Check */}
-                                        {deploymentStep === 2 && paymentRequestUri ? (
-                                            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl">
-                                                <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
-                                                    <QRCodeSVG value={paymentRequestUri} size={180} />
+                            {!artifact ? (
+                                <div className="text-center p-8 bg-nexus-900/50 border border-dashed border-nexus-700 rounded-xl">
+                                    <FileCode className="w-8 h-8 text-gray-400 mx-auto mb-3 opacity-30" />
+                                    <p className="text-sm text-gray-500 uppercase font-black tracking-widest">Artifacts Not Compiled</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Deployment Phase Check */}
+                                    {/* IF artifact is configured AND derivedAddress exists, Show Funding Step right away  */}
+                                    {((deploymentStep === 2 || deploymentStep === 1) && derivedAddress) ? (
+                                        <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl mt-4">
+                                            {!paymentRequestUri ? (
+                                                // State BEFORE user clicks "Fund / Deploy"
+                                                <div className="w-full text-center">
+                                                    <h3 className="text-xl font-bold text-white mb-2">Fund Contract Wrapper</h3>
+                                                    <p className="text-sm text-gray-400 mb-6">Contract artifacts have been prepared. The next step is to fund the generated address to make it live.</p>
+                                                    <Button
+                                                        variant="primary"
+                                                        className="w-full py-3 h-auto uppercase tracking-widest text-sm font-black"
+                                                        onClick={handleDeploy}
+                                                        isLoading={isDeploying}
+                                                    >
+                                                        Initiate Deployment
+                                                    </Button>
                                                 </div>
-                                                <div className="text-center space-y-1 mb-6">
-                                                    <p className="text-white font-black text-sm uppercase tracking-tighter">Funding Required</p>
-                                                    <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest leading-relaxed">Send {fundingAmount.toLocaleString()} sats to address below</p>
-                                                </div>
-                                                <div className="w-full bg-black/40 p-4 rounded-xl border border-white/5 mb-6 group cursor-pointer" onClick={() => {
-                                                    navigator.clipboard.writeText(derivedAddress!);
-                                                    toast.success("Address copied!");
-                                                }}>
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
-                                                        <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
+                                            ) : (
+                                                // State AFTER user clicks Deploy (Active monitor)
+                                                <>
+                                                    <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
+                                                        <QRCodeSVG value={paymentRequestUri} size={180} />
                                                     </div>
-                                                    <p className="text-nexus-cyan font-mono text-[10px] break-all leading-relaxed">
-                                                        {derivedAddress}
-                                                    </p>
-                                                </div>
-
-                                                {/* Funding Status */}
-                                                <div className="w-full">
-                                                    {fundingStatus.status === 'monitoring' && (
-                                                        <div className="flex flex-col items-center space-y-3">
-                                                            <div className="flex items-center justify-center text-nexus-cyan text-[11px] font-black uppercase tracking-widest">
-                                                                <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                                                                Monitoring Indexer...
-                                                            </div>
-                                                            <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5">
-                                                                <div
-                                                                    className="bg-nexus-cyan h-full transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
-                                                                    style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
-                                                                />
-                                                            </div>
-                                                            <p className="text-[10px] text-slate-400 font-bold">{fundingStatus.totalValue.toLocaleString()} / {fundingAmount.toLocaleString()} sats detected</p>
-                                                        </div>
-                                                    )}
-                                                    {fundingStatus.status === 'confirmed' && (
-                                                        <div className="flex flex-col items-center space-y-4">
-                                                            <div className="flex items-center text-green-600 font-black uppercase tracking-widest text-sm">
-                                                                <CheckCircle className="w-5 h-5 mr-2" />
-                                                                Contract Live!
-                                                            </div>
-                                                            <Button onClick={() => onDeployed?.(derivedAddress!, artifact, constructorArgs, fundingUtxo!)} className="w-full py-4 bg-nexus-blue hover:bg-blue-600 shadow-[0_4px_15px_rgba(37,99,235,0.3)] font-black uppercase tracking-widest text-xs">
-                                                                Enter Transaction Builder
-                                                            </Button>
-                                                        </div>
-                                                    )}
-                                                    {fundingStatus.status === 'error' && (
-                                                        <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
-                                                            {fundingStatus.error || 'Connection Timeout'}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                <div className="bg-nexus-900 border border-nexus-700/50 p-4 rounded-xl">
-                                                    <div className="flex justify-between items-center mb-2">
-                                                        <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Initial Balance</label>
-                                                        <span className="text-xs font-mono text-white">{fundingAmount.toLocaleString()} Sats</span>
+                                                    <div className="text-center space-y-1 mb-6">
+                                                        <p className="text-white font-black text-sm uppercase tracking-tighter">Funding Required</p>
+                                                        <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest leading-relaxed">Send {fundingAmount.toLocaleString()} sats to address below</p>
                                                     </div>
-                                                    <input
-                                                        type="range"
-                                                        min="1000"
-                                                        max="100000"
-                                                        step="1000"
-                                                        value={fundingAmount}
-                                                        onChange={(e) => setFundingAmount(Number(e.target.value))}
-                                                        className="w-full accent-nexus-cyan h-1.5 bg-nexus-800 rounded-lg appearance-none cursor-pointer"
-                                                    />
-                                                </div>
+                                                    <div className="w-full bg-black/40 p-4 rounded-xl border border-white/5 mb-6 group cursor-pointer" onClick={() => {
+                                                        navigator.clipboard.writeText(derivedAddress!);
+                                                        toast.success("Address copied!");
+                                                    }}>
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
+                                                            <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
+                                                        </div>
+                                                        <p className="text-nexus-cyan font-mono text-[10px] break-all leading-relaxed">
+                                                            {derivedAddress}
+                                                        </p>
+                                                    </div>
 
-                                                <Button
-                                                    onClick={handleDeploy}
-                                                    disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
-                                                    isLoading={isDeploying}
-                                                    className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
-                                                    icon={<Rocket className="w-5 h-5" />}
-                                                >
-                                                    {!isAuditPassed ? "Audit Failed" : "Launch Contract"}
-                                                </Button>
+                                                    {/* Funding Status */}
+                                                    <div className="w-full">
+                                                        {fundingStatus.status === 'monitoring' && (
+                                                            <div className="flex flex-col items-center space-y-3">
+                                                                <div className="flex items-center justify-center text-nexus-cyan text-[11px] font-black uppercase tracking-widest">
+                                                                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                                                    Monitoring Indexer...
+                                                                </div>
+                                                                <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5">
+                                                                    <div
+                                                                        className="bg-nexus-cyan h-full transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
+                                                                        style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
+                                                                    />
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-400 font-bold">{fundingStatus.totalValue.toLocaleString()} / {fundingAmount.toLocaleString()} sats detected</p>
+                                                            </div>
+                                                        )}
+                                                        {fundingStatus.status === 'confirmed' && (
+                                                            <div className="flex flex-col items-center space-y-4">
+                                                                <div className="flex items-center text-green-600 font-black uppercase tracking-widest text-sm">
+                                                                    <CheckCircle className="w-5 h-5 mr-2" />
+                                                                    Contract Live!
+                                                                </div>
+                                                                <Button onClick={() => onDeployed?.(derivedAddress!, artifact, constructorArgs, fundingUtxo!)} className="w-full py-4 bg-nexus-blue hover:bg-blue-600 shadow-[0_4px_15px_rgba(37,99,235,0.3)] font-black uppercase tracking-widest text-xs">
+                                                                    Enter Transaction Builder
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                        {fundingStatus.status === 'error' && (
+                                                            <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
+                                                                {fundingStatus.error || 'Connection Timeout'}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            <div className="bg-nexus-900 border border-nexus-700/50 p-4 rounded-xl">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Initial Balance</label>
+                                                    <span className="text-xs font-mono text-white">{fundingAmount.toLocaleString()} Sats</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="1000"
+                                                    max="100000"
+                                                    step="1000"
+                                                    value={fundingAmount}
+                                                    onChange={(e) => setFundingAmount(Number(e.target.value))}
+                                                    className="w-full accent-nexus-cyan h-1.5 bg-nexus-800 rounded-lg appearance-none cursor-pointer"
+                                                />
                                             </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        )}
+
+                                            <Button
+                                                onClick={handleDeploy}
+                                                disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
+                                                isLoading={isDeploying}
+                                                className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
+                                                icon={<Rocket className="w-5 h-5" />}
+                                            >
+                                                {!isAuditPassed ? "Audit Failed" : "Launch Contract"}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
                 </Card>
 
@@ -851,7 +832,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         {deploymentStep >= 4 && <p className="text-green-400 font-bold">&gt; success: contract deployed to block {fundingUtxo?.height || 'latest'}</p>}
                     </div>
                 </Card>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };

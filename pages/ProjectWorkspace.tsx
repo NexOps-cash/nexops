@@ -44,6 +44,9 @@ interface ChatMessage {
     auditReport?: AuditReport;
     isProgress?: boolean;
     stage?: string;
+    explanationData?: any;
+    isReviewing?: boolean;
+    originalStates?: { name: string, content: string | null }[];
 }
 
 import { WalletSidebar } from '../components/WalletSidebar';
@@ -127,7 +130,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [constructorArgs, setConstructorArgs] = useState<string[]>(project.constructorArgs || []);
     const [fundingUtxo, setFundingUtxo] = useState<UTXO | null>(null);
     const [showLiveModal, setShowLiveModal] = useState(false);
-    const [useExternalGenerator, setUseExternalGenerator] = useState(false);
     const [isWsConnected, setIsWsConnected] = useState(false);
     const [lastGeneratedIntent, setLastGeneratedIntent] = useState<string>('');
     const [openFileNames, setOpenFileNames] = useState<string[]>(project.files.map(f => f.name));
@@ -163,18 +165,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
     // Derived 3-step progressive state
     const appStep = useMemo(() => {
-        // Step 1: Connect (No WalletConnect AND no Burner Wallet)
+        // Step 2: Fund (Contract exists but balance is 0)
+        // If we have an address but no balance, they need to fund.
+        // We allow QR code funding, so connection is NOT strictly required to reach Step 2.
+        if (deployedAddress && contractBalance === 0) return 'FUND';
+
+        // Step 3: Interact (Contract has balance)
+        if (deployedAddress && contractBalance > 0) return 'INTERACT';
+
+        // Step 1: Connect (No WalletConnect AND no Burner Wallet AND no address yet)
         const hasBurner = !!burnerWif;
         const hasWC = !!wcSession;
         if (!hasBurner && !hasWC) return 'CONNECT';
-
-        // Step 2: Fund (Contract exists but balance is 0)
-        // If not deployed yet, we stay at "FUND" but show a deployment prompt
-        if (!deployedAddress || contractBalance === 0) return 'FUND';
-
-        // Step 3: Interact (Contract has balance)
-        // TransactionBuilder handles missing artifact gracefully
-        if (deployedAddress && contractBalance > 0) return 'INTERACT';
 
         // Fallback to FUND if connected but no specific state match
         return 'FUND';
@@ -458,16 +460,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         websocketService.on('disconnected', handleDisconnected);
         websocketService.on('message', handleMessage);
 
-        if (useExternalGenerator) {
-            websocketService.connect();
-        }
+        websocketService.connect();
 
         return () => {
             websocketService.off('connected', handleConnected);
             websocketService.off('disconnected', handleDisconnected);
             websocketService.off('message', handleMessage);
         };
-    }, [useExternalGenerator, activeFileName]);
+    }, [isWsConnected, activeFileName]);
 
     // -- Handlers --
 
@@ -608,41 +608,50 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
         const isGenerateCommand = msgToSend.trim().startsWith('/generate');
         const isEditCommand = msgToSend.trim().startsWith('/edit');
+        const isAuditCommand = msgToSend.trim().startsWith('/audit');
+        const isRepairCommand = msgToSend.trim().startsWith('/repair');
+
+        if ((isGenerateCommand || isEditCommand || isAuditCommand || isRepairCommand) && !isWsConnected) {
+            setChatHistory(prev => [...prev, {
+                role: 'model',
+                text: "❌ MCP is offline. Please ensure the external protocol service is running to use slash commands."
+            }]);
+            setIsChatting(false);
+            return;
+        }
+
         const intentMessage = isGenerateCommand ? msgToSend.replace('/generate', '').trim() : msgToSend;
         const editInstruction = isEditCommand ? msgToSend.replace('/edit', '').trim() : '';
 
-        if (useExternalGenerator && isGenerateCommand) {
+        if (isGenerateCommand) {
             setLastGeneratedIntent(intentMessage);
-            if (!websocketService.isConnected()) {
-                websocketService.connect();
-                // We'll wait a bit or just fail fast
-                setTimeout(() => {
-                    if (websocketService.isConnected()) {
-                        websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
-                            groq_key: byokSettings.provider === 'groq' ? byokSettings.apiKey : '',
-                            openrouter_key: byokSettings.provider === 'openrouter' ? byokSettings.apiKey : '',
-                            security_level: 'high',
-                            use_rag: false
-                        });
-                    } else {
-                        setChatHistory(prev => [...prev, { role: 'model', text: "External Generator is not connected. Attempting to reconnect..." }]);
-                        setIsChatting(false);
-                    }
-                }, 1000);
+            websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
+                groq_key: byokSettings.provider === 'groq' ? byokSettings.apiKey : '',
+                openrouter_key: byokSettings.provider === 'openrouter' ? byokSettings.apiKey : '',
+                security_level: 'high',
+                use_rag: false
+            });
+            return;
+        }
+
+        if (isAuditCommand) {
+            handleRunAudit();
+            return;
+        }
+
+        if (isRepairCommand) {
+            if (project.auditReport && project.auditReport.vulnerabilities.length > 0) {
+                handleFixVulnerability(project.auditReport.vulnerabilities[0]);
             } else {
-                websocketService.sendIntent(intentMessage, chatHistory.map(h => ({ role: h.role, content: h.text })), {
-                    groq_key: byokSettings.provider === 'groq' ? byokSettings.apiKey : '',
-                    openrouter_key: byokSettings.provider === 'openrouter' ? byokSettings.apiKey : '',
-                    security_level: 'high',
-                    use_rag: false
-                });
+                setChatHistory(prev => [...prev, { role: 'model', text: "No vulnerabilities found to repair." }]);
+                setIsChatting(false);
             }
             return;
         }
 
         if (isEditCommand && mainContractFile) {
             try {
-                const result = await editSmartContract(mainContractFile.content, editInstruction, useExternalGenerator, byokSettings);
+                const result = await editSmartContract(mainContractFile.content, editInstruction, isWsConnected, byokSettings);
                 setChatHistory(prev => [...prev, {
                     role: 'model',
                     text: result.explanation,
@@ -658,6 +667,26 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
         try {
             const result = await chatWithAssistant(msgToSend, project.files, chatHistory, byokSettings);
+
+            // Directional Response: If user asks for contract work without slash commands
+            const contractKeywords = ['create', 'fix', 'contract', 'cashscript', 'generate', 'edit', 'audit', 'code', 'write'];
+            const isAskingForWork = contractKeywords.some(key => msgToSend.toLowerCase().includes(key));
+            const hasSlashCommand = msgToSend.startsWith('/');
+
+            if (isAskingForWork && !hasSlashCommand) {
+                result.response = `To ensure high-security standards, please use slash commands for contract operations:\n\n` +
+                    `- Use \`/generate\` to create a new contract\n` +
+                    `- Use \`/edit\` to modify an existing contract\n` +
+                    `- Use \`/audit\` to run a security check\n\n` +
+                    `Current Advice: ${result.response}`;
+            }
+
+            // Strengthen Blockade: Allow file updates ONLY if MCP is connected
+            if (result.fileUpdates && result.fileUpdates.length > 0 && !websocketService.isConnected()) {
+                result.response = `❌ MCP is offline. Cannot apply file updates. Please ensure the external protocol service is running to use slash commands.\n\n${result.response}`;
+                result.fileUpdates = undefined; // Clear file updates if MCP is offline
+            }
+
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.response,
@@ -781,7 +810,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setChatHistory(prev => [...prev, { role: 'user', text: 'Run Security Audit' }]);
 
         try {
-            const report = await auditSmartContract(mainContractFile.content, useExternalGenerator, lastGeneratedIntent, '', byokSettings);
+            const report = await auditSmartContract(mainContractFile.content, isWsConnected, lastGeneratedIntent, '', byokSettings);
             onUpdateProject({ ...project, auditReport: report });
             addLog('AUDITOR', '✅ Audit Complete. Issues found: ' + report.vulnerabilities.length);
 
@@ -812,13 +841,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
 
         try {
-            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, vuln, byokSettings);
-
-            // Handle external repair failure (success: false)
-            if (useExternalGenerator && result.explanation.includes("AI Repair failed safety constraints")) {
-                // We'll show this in the chat, but also could use a toast if available.
-                // For now, appending to chat as per existing pattern.
-            }
+            const result = await fixSmartContract(mainContractFile.content, prompt, isWsConnected, vuln, byokSettings);
 
             setChatHistory(prev => [...prev, {
                 role: 'model',
@@ -851,7 +874,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 recommendation: 'Fix syntax or compilation error'
             };
 
-            const result = await fixSmartContract(mainContractFile.content, prompt, useExternalGenerator, issuePayload, byokSettings);
+            const result = await fixSmartContract(mainContractFile.content, prompt, isWsConnected, issuePayload, byokSettings);
 
             setChatHistory(prev => [...prev, {
                 role: 'model',
@@ -1191,8 +1214,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             onReject={rejectFileUpdates}
             onFixVulnerability={handleFixVulnerability}
             draftInput={chatDraft}
-            useExternalGenerator={useExternalGenerator}
-            onToggleExternal={setUseExternalGenerator}
             isWsConnected={isWsConnected}
             byokSettings={byokSettings}
         />
@@ -1320,7 +1341,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                             </p>
                             <Button
                                 variant="primary"
-                                size="sm"
                                 className="w-full text-[10px] font-black uppercase"
                                 onClick={() => setActiveView('DEPLOY')}
                             >
@@ -1351,7 +1371,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     <div className="space-y-3 pt-2">
                         <Button
                             variant="glass"
-                            size="sm"
                             className="w-full border-nexus-cyan/20 hover:bg-nexus-cyan/10 text-nexus-cyan/70 hover:text-nexus-cyan"
                             isLoading={isFetchingBalance}
                             onClick={async () => {
@@ -1374,7 +1393,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         </Button>
                         <Button
                             variant="glass"
-                            size="sm"
                             className="w-full border-white/5 bg-white/5 hover:bg-white/10 mt-2"
                             isLoading={isFetchingBalance}
                             onClick={async () => {
@@ -1424,7 +1442,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 deployedAddress={deployedAddress}
                 constructorArgs={constructorArgs}
                 wcSession={walletConnectService.getSession()}
-                network={project.chain === 'BCH Testnet' ? 'chipnet' : 'mainnet'}
+                network={project.chain.includes('Testnet') ? 'chipnet' : 'mainnet'}
                 initialUtxo={fundingUtxo}
                 onConfigChange={(newArgs) => {
                     setConstructorArgs(newArgs);
@@ -1483,7 +1501,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             walletConnected={walletConnected}
             onConnectWallet={onConnectWallet}
             compact={true}
-            useExternalGenerator={useExternalGenerator}
+            useExternalGenerator={isWsConnected}
             byokSettings={byokSettings}
             onArtifactsGenerated={(addr, artifact, args) => {
                 setDeployedAddress(addr);

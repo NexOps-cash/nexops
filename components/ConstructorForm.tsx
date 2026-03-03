@@ -6,6 +6,7 @@ import { walletConnectService } from '../services/walletConnectService';
 import { useWallet } from '../contexts/WalletContext';
 import { Button } from './UI';
 import toast from 'react-hot-toast';
+import LocalWalletService from '../services/localWalletService';
 
 interface ConstructionProps {
     inputs: ContractArtifact['constructorInputs'];
@@ -27,7 +28,7 @@ const getInputExplanation = (name: string, type: string): string => {
         return `Integer value for ${name}. This affects the contract's behavior and address derivation.`;
     }
     if (type === 'bytes' || type === 'string') {
-        return `Data value for ${name}. This will be encoded into the contract's locking script.`;
+        return `Data value for ${name}. This is often used for destination addresses or locking bytecodes. You can use the wallet selector to auto-fill a P2PKH locking script for any of your identities.`;
     }
     return `Parameter ${name} of type ${type}. This value affects the contract address.`;
 };
@@ -196,15 +197,18 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                         {wallets.map(w => (
                             <button
                                 key={w.id}
-                                onClick={() => {
-                                    // Try to find the first empty pubkey field and fill it
-                                    const firstEmptyPk = inputs.find(inp => inp.type === 'pubkey' && !fieldValues[inp.name]);
-                                    if (firstEmptyPk) {
-                                        handleFieldChange(firstEmptyPk.name, w.pubkey, 'pubkey');
-                                        toast.success(`Assigned ${w.name} to ${firstEmptyPk.name}`);
+                                onClick={async () => {
+                                    // Try to find the first empty pubkey or bytes field and fill it
+                                    const firstEmptyPkOrBytes = inputs.find(inp => (inp.type === 'pubkey' || inp.type === 'bytes') && !fieldValues[inp.name]);
+                                    if (firstEmptyPkOrBytes) {
+                                        let val = w.pubkey;
+                                        if (firstEmptyPkOrBytes.type === 'bytes') {
+                                            val = await LocalWalletService.getLockingBytecodeFromPubkey(w.pubkey);
+                                        }
+                                        handleFieldChange(firstEmptyPkOrBytes.name, val, firstEmptyPkOrBytes.type);
+                                        toast.success(`Assigned ${w.name} to ${firstEmptyPkOrBytes.name}`);
                                     } else {
-                                        // If none empty, toast instructions
-                                        toast.error("No empty public key fields. Use per-field selector.");
+                                        toast.error("No empty public key or bytes fields.");
                                     }
                                 }}
                                 className="px-3 py-1.5 bg-black/40 border border-white/10 hover:border-nexus-cyan/50 rounded-lg text-[10px] font-bold text-slate-300 transition-all flex items-center space-x-2 hover:text-white"
@@ -262,22 +266,27 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                     className={`flex-1 bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors pr-24`}
                                     placeholder={`Value for ${inp.name}`}
                                 />
-                                {(inp.type === 'pubkey' || inp.type === 'address') && wallets.length > 0 && (
+                                {(inp.type === 'pubkey' || inp.type === 'address' || inp.type === 'bytes') && wallets.length > 0 && (
                                     <div className="relative">
                                         <select
                                             className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                            onChange={(e) => {
+                                            onChange={async (e) => {
                                                 const w = wallets.find(wall => wall.id === e.target.value);
                                                 if (w) {
-                                                    const val = inp.type === 'pubkey' ? w.pubkey : w.address;
+                                                    let val = '';
+                                                    if (inp.type === 'pubkey') val = w.pubkey;
+                                                    else if (inp.type === 'address') val = w.address;
+                                                    else if (inp.type === 'bytes') {
+                                                        val = await LocalWalletService.getLockingBytecodeFromPubkey(w.pubkey);
+                                                    }
                                                     handleFieldChange(inp.name, val, inp.type);
                                                 }
                                             }}
                                             value=""
                                         >
-                                            <option value="" disabled>Select Wallet</option>
+                                            <option value="" disabled className="bg-gray-800 text-white">Select Wallet</option>
                                             {wallets.map(w => (
-                                                <option key={w.id} value={w.id}>{w.name}</option>
+                                                <option key={w.id} value={w.id} className="bg-gray-800 text-white">{w.name} {inp.type === 'bytes' ? '(P2PKH)' : ''}</option>
                                             ))}
                                         </select>
                                         <div className="h-full px-2 bg-nexus-cyan/10 border border-nexus-cyan/20 rounded flex items-center space-x-1 text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
