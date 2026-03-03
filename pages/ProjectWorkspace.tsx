@@ -47,6 +47,7 @@ interface ChatMessage {
     explanationData?: any;
     isReviewing?: boolean;
     originalStates?: { name: string, content: string | null }[];
+    type?: 'chat' | 'generate' | 'edit' | 'audit' | 'repair' | 'fix';
 }
 
 import { WalletSidebar } from '../components/WalletSidebar';
@@ -437,7 +438,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                             ? `⚠ Template Loaded: ${contract_name}\n\nGuarded synthesis did not fully converge.\nA secure NexOps canonical structure was loaded.\n\nUse /edit to customize logic or add features`
                             : `✅ Successfully generated the contract: ${contract_name}\n\nThe contract passed with the following features: ${data.data.intent_model.features.join(', ')}.${softFailText}`,
                         fileUpdates: isAutoLoad ? undefined : [{ name: fileName, content: code }],
-                        isApplied: isAutoLoad
+                        isApplied: isAutoLoad,
+                        type: 'generate'
                     };
 
                     if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
@@ -455,7 +457,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     const lastMsg = newHistory[newHistory.length - 1];
                     const errorMsg: ChatMessage = {
                         role: 'model',
-                        text: `❌ ERROR: ${code}\n${message}${details ? `\n\nDetails: ${details}` : ''}`
+                        text: `❌ ERROR: ${code}\n${message}${details ? `\n\nDetails: ${details}` : ''}`,
+                        type: 'chat'
                     };
 
                     if (lastMsg && lastMsg.role === 'model' && lastMsg.isProgress) {
@@ -627,7 +630,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         if ((isGenerateCommand || isEditCommand || isAuditCommand || isRepairCommand) && !isWsConnected) {
             setChatHistory(prev => [...prev, {
                 role: 'model',
-                text: "❌ MCP is offline. Please ensure the external protocol service is running to use slash commands."
+                text: "❌ MCP is offline. Please ensure the external protocol service is running to use slash commands.",
+                type: 'chat'
             }]);
             setIsChatting(false);
             return;
@@ -656,7 +660,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             if (project.auditReport && project.auditReport.vulnerabilities.length > 0) {
                 handleFixVulnerability(project.auditReport.vulnerabilities[0]);
             } else {
-                setChatHistory(prev => [...prev, { role: 'model', text: "No vulnerabilities found to repair." }]);
+                setChatHistory(prev => [...prev, { role: 'model', text: "No vulnerabilities found to repair.", type: 'chat' }]);
                 setIsChatting(false);
             }
             return;
@@ -668,10 +672,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 setChatHistory(prev => [...prev, {
                     role: 'model',
                     text: result.explanation,
-                    fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+                    fileUpdates: [{ name: mainContractFile.name, content: result.code }],
+                    type: 'edit'
                 }]);
             } catch (e) {
-                setChatHistory(prev => [...prev, { role: 'model', text: "Failed to apply edit. Check connection to backend." }]);
+                setChatHistory(prev => [...prev, { role: 'model', text: "Failed to apply edit. Check connection to backend.", type: 'chat' }]);
             } finally {
                 setIsChatting(false);
             }
@@ -703,10 +708,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.response,
-                fileUpdates: result.fileUpdates
+                fileUpdates: result.fileUpdates,
+                type: 'chat'
             }]);
         } catch (e) {
-            setChatHistory(prev => [...prev, { role: 'model', text: "Assistant error. Verify protocol connection." }]);
+            setChatHistory(prev => [...prev, { role: 'model', text: "Assistant error. Verify protocol connection.", type: 'chat' }]);
         } finally {
             setIsChatting(false);
         }
@@ -831,7 +837,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: report.summary,
-                auditReport: report
+                auditReport: report,
+                type: 'audit'
             }]);
 
             // Switch to Auditor view
@@ -840,7 +847,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         } catch (e: any) {
             console.error(e);
             addLog('AUDITOR', `❌ Audit Failed: ${e.message}`);
-            setChatHistory(prev => [...prev, { role: 'model', text: "Audit Failed due to an internal error." }]);
+            setChatHistory(prev => [...prev, { role: 'model', text: "Audit Failed due to an internal error.", type: 'chat' }]);
         } finally {
             setIsAuditing(false);
         }
@@ -854,15 +861,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
 
         try {
-            const result = await fixSmartContract(mainContractFile.content, prompt, isWsConnected, vuln, byokSettings);
+            const result = await editSmartContract(mainContractFile.content, prompt, isWsConnected, byokSettings);
 
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.explanation,
-                fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+                fileUpdates: [{ name: mainContractFile.name, content: result.code }],
+                type: 'fix'
             }]);
         } catch (e) {
-            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix." }]);
+            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix.", type: 'chat' }]);
         } finally {
             setIsChatting(false);
         }
@@ -887,15 +895,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 recommendation: 'Fix syntax or compilation error'
             };
 
-            const result = await fixSmartContract(mainContractFile.content, prompt, isWsConnected, issuePayload, byokSettings);
+            const result = await editSmartContract(mainContractFile.content, prompt, isWsConnected, byokSettings);
 
             setChatHistory(prev => [...prev, {
                 role: 'model',
                 text: result.explanation,
-                fileUpdates: [{ name: mainContractFile.name, content: result.code }]
+                fileUpdates: [{ name: mainContractFile.name, content: result.code }],
+                type: 'fix'
             }]);
         } catch (e) {
-            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix for compiler error." }]);
+            setChatHistory(prev => [...prev, { role: 'model', text: "Failed to generate fix for compiler error.", type: 'chat' }]);
         } finally {
             setIsChatting(false);
         }

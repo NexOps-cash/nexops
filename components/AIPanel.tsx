@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Loader2, Play, Copy, Terminal, ChevronDown, Plus, RefreshCw } from 'lucide-react';
 import { Button } from './UI';
+import toast from 'react-hot-toast';
 import { AuditReportView } from './AuditReportView';
 import { ExplainPanelView } from './ExplainPanelView';
 import { ContractExplanation } from '../services/groqService';
@@ -17,6 +18,7 @@ interface ChatMessage {
     explanationData?: ContractExplanation;
     isReviewing?: boolean;
     isProgress?: boolean;
+    type?: 'chat' | 'generate' | 'edit' | 'audit' | 'repair' | 'fix';
 }
 
 interface AIPanelProps {
@@ -193,47 +195,55 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                                                 />
                                             )}
 
-                                            <div className="flex items-center gap-2">
-                                                {msg.fileUpdates && (
-                                                    msg.isReviewing ? (
-                                                        <>
+                                            {msg.type !== 'chat' && (
+                                                <div className="flex items-center gap-2">
+                                                    {msg.fileUpdates && (
+                                                        msg.isReviewing ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => onAccept && onAccept(i)}
+                                                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#0078d4] hover:bg-[#106ebe] text-white rounded border border-[#0078d4] transition-colors text-xs shadow-sm"
+                                                                >
+                                                                    Accept Alt+↵
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => onReject && onReject(i)}
+                                                                    className="flex items-center gap-1.5 px-3 py-1 bg-[#252526] hover:bg-[#2d2d30] text-gray-300 rounded border border-[#3e3e42] transition-colors text-xs shadow-sm"
+                                                                >
+                                                                    Reject Shift+Alt+⌦
+                                                                </button>
+                                                            </>
+                                                        ) : (
                                                             <button
-                                                                onClick={() => onAccept && onAccept(i)}
-                                                                className="flex items-center gap-1.5 px-3 py-1 bg-[#0078d4] hover:bg-[#106ebe] text-white rounded border border-[#0078d4] transition-colors text-xs shadow-sm"
+                                                                onClick={() => onApply(msg.fileUpdates!, i)}
+                                                                disabled={msg.isApplied}
+                                                                className={`
+                                                                flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
+                                                                ${msg.isApplied
+                                                                        ? 'border-green-900/30 bg-green-900/10 text-green-500 cursor-default'
+                                                                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white'
+                                                                    }
+                                                            `}
                                                             >
-                                                                Accept Alt+↵
+                                                                <Plus size={10} />
+                                                                {msg.isApplied ? 'Applied' : 'Insert'}
                                                             </button>
-                                                            <button
-                                                                onClick={() => onReject && onReject(i)}
-                                                                className="flex items-center gap-1.5 px-3 py-1 bg-[#252526] hover:bg-[#2d2d30] text-gray-300 rounded border border-[#3e3e42] transition-colors text-xs shadow-sm"
-                                                            >
-                                                                Reject Shift+Alt+⌦
-                                                            </button>
-                                                        </>
-                                                    ) : (
+                                                        )
+                                                    )}
+                                                    {(!msg.fileUpdates || !msg.isReviewing) && (
                                                         <button
-                                                            onClick={() => onApply(msg.fileUpdates!, i)}
-                                                            disabled={msg.isApplied}
-                                                            className={`
-                                                            flex items-center gap-1.5 px-2 py-1 rounded border transition-colors
-                                                            ${msg.isApplied
-                                                                    ? 'border-green-900/30 bg-green-900/10 text-green-500 cursor-default'
-                                                                    : 'border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white'
-                                                                }
-                                                        `}
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(msg.text);
+                                                                toast.success("Copied to clipboard");
+                                                            }}
+                                                            className="flex items-center gap-1.5 px-2 py-1 rounded border border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
                                                         >
-                                                            <Plus size={10} />
-                                                            {msg.isApplied ? 'Applied' : 'Insert'}
+                                                            <Copy size={10} />
+                                                            Copy
                                                         </button>
-                                                    )
-                                                )}
-                                                {(!msg.fileUpdates || !msg.isReviewing) && (
-                                                    <button className="flex items-center gap-1.5 px-2 py-1 rounded border border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white transition-colors">
-                                                        <Copy size={10} />
-                                                        Copy
-                                                    </button>
-                                                )}
-                                            </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
