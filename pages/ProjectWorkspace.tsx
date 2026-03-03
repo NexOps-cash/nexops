@@ -9,12 +9,12 @@ import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings } from
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
-    AlertTriangle, CheckCircle, Copy, GitMerge, RotateCcw,
+    AlertTriangle, CheckCircle, Copy, GitMerge, RotateCcw, Activity,
     FileJson, MessageSquare, Send, User, Bot, Wand2, X, Trash2,
     FileCode, Zap, Cpu, Loader2, ExternalLink, Wallet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds } from '../services/blockchainService';
+import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds, getBlockHeight } from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript } from '../services/compilerService';
@@ -143,6 +143,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [isGeneratingBurner, setIsGeneratingBurner] = useState(false);
     const [isFetchingBalance, setIsFetchingBalance] = useState(false);
     const [contractBalance, setContractBalance] = useState<number>(0);
+    const [blockHeight, setBlockHeight] = useState<number | null>(null);
+    const [showBuilder, setShowBuilder] = useState(false);
 
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
@@ -192,6 +194,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             setActiveFileName(openFileNames[0] || (project.files[0]?.name && openFileNames.includes(project.files[0].name) ? project.files[0].name : ''));
         }
     }, [project.files, activeFileName, openFileNames]);
+
+    // Periodically fetch block height
+    useEffect(() => {
+        const fetchHeight = async () => {
+            const h = await getBlockHeight();
+            if (h) setBlockHeight(h);
+        };
+        fetchHeight();
+        const interval = setInterval(fetchHeight, 60000); // Every minute is enough for UI
+        return () => clearInterval(interval);
+    }, []);
 
     // Rehydration Logic: Restore deployment state when project changes or on mount
     useEffect(() => {
@@ -1404,6 +1417,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                     setContractBalance(balance);
                                     if (balance > 0) {
                                         toast.success(`Balance detected: ${balance} sats`);
+                                        setShowBuilder(false); // Ensure summary is shown first
                                         setActiveView('INTERACT');
                                     } else {
                                         toast.error("No balance detected yet.");
@@ -1436,31 +1450,128 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             </div>
         );
 
+        const renderLiveSummary = () => (
+            <div className="flex-1 flex flex-col p-4 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="relative overflow-hidden bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-8 text-center space-y-6">
+                    {/* Background decoration */}
+                    <Rocket className="absolute -right-4 -top-4 w-24 h-24 text-emerald-500/10 rotate-12" />
+
+                    <div className="relative z-10 flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                            <ShieldCheck className="w-8 h-8 text-emerald-500" />
+                        </div>
+
+                        <div className="space-y-1">
+                            <h3 className="text-xl font-black text-emerald-400 tracking-tighter uppercase">Contract Live on Chipnet</h3>
+                            <div className="flex items-center justify-center gap-2">
+                                <Activity className="w-3 h-3 text-emerald-500/60" />
+                                <span className="text-[10px] text-emerald-500/60 font-black uppercase tracking-widest">Network Synchronized</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 bg-black/40 rounded-xl p-4 border border-white/5 text-left">
+                        <div className="flex justify-between items-center py-1 border-b border-white/5">
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <Cpu className="w-3 h-3" />
+                                Block Height
+                            </div>
+                            <span className="font-mono text-xs font-bold text-nexus-cyan">{blockHeight?.toLocaleString() || 'Syncing...'}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1 border-b border-white/5">
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <Zap className="w-3 h-3" />
+                                Funding Amount
+                            </div>
+                            <span className="font-mono text-xs font-bold text-nexus-cyan">{contractBalance.toLocaleString()} sats</span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <Activity className="w-3 h-3" />
+                                Status
+                            </div>
+                            <span className="text-[10px] font-black text-nexus-cyan uppercase tracking-widest">Active / Published</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="text-left">
+                            <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest ml-1">Contract Address</span>
+                            <div className="flex items-center gap-2 mt-1">
+                                <div className="flex-1 bg-black/40 p-3 rounded-xl border border-white/5 text-left group">
+                                    <p className="text-nexus-cyan font-mono text-[10px] break-all">
+                                        {deployedAddress}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(deployedAddress);
+                                        toast.success("Address copied");
+                                    }}
+                                    className="p-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-slate-500 hover:text-white transition-all shadow-lg"
+                                >
+                                    <Copy className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                        <Button
+                            variant="primary"
+                            className="w-full py-6 uppercase font-black tracking-widest text-xs shadow-[0_0_30px_rgba(0,229,255,0.3)] bg-gradient-to-r from-nexus-cyan to-blue-500 border-none"
+                            onClick={() => setShowBuilder(true)}
+                            icon={<Play className="w-4 h-4" />}
+                        >
+                            Interact
+                        </Button>
+                        <Button
+                            variant="glass"
+                            className="w-full py-6 bg-white/5 border-white/10 hover:bg-white/10"
+                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
+                            icon={<ExternalLink className="w-4 h-4" />}
+                        >
+                            Explorer
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            className="col-span-2 text-slate-500 hover:text-white"
+                            onClick={() => setActiveView('DEPLOY')}
+                        >
+                            Redeploy
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+
         const renderStep3_Interact = () => (
-            <TransactionBuilder
-                artifact={deployedArtifact!}
-                deployedAddress={deployedAddress}
-                constructorArgs={constructorArgs}
-                wcSession={walletConnectService.getSession()}
-                network={project.chain.includes('Chipnet') ? 'chipnet' : 'mainnet'}
-                initialUtxo={fundingUtxo}
-                onConfigChange={(newArgs) => {
-                    setConstructorArgs(newArgs);
-                    onUpdateProject({
-                        ...project,
-                        constructorArgs: newArgs,
-                        lastModified: Date.now()
-                    });
-                }}
-                burnerWif={burnerWif}
-                burnerAddress={burnerAddress}
-                burnerPubkey={burnerPubkey}
-                onGenerateBurner={handleGenerateBurner}
-                isGeneratingBurner={isGeneratingBurner}
-                history={history}
-                onRecordTransaction={handleRecordTransaction}
-                project={project}
-            />
+            !showBuilder ? renderLiveSummary() : (
+                <TransactionBuilder
+                    artifact={deployedArtifact!}
+                    deployedAddress={deployedAddress}
+                    constructorArgs={constructorArgs}
+                    wcSession={walletConnectService.getSession()}
+                    network={project.chain.includes('Chipnet') ? 'chipnet' : 'mainnet'}
+                    initialUtxo={fundingUtxo}
+                    onConfigChange={(newArgs) => {
+                        setConstructorArgs(newArgs);
+                        onUpdateProject({
+                            ...project,
+                            constructorArgs: newArgs,
+                            lastModified: Date.now()
+                        });
+                    }}
+                    burnerWif={burnerWif}
+                    burnerAddress={burnerAddress}
+                    burnerPubkey={burnerPubkey}
+                    onGenerateBurner={handleGenerateBurner}
+                    isGeneratingBurner={isGeneratingBurner}
+                    history={history}
+                    onRecordTransaction={handleRecordTransaction}
+                    project={project}
+                />
+            )
         );
 
         return (

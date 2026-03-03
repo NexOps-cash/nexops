@@ -105,6 +105,21 @@ class ElectrumManager {
 // --- Logic ---
 
 /**
+ * Fetch the current block height of the network.
+ */
+export async function getBlockHeight(): Promise<number> {
+    try {
+        const client = await ElectrumManager.getClient();
+        // Electrum headers.subscribe returns the current height on first call
+        const header = await client.request('blockchain.headers.subscribe') as any;
+        return header.height;
+    } catch (error) {
+        console.error('[blockchainService] Height fetch error:', error);
+        return 0;
+    }
+}
+
+/**
  * Fetch UTXOs for a specific address using the shared connection.
  */
 export async function fetchUTXOs(address: string): Promise<UTXO[]> {
