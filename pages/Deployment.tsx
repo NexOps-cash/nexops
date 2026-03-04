@@ -382,12 +382,12 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         />
                     )}
 
-                    {/* Safety Panel in Modal */}
                     <div className="pt-2 border-t border-nexus-800">
                         <ContractSafetyPanel
                             artifact={artifact}
                             validations={constructorValidations}
                             derivedAddress={derivedAddress}
+                            derivationError={derivationError}
                         />
                     </div>
 
@@ -600,6 +600,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                 artifact={artifact}
                                 validations={constructorValidations}
                                 derivedAddress={derivedAddress}
+                                derivationError={derivationError}
                             />
 
                             <Button variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>

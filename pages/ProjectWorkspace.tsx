@@ -1331,6 +1331,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     >
                         WalletConnect (Beta)
                     </Button>
+                    <p className="text-[10px] text-slate-600 text-center -mt-1">
+                        ⚠️ Beta — use the <button onClick={() => setActiveView('WALLET')} className="text-nexus-cyan underline underline-offset-2 hover:text-white transition-colors">Wallet</button> section instead
+                    </p>
                     <div className="relative flex items-center py-2">
                         <div className="flex-grow border-t border-white/5"></div>
                         <span className="flex-shrink mx-4 text-[9px] font-black text-slate-600 uppercase tracking-widest">or</span>

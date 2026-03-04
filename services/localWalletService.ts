@@ -117,6 +117,17 @@ class LocalWalletService {
         const hashHex = Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
         return `76a914${hashHex}88ac`;
     }
+
+    /**
+     * Derive raw HASH160 (RIPEMD160(SHA256(pubkey))) as a 20-byte hex string.
+     * This is what bytes20 / PKH constructor arguments expect.
+     */
+    static async getPKHFromPubkey(pubkeyHex: string): Promise<string> {
+        const pk = new Uint8Array(pubkeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+        const ripemd160 = await instantiateRipemd160();
+        const hash = ripemd160.hash(sha256.hash(pk));
+        return Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 }
 
 export default LocalWalletService;

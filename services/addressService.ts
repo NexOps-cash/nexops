@@ -1,6 +1,40 @@
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
 import { ContractArtifact } from '../types';
 
+/**
+ * Coerce raw string constructor args to the correct JS types needed by cashscript.
+ * - int/uint  → BigInt
+ * - bytesN    → Uint8Array (padded to N bytes)
+ * - pubkey    → Uint8Array (from hex)
+ * - everything else → string (unchanged)
+ */
+export function coerceConstructorArgs(
+    inputs: { name: string; type: string }[],
+    args: string[]
+): (bigint | Uint8Array | string)[] {
+    return inputs.map((inp, i) => {
+        const val = args[i] ?? '';
+        if (inp.type.startsWith('int') || inp.type.startsWith('uint')) {
+            return BigInt(val || '0');
+        }
+        if (inp.type === 'pubkey') {
+            if (val && /^[0-9a-fA-F]{66}$/.test(val)) {
+                return new Uint8Array(val.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            }
+        }
+        // Fixed-size bytesN (bytes20, bytes32, etc.) — NOT bare 'bytes'
+        const bytesNMatch = inp.type.match(/^bytes(\d+)$/);
+        if (bytesNMatch) {
+            const size = parseInt(bytesNMatch[1], 10);
+            if (val && /^[0-9a-fA-F]+$/.test(val)) {
+                const paddedHex = val.padStart(size * 2, '0');
+                return new Uint8Array(paddedHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            }
+        }
+        return val;
+    });
+}
+
 export function deriveContractAddress(
     artifact: ContractArtifact,
     args: string[],
@@ -19,26 +53,14 @@ export function deriveContractAddress(
     console.log('🔍 [addressService] Network:', network);
 
     try {
-        // ✅ Correct network enum usage
         console.log('🔍 [addressService] Creating provider...');
         const provider = new ElectrumNetworkProvider(network);
         console.log('🔍 [addressService] Provider created:', provider);
 
-        // ✅ Type constructor arguments
         console.log('🔍 [addressService] Typing arguments...');
-        const typedArgs = artifact.constructorInputs.map((inp, i) => {
-            const val = args[i];
-            console.log(`🔍 [addressService]   Input[${i}]: ${inp.name} (${inp.type}) = ${val}`);
-            if (inp.type.startsWith('int')) {
-                const bigIntVal = BigInt(val || '0');
-                console.log(`🔍 [addressService]   Converted to BigInt: ${bigIntVal}`);
-                return bigIntVal;
-            }
-            return val;
-        });
+        const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
         console.log('🔍 [addressService] Typed args:', typedArgs);
 
-        // ✅ Correct Contract constructor signature (v0.13+)
         console.log('🔍 [addressService] Creating Contract instance...');
         const contract = new Contract(
             artifact as any,

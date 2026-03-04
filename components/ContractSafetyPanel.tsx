@@ -7,12 +7,14 @@ interface ContractSafetyPanelProps {
     artifact: ContractArtifact | null;
     validations: Record<string, ValidationResult>;
     derivedAddress: string;
+    derivationError?: string | null;
 }
 
 export const ContractSafetyPanel: React.FC<ContractSafetyPanelProps> = ({
     artifact,
     validations,
-    derivedAddress
+    derivedAddress,
+    derivationError
 }) => {
     if (!artifact) return null;
 
@@ -85,12 +87,25 @@ export const ContractSafetyPanel: React.FC<ContractSafetyPanelProps> = ({
                 })}
 
                 {/* Fundable Status */}
-                <div className="flex items-center justify-between text-[11px] pt-2 border-t border-nexus-700">
-                    <span className="text-gray-400">Contract fundable</span>
-                    {isFundable ? (
-                        <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                    ) : (
-                        <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                <div className="flex flex-col gap-1 pt-2 border-t border-nexus-700">
+                    <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-gray-400">Contract fundable</span>
+                        {isFundable ? (
+                            <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                        ) : (
+                            <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                        )}
+                    </div>
+                    {!isFundable && derivationError && (
+                        <div className="mt-1 p-2 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400 font-mono leading-relaxed break-words">
+                            <span className="font-bold not-italic uppercase tracking-wider block mb-1">Reason:</span>
+                            {derivationError}
+                        </div>
+                    )}
+                    {!isFundable && !derivationError && hasErrors && (
+                        <div className="mt-1 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] text-yellow-400 leading-relaxed">
+                            Fix the invalid fields above to make the contract fundable.
+                        </div>
                     )}
                 </div>
             </div>

@@ -27,6 +27,9 @@ const getInputExplanation = (name: string, type: string): string => {
     if (type.startsWith('int')) {
         return `Integer value for ${name}. This affects the contract's behavior and address derivation.`;
     }
+    if (type === 'bytes20') {
+        return `20-byte hash (PKH) for ${name}. This is the HASH160 (RIPEMD160(SHA256(pubkey))) of the recipient's public key. Use the wallet selector to auto-derive it.`;
+    }
     if (type === 'bytes' || type === 'string') {
         return `Data value for ${name}. This is often used for destination addresses or locking bytecodes. You can use the wallet selector to auto-fill a P2PKH locking script for any of your identities.`;
     }
@@ -199,16 +202,18 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                 key={w.id}
                                 onClick={async () => {
                                     // Try to find the first empty pubkey or bytes field and fill it
-                                    const firstEmptyPkOrBytes = inputs.find(inp => (inp.type === 'pubkey' || inp.type === 'bytes') && !fieldValues[inp.name]);
+                                    const firstEmptyPkOrBytes = inputs.find(inp => (inp.type === 'pubkey' || inp.type === 'bytes' || inp.type === 'bytes20') && !fieldValues[inp.name]);
                                     if (firstEmptyPkOrBytes) {
                                         let val = w.pubkey;
                                         if (firstEmptyPkOrBytes.type === 'bytes') {
                                             val = await LocalWalletService.getLockingBytecodeFromPubkey(w.pubkey);
+                                        } else if (firstEmptyPkOrBytes.type === 'bytes20') {
+                                            val = await LocalWalletService.getPKHFromPubkey(w.pubkey);
                                         }
                                         handleFieldChange(firstEmptyPkOrBytes.name, val, firstEmptyPkOrBytes.type);
-                                        toast.success(`Assigned ${w.name} to ${firstEmptyPkOrBytes.name}`);
+                                        toast.success(`Assigned ${w.name} → PKH to ${firstEmptyPkOrBytes.name}`);
                                     } else {
-                                        toast.error("No empty public key or bytes fields.");
+                                        toast.error("No empty public key, bytes or bytes20 fields.");
                                     }
                                 }}
                                 className="px-3 py-1.5 bg-black/40 border border-white/10 hover:border-nexus-cyan/50 rounded-lg text-[10px] font-bold text-slate-300 transition-all flex items-center space-x-2 hover:text-white"
@@ -266,7 +271,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                     className={`flex-1 bg-black/50 border ${borderColor} rounded px-2 py-1.5 text-xs font-mono text-gray-300 focus:border-cyan-500 outline-none transition-colors pr-24`}
                                     placeholder={`Value for ${inp.name}`}
                                 />
-                                {(inp.type === 'pubkey' || inp.type === 'address' || inp.type === 'bytes') && wallets.length > 0 && (
+                                {(inp.type === 'pubkey' || inp.type === 'address' || inp.type === 'bytes' || inp.type === 'bytes20') && wallets.length > 0 && (
                                     <div className="relative">
                                         <select
                                             className="absolute inset-0 opacity-0 cursor-pointer z-10"
@@ -278,6 +283,8 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                                     else if (inp.type === 'address') val = w.address;
                                                     else if (inp.type === 'bytes') {
                                                         val = await LocalWalletService.getLockingBytecodeFromPubkey(w.pubkey);
+                                                    } else if (inp.type === 'bytes20') {
+                                                        val = await LocalWalletService.getPKHFromPubkey(w.pubkey);
                                                     }
                                                     handleFieldChange(inp.name, val, inp.type);
                                                 }
@@ -286,7 +293,7 @@ export const ConstructorForm: React.FC<ConstructionProps> = ({
                                         >
                                             <option value="" disabled className="bg-gray-800 text-white">Select Wallet</option>
                                             {wallets.map(w => (
-                                                <option key={w.id} value={w.id} className="bg-gray-800 text-white">{w.name} {inp.type === 'bytes' ? '(P2PKH)' : ''}</option>
+                                                <option key={w.id} value={w.id} className="bg-gray-800 text-white">{w.name} {inp.type === 'bytes' ? '(P2PKH)' : inp.type === 'bytes20' ? '(PKH)' : ''}</option>
                                             ))}
                                         </select>
                                         <div className="h-full px-2 bg-nexus-cyan/10 border border-nexus-cyan/20 rounded flex items-center space-x-1 text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">

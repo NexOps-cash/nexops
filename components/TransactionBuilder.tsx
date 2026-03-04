@@ -15,6 +15,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import LocalWalletService from '../services/localWalletService';
 import toast from 'react-hot-toast';
 import { decodeCashAddress } from '@bitauth/libauth';
+import { coerceConstructorArgs } from '../services/addressService';
 
 interface TransactionBuilderProps {
     artifact: ContractArtifact;
@@ -530,7 +531,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const deploymentArgs = project.deploymentRecord?.constructorArgs;
             const sanitizedConstructorArgs = (deploymentArgs || internalConstructorArgs).map(arg => arg || '');
 
-            const contract = new Contract(artifact as any, sanitizedConstructorArgs, { provider }) as any;
+            const typedConstructorArgs = coerceConstructorArgs(artifact.constructorInputs, sanitizedConstructorArgs);
+            const contract = new Contract(artifact as any, typedConstructorArgs, { provider }) as any;
 
             // CRITICAL DEBUGGING: Verify contract initialization matches deployment
             console.log('[Debug] Initializing contract for execution...');
@@ -885,6 +887,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* BETA DISCLAIMER */}
+                <div className="flex items-start gap-2.5 px-4 py-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+                    <AlertCircle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-yellow-300/80 leading-relaxed">
+                        <span className="font-black uppercase tracking-wider text-yellow-400">Beta — </span>
+                        The spend/execute call is experimental and may not work correctly for all contract types. Complex covenant patterns with custom signing logic may require manual transaction crafting.
+                    </p>
+                </div>
                 {/* HERO SECTION: Contract Status */}
                 {totalBalance > 0 ? (
                     <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-6 text-center space-y-4">
