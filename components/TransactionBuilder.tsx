@@ -951,17 +951,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             </div>
                         </div>
 
-                        <div className="pt-4">
-                            <Button
-                                variant="glass"
-                                className="w-auto px-6 border-nexus-cyan/20 hover:bg-nexus-cyan/10"
-                                onClick={() => handleAutoFund(deployedAddress)}
-                                isLoading={isFundingBurner}
-                            >
-                                <Zap className="w-3 h-3 mr-2" />
-                                Auto-Fund with Faucet
-                            </Button>
-                        </div>
+                        {/* Auto-Fund button removed at user request */}
                     </div>
                 )}
 

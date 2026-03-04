@@ -1402,28 +1402,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     )}
 
                     <div className="space-y-3 pt-2">
-                        <Button
-                            variant="glass"
-                            className="w-full border-nexus-cyan/20 hover:bg-nexus-cyan/10 text-nexus-cyan/70 hover:text-nexus-cyan"
-                            isLoading={isFetchingBalance}
-                            onClick={async () => {
-                                if (!deployedAddress) return;
-                                setIsFetchingBalance(true);
-                                try {
-                                    const result = await requestFaucetFunds(deployedAddress);
-                                    if (result.success) {
-                                        toast.success("Faucet request sent! Waiting for detection...");
-                                    } else {
-                                        toast.error(result.error || "Faucet failed");
-                                    }
-                                } finally {
-                                    setIsFetchingBalance(false);
-                                }
-                            }}
-                        >
-                            <Zap className="w-3 h-3 mr-2" />
-                            Auto-Fund with Faucet
-                        </Button>
+                        {/* Auto-Fund button removed */}
                         <Button
                             variant="glass"
                             className="w-full border-white/5 bg-white/5 hover:bg-white/10 mt-2"
