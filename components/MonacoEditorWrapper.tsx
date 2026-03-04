@@ -212,6 +212,12 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
         wordWrap: 'on' as const, // Soft wrap by default
         automaticLayout: true,
         renderLineHighlight: 'all' as const,
+        // Prevent cascading indentation drift on re-open
+        autoIndent: 'none' as const,
+        formatOnPaste: false,
+        formatOnType: false,
+        tabSize: 4,
+        insertSpaces: true,
     };
 
     if (diffMode) {
@@ -222,7 +228,7 @@ export const MonacoEditorWrapper: React.FC<MonacoEditorProps> = ({
                 theme="nexops-dark"
                 original={originalCode}
                 modified={code}
-                onMount={handleEditorDidMount}
+                onMount={(editor, monaco) => handleEditorDidMount(editor as any, monaco)}
                 options={{ ...options, readOnly: true }} // Diff is usually read-only
             />
         );

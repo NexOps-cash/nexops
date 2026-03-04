@@ -814,7 +814,66 @@ export const Deployment: React.FC<DeploymentProps> = ({
                     </div>
                 </Card>
 
+                {/* Deployment Details — always visible when funded */}
+                {(deploymentStep >= 4 || project?.deployedAddress) && (
+                    <Card className="border-green-500/20 bg-green-500/5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-black text-green-400 uppercase tracking-widest flex items-center gap-2">
+                                <ShieldCheck className="w-4 h-4" />
+                                Contract Deployed
+                            </h3>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-green-500/60 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
+                                LIVE ON CHIPNET
+                            </span>
+                        </div>
+                        <div className="space-y-3">
+                            {/* Address */}
+                            <div>
+                                <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">Contract Address</p>
+                                <div
+                                    className="font-mono text-[10px] bg-black/40 border border-white/5 p-2 rounded-lg text-nexus-cyan break-all cursor-pointer group hover:border-nexus-cyan/30 transition-colors"
+                                    onClick={() => { navigator.clipboard.writeText(derivedAddress || project?.deployedAddress || ''); toast.success('Address copied!'); }}
+                                >
+                                    {derivedAddress || project?.deployedAddress}
+                                    <Copy className="w-3 h-3 inline ml-1.5 opacity-0 group-hover:opacity-50 transition-opacity" />
+                                </div>
+                            </div>
+                            {/* Stats row */}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
+                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Block</p>
+                                    <p className="text-xs font-mono text-white font-bold">{fundingUtxo?.height ?? '—'}</p>
+                                </div>
+                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
+                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Balance</p>
+                                    <p className="text-xs font-mono text-green-400 font-bold">{fundingUtxo ? `${fundingUtxo.value.toLocaleString()} sats` : '—'}</p>
+                                </div>
+                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
+                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Network</p>
+                                    <p className="text-xs font-mono text-nexus-cyan font-bold">Chipnet</p>
+                                </div>
+                            </div>
+                            {/* TxID */}
+                            {(txHash || fundingUtxo?.txid) && (
+                                <div>
+                                    <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">Funding Tx</p>
+                                    <a
+                                        href={`https://chipnet.imaginary.cash/tx/${txHash || fundingUtxo?.txid}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="font-mono text-[10px] bg-black/40 border border-white/5 p-2 rounded-lg text-slate-400 hover:text-nexus-cyan break-all flex items-center gap-1 transition-colors"
+                                    >
+                                        <span className="truncate">{(txHash || fundingUtxo?.txid)?.slice(0, 32)}…</span>
+                                        <ExternalLink className="w-3 h-3 shrink-0" />
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                )}
+
                 {/* Log Console */}
+
                 <Card className="p-0 border-nexus-700 bg-black overflow-hidden flex flex-col min-h-[180px]">
                     <div className="px-4 py-2 border-b border-nexus-900 bg-nexus-950 flex items-center justify-between">
                         <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Deployment Trace</span>
