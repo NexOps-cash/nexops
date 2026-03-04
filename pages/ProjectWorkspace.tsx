@@ -1305,6 +1305,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
         const renderStep1_Connect = () => (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in zoom-in duration-500">
+                {!deployedAddress && (
+                    <div className="w-full p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-left flex items-start gap-3">
+                        <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                            Go to <span className="text-white font-bold">Deployment</span> tab and deploy contract first and then click <span className="text-white font-bold">Interact</span> button.
+                        </p>
+                    </div>
+                )}
                 <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
                     <Wallet className="w-10 h-10 text-nexus-cyan" />
                 </div>
@@ -1359,7 +1367,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                 Deployment Required
                             </div>
                             <p className="text-[10px] text-slate-400 leading-relaxed mb-4">
-                                You are connected, but haven't deployed this contract yet. Deploy now to generate a contract address and start funding.
+                                Go to <span className="text-white font-bold">Deployment</span> tab and deploy contract first and then click <span className="text-white font-bold">Interact</span> button to return here and fund.
                             </p>
                             <Button
                                 variant="primary"

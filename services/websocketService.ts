@@ -50,7 +50,7 @@ export interface WSMessage {
 
 class WebSocketService extends EventEmitter {
     private socket: WebSocket | null = null;
-    private url: string = 'ws://localhost:3005/ws/generate'; // Updated to user-specified port
+    private url: string = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:3005').replace(/^http/, 'ws') + '/ws/generate';
     private reconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
 

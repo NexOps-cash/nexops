@@ -83,8 +83,8 @@ export const AuditReportView: React.FC<AuditReportViewProps> = ({ report, onFix 
                     })()}
                     {report.deployment_allowed !== undefined && (
                         <div className={`text-[9px] font-bold px-2 py-0.5 rounded border ${report.deployment_allowed
-                                ? 'text-green-400 border-green-500/30 bg-green-500/5'
-                                : 'text-red-400 border-red-500/30 bg-red-500/5'
+                            ? 'text-green-400 border-green-500/30 bg-green-500/5'
+                            : 'text-red-400 border-red-500/30 bg-red-500/5'
                             }`}>
                             {report.deployment_allowed ? '✓ Deploy OK' : '✗ Deploy Blocked'}
                         </div>
@@ -131,24 +131,17 @@ export const AuditReportView: React.FC<AuditReportViewProps> = ({ report, onFix 
                                         {vuln.recommendation}
                                     </div>
                                 </div>
-                                {(vuln.can_fix !== false) ? (
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="w-full justify-center border border-nexus-cyan/20 bg-nexus-cyan/5 text-nexus-cyan hover:bg-nexus-cyan/10"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onFix(vuln);
-                                        }}
-                                    >
-                                        <Zap size={10} className="mr-1.5" />
-                                        Apply AI Fix
-                                    </Button>
-                                ) : (
-                                    <div className="text-[10px] text-gray-500 text-center py-1 bg-gray-900/10 rounded border border-gray-800/50">
-                                        Manual Fix Required
-                                    </div>
-                                )}
+                                <Button
+                                    variant="ghost"
+                                    className="w-full justify-center border border-nexus-cyan/20 bg-nexus-cyan/5 text-nexus-cyan hover:bg-nexus-cyan/10"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onFix(vuln);
+                                    }}
+                                >
+                                    <Zap size={10} className="mr-1.5" />
+                                    {vuln.can_fix === false ? 'Attempt AI Fix' : 'Apply AI Fix'}
+                                </Button>
                             </div>
                         )}
                     </div>

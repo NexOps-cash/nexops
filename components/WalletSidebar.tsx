@@ -42,8 +42,35 @@ export const WalletSidebar: React.FC = () => {
     };
 
     const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        toast.success(`${label} copied!`);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                toast.success(`${label} copied!`);
+            }).catch(() => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    toast.success(`${label} copied!`);
+                } catch (err) {
+                    toast.error("Failed to copy");
+                }
+                document.body.removeChild(textArea);
+            });
+        } else {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                toast.success(`${label} copied!`);
+            } catch (err) {
+                toast.error("Failed to copy");
+            }
+            document.body.removeChild(textArea);
+        }
     };
 
     return (
@@ -72,7 +99,6 @@ export const WalletSidebar: React.FC = () => {
                     <Button
                         type="submit"
                         variant="primary"
-                        size="sm"
                         className="p-2 aspect-square rounded-xl"
                         isLoading={isCreating}
                     >

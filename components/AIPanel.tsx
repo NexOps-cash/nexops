@@ -233,8 +233,40 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                                                     {(!msg.fileUpdates || !msg.isReviewing) && (
                                                         <button
                                                             onClick={() => {
-                                                                navigator.clipboard.writeText(msg.text);
-                                                                toast.success("Copied to clipboard");
+                                                                const textToCopy = msg.fileUpdates && msg.fileUpdates.length > 0
+                                                                    ? msg.fileUpdates[0].content
+                                                                    : msg.text;
+
+                                                                if (navigator.clipboard && navigator.clipboard.writeText) {
+                                                                    navigator.clipboard.writeText(textToCopy)
+                                                                        .then(() => toast.success(msg.fileUpdates ? "Code copied" : "Copied to clipboard"))
+                                                                        .catch(() => {
+                                                                            // Fallback for failed clipboard API
+                                                                            const textArea = document.createElement("textarea");
+                                                                            textArea.value = textToCopy;
+                                                                            document.body.appendChild(textArea);
+                                                                            textArea.select();
+                                                                            try {
+                                                                                document.execCommand('copy');
+                                                                                toast.success(msg.fileUpdates ? "Code copied" : "Copied to clipboard");
+                                                                            } catch (err) {
+                                                                                toast.error("Failed to copy");
+                                                                            }
+                                                                            document.body.removeChild(textArea);
+                                                                        });
+                                                                } else {
+                                                                    const textArea = document.createElement("textarea");
+                                                                    textArea.value = textToCopy;
+                                                                    document.body.appendChild(textArea);
+                                                                    textArea.select();
+                                                                    try {
+                                                                        document.execCommand('copy');
+                                                                        toast.success(msg.fileUpdates ? "Code copied" : "Copied to clipboard");
+                                                                    } catch (err) {
+                                                                        toast.error("Failed to copy");
+                                                                    }
+                                                                    document.body.removeChild(textArea);
+                                                                }
                                                             }}
                                                             className="flex items-center gap-1.5 px-2 py-1 rounded border border-[#2a2a2a] bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
                                                         >

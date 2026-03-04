@@ -210,7 +210,8 @@ Initial workspace for your Bitcoin Cash smart contract.
 export const editSmartContract = async (code: string, instruction: string, useExternal: boolean = false, byok?: BYOKSettings): Promise<GenerationResponse> => {
     if (useExternal || websocketService.isConnected()) {
         try {
-            const response = await fetch('http://localhost:3005/api/edit', {
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3005';
+            const response = await fetch(`${BACKEND_URL}/api/edit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -260,7 +261,8 @@ export const editSmartContract = async (code: string, instruction: string, useEx
 export const fixSmartContract = async (code: string, instructions: string, useExternal: boolean = false, issue?: any, byok?: BYOKSettings): Promise<GenerationResponse> => {
     if (useExternal || websocketService.isConnected()) {
         try {
-            const response = await fetch('http://localhost:3005/api/repair', {
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3005';
+            const response = await fetch(`${BACKEND_URL}/api/repair`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -304,7 +306,8 @@ export const fixSmartContract = async (code: string, instructions: string, useEx
 export const auditSmartContract = async (code: string, useExternal: boolean = false, intent: string = '', effective_mode: string = '', byok?: BYOKSettings): Promise<AuditReport> => {
     if (useExternal) {
         try {
-            const response = await fetch('http://localhost:3005/api/audit', {
+            const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3005';
+            const response = await fetch(`${BACKEND_URL}/api/audit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
