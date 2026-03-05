@@ -49,17 +49,24 @@ function addressToScriptHash(address: string): string {
 
 // --- Singleton Manager ---
 
+const FALLBACK_SERVERS = [
+    'chipnet.imaginary.cash',
+    'chipnet.chaingraph.cash',
+    'electrum.imaginary.cash' // Some standard servers have testnet ports but we prefer explicit ones
+];
+
 /**
  * Singleton Connection Manager
- * Manges the single Electrum connection for the application.
+ * Manges the single Electrum connection for the application with fallback support.
  */
 class ElectrumManager {
     private static instance: ElectrumClient<any> | null = null;
     private static connectionPromise: Promise<ElectrumClient<any>> | null = null;
+    private static currentServerIndex = 0;
 
     /**
      * Get the singleton Electrum client.
-     * Connects only once on the first call.
+     * Connects only once on the first call, retries next server if disconnected.
      */
     static async getClient(): Promise<ElectrumClient<any>> {
         // 1. Return existing instance if ready
@@ -70,35 +77,71 @@ class ElectrumManager {
 
         // 3. Start new connection
         this.connectionPromise = (async () => {
-            try {
-                console.log('[ElectrumManager] Initializing connection to Chipnet...');
+            let attempts = 0;
+            const maxAttempts = FALLBACK_SERVERS.length;
 
-                // USER REQUIREMENT: Pass hostname ONLY. No protocol, no port.
-                // The library interprets this and manages the transport.
-                // Switching to Chipnet (Testnet4) as it is the current standard for BCH development.
-                const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', 'chipnet.imaginary.cash');
+            while (attempts < maxAttempts) {
+                const server = FALLBACK_SERVERS[this.currentServerIndex];
+                try {
+                    console.log(`[ElectrumManager] Initializing connection to Chipnet via ${server}...`);
 
-                await client.connect();
-                console.log('[ElectrumManager] Connected successfully.');
+                    const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', server);
 
-                this.instance = client;
+                    await client.connect();
+                    console.log(`[ElectrumManager] Connected successfully to ${server}.`);
 
-                // Cleanup on disconnect
-                client.on('disconnected', () => {
-                    console.warn('[ElectrumManager] Disconnected. Clearing instance.');
-                    this.instance = null;
-                    this.connectionPromise = null;
-                });
+                    this.instance = client;
 
-                return client;
-            } catch (error) {
-                console.error('[ElectrumManager] Critical Connection Failure:', error);
-                this.connectionPromise = null;
-                throw error;
+                    // Cleanup on disconnect
+                    client.on('disconnected', () => {
+                        console.warn(`[ElectrumManager] Disconnected from ${server}. Clearing instance.`);
+                        this.instance = null;
+                        this.connectionPromise = null;
+                        // Rotate server on disconnect
+                        this.currentServerIndex = (this.currentServerIndex + 1) % FALLBACK_SERVERS.length;
+                    });
+
+                    return client;
+                } catch (error) {
+                    console.error(`[ElectrumManager] Connection Failure on ${server}:`, error);
+                    this.currentServerIndex = (this.currentServerIndex + 1) % FALLBACK_SERVERS.length;
+                    attempts++;
+                }
             }
+
+            this.connectionPromise = null;
+            throw new Error("[ElectrumManager] Critical Failure. All fallback servers exhausted.");
         })();
 
         return this.connectionPromise;
+    }
+
+    /**
+     * Resilient Request Sender
+     * Wraps a request in a retry loop. Reconnects on failure.
+     */
+    static async request(method: string, ...params: any[]): Promise<any> {
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                const client = await this.getClient();
+                return await client.request(method, ...params);
+            } catch (error: any) {
+                console.warn(`[ElectrumManager] Request failed: ${method}. Retries left: ${retries - 1}`, error);
+
+                // If it's a disconnect error, clear the instance so getClient forces a reconnect and rotates
+                if (error.message && error.message.includes('disconnected server')) {
+                    this.instance = null;
+                    this.connectionPromise = null;
+                    this.currentServerIndex = (this.currentServerIndex + 1) % FALLBACK_SERVERS.length;
+                }
+
+                retries--;
+                if (retries === 0) throw error;
+                // Wait briefly before retry
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
     }
 }
 
@@ -109,9 +152,8 @@ class ElectrumManager {
  */
 export async function getBlockHeight(): Promise<number> {
     try {
-        const client = await ElectrumManager.getClient();
         // Electrum headers.subscribe returns the current height on first call
-        const header = await client.request('blockchain.headers.subscribe') as any;
+        const header = await ElectrumManager.request('blockchain.headers.subscribe') as any;
         return header.height;
     } catch (error) {
         console.error('[blockchainService] Height fetch error:', error);
@@ -124,12 +166,10 @@ export async function getBlockHeight(): Promise<number> {
  */
 export async function fetchUTXOs(address: string): Promise<UTXO[]> {
     try {
-        const client = await ElectrumManager.getClient();
-
         const scriptHash = addressToScriptHash(address);
 
-        // Use generic request, library handles ID and framing
-        const listUnspent = await client.request('blockchain.scripthash.listunspent', scriptHash) as any[];
+        // Use resilient request wrapper
+        const listUnspent = await ElectrumManager.request('blockchain.scripthash.listunspent', scriptHash) as any[];
 
         return listUnspent.map(u => ({
             txid: u.tx_hash,
@@ -271,40 +311,64 @@ export async function pollForFunding(
 /**
  * Subscribe to address changes using Electrum scripthash.subscribe.
  * Calls the callback whenever there is a change.
+ * Includes auto-recovery on disconnects.
  */
 export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO[]) => void): Promise<() => void> {
-    const client = await ElectrumManager.getClient();
     const scriptHash = addressToScriptHash(address);
+    let isSubscribed = true;
+    let currentClient: ElectrumClient<any> | null = null;
+    let handleUpdate: any = null;
 
-    const handleUpdate = async (update: any) => {
-        // Electrum library passes { scripthash, status } or similar depending on version
-        // We fetch fresh UTXOs on any status change
-        console.log(`[Subscription] Change detected for ${address.slice(0, 8)}...`);
-        const utxos = await fetchUTXOs(address);
-        onUpdate(utxos);
+    const setupSubscription = async () => {
+        if (!isSubscribed) return;
+
+        try {
+            currentClient = await ElectrumManager.getClient();
+
+            // 1. Initial Fetch (or Re-Sync after reconnect)
+            const utxos = await fetchUTXOs(address);
+            onUpdate(utxos);
+
+            // 2. Subscribe
+            await ElectrumManager.request('blockchain.scripthash.subscribe', scriptHash);
+
+            handleUpdate = async (update: any) => {
+                console.log(`[Subscription] Change detected for ${address.slice(0, 8)}...`);
+                const freshUtxos = await fetchUTXOs(address);
+                if (isSubscribed) onUpdate(freshUtxos);
+            };
+
+            // 3. Listen for changes
+            currentClient.on('blockchain.scripthash.subscribe', handleUpdate);
+
+            // 4. Auto-Recover
+            currentClient.once('disconnected', () => {
+                if (!isSubscribed) return;
+                console.warn(`[Subscription] Disconnected on ${address.slice(0, 8)}... Attempting recovery.`);
+                // Clean up old listener
+                if (handleUpdate) currentClient?.off('blockchain.scripthash.subscribe', handleUpdate);
+                // The manager will rotate the server automatically on next getClient call.
+                // We wait briefly and then try to set up the subscription again.
+                setTimeout(setupSubscription, 2000);
+            });
+
+        } catch (e) {
+            console.error('[Subscription] Failure/Recovery Error:', e);
+            if (isSubscribed) setTimeout(setupSubscription, 5000); // Try again later
+        }
     };
 
-    try {
-        // 1. Initial Fetch
-        const initialUtxos = await fetchUTXOs(address);
-        onUpdate(initialUtxos);
+    // Kick off the initial subscription
+    setupSubscription();
 
-        // 2. Subscribe
-        await client.subscribe('blockchain.scripthash.subscribe', scriptHash);
-
-        // 3. Listen for changes
-        // The @electrum-cash/network library emits update events
-        client.on('blockchain.scripthash.subscribe', handleUpdate);
-
-        // Return unsubscribe function
-        return () => {
-            console.log(`[Subscription] Unsubscribing from ${address.slice(0, 8)}...`);
-            client.off('blockchain.scripthash.subscribe', handleUpdate);
-        };
-    } catch (e) {
-        console.error('[Subscription] Failure:', e);
-        return () => { };
-    }
+    // Return true unsubscribe function
+    return () => {
+        console.log(`[Subscription] Unsubscribing from ${address.slice(0, 8)}...`);
+        isSubscribed = false;
+        if (currentClient && handleUpdate) {
+            currentClient.off('blockchain.scripthash.subscribe', handleUpdate);
+        }
+    };
 }
 
 /**

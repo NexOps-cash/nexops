@@ -54,6 +54,16 @@ const App: React.FC = () => {
 
   // Load projects from Supabase when user logs in
   useEffect(() => {
+    // Render.com MCP Wakeup Ping
+    // Send a non-blocking background request to wake up the backend container
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
+    if (backendUrl) {
+      console.log('[Nexus OS] Sending wakeup ping to MCP backend...');
+      fetch(`${backendUrl}/health`)
+        .then(res => console.log('[Nexus OS] MCP Backend ready:', res.ok))
+        .catch(err => console.warn('[Nexus OS] MCP Wakeup ping sent:', err.message));
+    }
+
     async function loadProjects() {
       setSyncError(null);
 

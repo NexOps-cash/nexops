@@ -413,7 +413,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
             {/* Config & Artifacts */}
             <div className={compact ? "space-y-3" : "space-y-6"}>
-                {deploymentStep === 4 && (
+                {(deploymentStep >= 4 || project?.deployedAddress) && (
                     <Card className="border-green-500/30 bg-green-500/5 animate-in slide-in-from-top-4 duration-500 overflow-hidden relative">
                         <div className="absolute top-0 right-0 p-2 opacity-10">
                             <Rocket className="w-12 h-12 text-green-500" />
@@ -485,130 +485,133 @@ export const Deployment: React.FC<DeploymentProps> = ({
                     </Card>
                 )}
 
-                <Card>
-                    <h3 className="text-lg font-medium text-white mb-4 flex items-center">
-                        <Server className="w-5 h-5 mr-2 text-nexus-purple" />
-                        Network & Compiler
-                    </h3>
-                    <div className={compact ? "space-y-3 mb-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4"}>
-                        <div>
-                            <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Target Network</label>
-                            <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
-                                Bitcoin Cash (Testnet)
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Optimization</label>
-                            <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
-                                Enabled (Runs: 200)
-                            </div>
-                        </div>
-                    </div>
-
-                    {!artifact ? (
-                        <div className="text-center py-8 bg-nexus-900/30 rounded border border-dashed border-nexus-700 transition-all">
-                            {compilationError ? (
-                                <div className="space-y-4">
-                                    <div className="mx-auto w-12 h-12 bg-red-900/30 rounded-full flex items-center justify-center border border-red-500/30">
-                                        <AlertCircle className="w-6 h-6 text-red-500" />
-                                    </div>
-                                    <h4 className="text-red-400 font-bold">Compilation Failed</h4>
-                                    <div className="p-3 bg-red-900/20 text-red-300 text-xs border border-red-800 rounded text-left font-mono whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                                        {compilationError}
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row justify-center gap-3">
-                                        <Button variant="secondary" onClick={handlePrepare}>Retry Compilation</Button>
-                                        <Button
-                                            variant="secondary"
-                                            className="border-nexus-cyan text-nexus-cyan hover:bg-nexus-cyan/10"
-                                            icon={<Wand2 className="w-4 h-4" />}
-                                            onClick={handleAutoFix}
-                                            isLoading={isFixing}
-                                        >
-                                            Auto-Fix Error
-                                        </Button>
-                                    </div>
+                {/* Hide Network & Compiler if contract is funded/deployed */}
+                {!(deploymentStep >= 4 || project?.deployedAddress) && (
+                    <Card>
+                        <h3 className="text-lg font-medium text-white mb-4 flex items-center">
+                            <Server className="w-5 h-5 mr-2 text-nexus-purple" />
+                            Network & Compiler
+                        </h3>
+                        <div className={compact ? "space-y-3 mb-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4"}>
+                            <div>
+                                <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Target Network</label>
+                                <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
+                                    Bitcoin Cash (Testnet)
                                 </div>
-                            ) : (
-                                <>
-                                    <Button onClick={handlePrepare} isLoading={isCompiling} icon={<FileCode className="w-4 h-4" />}>
-                                        Prepare Deployment Artifacts
-                                    </Button>
-                                    <p className="mt-2 text-xs text-gray-500">Compiles code and verifies deterministic bytecode.</p>
-                                </>
-                            )}
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 uppercase font-bold mb-1 block">Optimization</label>
+                                <div className="bg-nexus-900 border border-nexus-700 text-gray-300 rounded px-3 py-2 text-sm">
+                                    Enabled (Runs: 200)
+                                </div>
+                            </div>
                         </div>
-                    ) : (
-                        <div className="space-y-4 animate-in fade-in duration-300">
-                            <div className="flex items-center justify-between bg-green-900/10 border border-green-800 p-2 rounded px-3">
-                                <span className="text-green-400 text-xs font-bold flex items-center">
-                                    <CheckCircle className="w-3 h-3 mr-1.5" /> Compiled Successfully
-                                </span>
-                                {isDeterminismVerified && (
-                                    <span className="text-nexus-cyan text-xs font-bold flex items-center" title="Re-compiled and verified bytecode consistency">
-                                        <Repeat className="w-3 h-3 mr-1.5" /> Determinism Verified
-                                    </span>
+
+                        {!artifact ? (
+                            <div className="text-center py-8 bg-nexus-900/30 rounded border border-dashed border-nexus-700 transition-all">
+                                {compilationError ? (
+                                    <div className="space-y-4">
+                                        <div className="mx-auto w-12 h-12 bg-red-900/30 rounded-full flex items-center justify-center border border-red-500/30">
+                                            <AlertCircle className="w-6 h-6 text-red-500" />
+                                        </div>
+                                        <h4 className="text-red-400 font-bold">Compilation Failed</h4>
+                                        <div className="p-3 bg-red-900/20 text-red-300 text-xs border border-red-800 rounded text-left font-mono whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                                            {compilationError}
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row justify-center gap-3">
+                                            <Button variant="secondary" onClick={handlePrepare}>Retry Compilation</Button>
+                                            <Button
+                                                variant="secondary"
+                                                className="border-nexus-cyan text-nexus-cyan hover:bg-nexus-cyan/10"
+                                                icon={<Wand2 className="w-4 h-4" />}
+                                                onClick={handleAutoFix}
+                                                isLoading={isFixing}
+                                            >
+                                                Auto-Fix Error
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <Button onClick={handlePrepare} isLoading={isCompiling} icon={<FileCode className="w-4 h-4" />}>
+                                            Prepare Deployment Artifacts
+                                        </Button>
+                                        <p className="mt-2 text-xs text-gray-500">Compiles code and verifies deterministic bytecode.</p>
+                                    </>
                                 )}
                             </div>
+                        ) : (
+                            <div className="space-y-4 animate-in fade-in duration-300">
+                                <div className="flex items-center justify-between bg-green-900/10 border border-green-800 p-2 rounded px-3">
+                                    <span className="text-green-400 text-xs font-bold flex items-center">
+                                        <CheckCircle className="w-3 h-3 mr-1.5" /> Compiled Successfully
+                                    </span>
+                                    {isDeterminismVerified && (
+                                        <span className="text-nexus-cyan text-xs font-bold flex items-center" title="Re-compiled and verified bytecode consistency">
+                                            <Repeat className="w-3 h-3 mr-1.5" /> Determinism Verified
+                                        </span>
+                                    )}
+                                </div>
 
-                            {/* Constructor Inputs (In-Panel) */}
-                            <div className="bg-nexus-900/50 p-3 rounded border border-nexus-700/50 mb-4">
-                                <label className="text-xs text-gray-400 uppercase font-bold mb-3 block flex items-center">
-                                    <FileCode className="w-3 h-3 mr-1" /> Constructor Arguments
-                                </label>
-                                <ConstructorForm
-                                    inputs={artifact.constructorInputs}
-                                    values={constructorArgs}
-                                    onChange={(args, validations) => {
-                                        setConstructorArgs(args);
-                                        setConstructorValidations(validations);
-                                    }}
-                                    burnerWif={burnerWif}
-                                    burnerAddress={burnerAddress}
-                                    burnerPubkey={burnerPubkey}
-                                    onGenerateBurner={onGenerateBurner}
-                                    isGeneratingBurner={isGeneratingBurner}
+                                {/* Constructor Inputs (In-Panel) */}
+                                <div className="bg-nexus-900/50 p-3 rounded border border-nexus-700/50 mb-4">
+                                    <label className="text-xs text-gray-400 uppercase font-bold mb-3 block flex items-center">
+                                        <FileCode className="w-3 h-3 mr-1" /> Constructor Arguments
+                                    </label>
+                                    <ConstructorForm
+                                        inputs={artifact.constructorInputs}
+                                        values={constructorArgs}
+                                        onChange={(args, validations) => {
+                                            setConstructorArgs(args);
+                                            setConstructorValidations(validations);
+                                        }}
+                                        burnerWif={burnerWif}
+                                        burnerAddress={burnerAddress}
+                                        burnerPubkey={burnerPubkey}
+                                        onGenerateBurner={onGenerateBurner}
+                                        isGeneratingBurner={isGeneratingBurner}
+                                    />
+                                </div>
+
+                                {/* Artifact Preview Details */}
+                                <div>
+                                    <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
+                                        <Lock className="w-3 h-3 mr-1" /> Locking Address (Derived)
+                                    </label>
+                                    <div className="font-mono text-xs bg-nexus-900 p-2 rounded text-nexus-cyan truncate border border-nexus-700">
+                                        {derivedAddress || (artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : "Thinking...")}
+                                    </div>
+                                    <div className="mt-1 flex items-center text-[10px] text-yellow-500 font-bold bg-yellow-900/10 p-1 rounded">
+                                        <AlertCircle className="w-3 h-3 mr-1" /> WARNING: Contract is NOT live until funded.
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
+                                        <FileCode className="w-3 h-3 mr-1" /> Locking Bytecode
+                                    </label>
+                                    <div className="font-mono text-[10px] bg-black p-2 rounded text-gray-500 break-all border border-nexus-800 max-h-24 overflow-y-auto custom-scrollbar">
+                                        {artifact.bytecode}
+                                    </div>
+                                </div>
+
+
+
+                                {/* Contract Safety Panel */}
+                                <ContractSafetyPanel
+                                    artifact={artifact}
+                                    validations={constructorValidations}
+                                    derivedAddress={derivedAddress}
+                                    derivationError={derivationError}
                                 />
+
+                                <Button variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
+                                    Re-Compile & Configure
+                                </Button>
                             </div>
-
-                            {/* Artifact Preview Details */}
-                            <div>
-                                <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
-                                    <Lock className="w-3 h-3 mr-1" /> Locking Address (Derived)
-                                </label>
-                                <div className="font-mono text-xs bg-nexus-900 p-2 rounded text-nexus-cyan truncate border border-nexus-700">
-                                    {derivedAddress || (artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : "Thinking...")}
-                                </div>
-                                <div className="mt-1 flex items-center text-[10px] text-yellow-500 font-bold bg-yellow-900/10 p-1 rounded">
-                                    <AlertCircle className="w-3 h-3 mr-1" /> WARNING: Contract is NOT live until funded.
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
-                                    <FileCode className="w-3 h-3 mr-1" /> Locking Bytecode
-                                </label>
-                                <div className="font-mono text-[10px] bg-black p-2 rounded text-gray-500 break-all border border-nexus-800 max-h-24 overflow-y-auto custom-scrollbar">
-                                    {artifact.bytecode}
-                                </div>
-                            </div>
-
-
-
-                            {/* Contract Safety Panel */}
-                            <ContractSafetyPanel
-                                artifact={artifact}
-                                validations={constructorValidations}
-                                derivedAddress={derivedAddress}
-                                derivationError={derivationError}
-                            />
-
-                            <Button variant="secondary" onClick={handlePrepare} className="w-full" icon={<Repeat className="w-3 h-3" />}>
-                                Re-Compile & Configure
-                            </Button>
-                        </div>
-                    )}
-                </Card>
+                        )}
+                    </Card>
+                )}
             </div>
 
             <div className="space-y-6">
@@ -617,260 +620,208 @@ export const Deployment: React.FC<DeploymentProps> = ({
                   temporary "connect wallet" full screen replacement, let's keep the Action list active 
                   AND initiate connect if not connected when they try to deploy/fund.
                 */}
-                <Card>
-                    <h3 className="text-lg font-medium text-white mb-4 flex items-center">
-                        <Rocket className="w-5 h-5 mr-2 text-nexus-cyan" />
-                        Deployment Action
-                    </h3>
+                {!(deploymentStep >= 4 || project?.deployedAddress) && (
+                    <Card>
+                        <h3 className="text-lg font-medium text-white mb-4 flex items-center">
+                            <Rocket className="w-5 h-5 mr-2 text-nexus-cyan" />
+                            Deployment Action
+                        </h3>
 
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-nexus-800 p-3 rounded border border-nexus-700">
-                            <div className="text-sm">
-                                <p className="text-gray-400">Contract Name</p>
-                                <p className="font-mono text-white truncate max-w-[150px]">{project.name}</p>
-                            </div>
-                            <Badge variant={isAuditPassed ? 'success' : 'high'}>
-                                Audit: {project.auditReport?.score || 'N/A'}
-                            </Badge>
-                        </div>
-
-                        {(!isAuditPassed && wcSession) && (
-                            <div className="p-4 bg-red-900/10 border border-red-900/50 rounded text-center">
-                                <ShieldAlert className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                                <h4 className="text-red-400 font-bold mb-1">Deployment Blocked</h4>
-                                <p className="text-xs text-red-300">
-                                    Security score is below 80/100. <br />
-                                    Return to Auditor to fix vulnerabilities.
-                                </p>
-                            </div>
-                        )}
-
-                        {/* Optional Wallet Connection Bar */}
                         <div className="space-y-4">
-                            {!wcSession ? (
-                                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center backdrop-blur-md">
-                                    <div className="flex justify-between items-center w-full mb-3">
-                                        <div className="flex items-center space-x-2 text-nexus-cyan text-sm font-bold uppercase tracking-widest">
-                                            <Wallet className="w-4 h-4" />
-                                            <span>Optional Wallet</span>
-                                        </div>
-                                    </div>
-                                    <Button
-                                        variant="glass"
-                                        className="w-full py-2 text-xs border-nexus-cyan/30 hover:bg-nexus-cyan/10"
-                                        onClick={handleConnectWC}
-                                        icon={isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                                        disabled={isConnecting}
-                                    >
-                                        {isConnecting ? 'Linking...' : 'Connect Web3 Wallet'}
-                                    </Button>
+                            <div className="flex justify-between items-center bg-nexus-800 p-3 rounded border border-nexus-700">
+                                <div className="text-sm">
+                                    <p className="text-gray-400">Contract Name</p>
+                                    <p className="font-mono text-white truncate max-w-[150px]">{project.name}</p>
                                 </div>
-                            ) : (
-                                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center backdrop-blur-md">
-                                    <div className="flex items-center space-x-3">
-                                        {wcSession?.peer?.metadata?.icons?.[0] ? (
-                                            <img src={wcSession.peer.metadata.icons[0]} alt="Wallet" className="w-10 h-10 rounded-full border border-nexus-cyan/30" />
+                                <Badge variant={isAuditPassed ? 'success' : 'high'}>
+                                    Audit: {project.auditReport?.score || 'N/A'}
+                                </Badge>
+                            </div>
+
+                            {(!isAuditPassed && wcSession) && (
+                                <div className="p-4 bg-red-900/10 border border-red-900/50 rounded text-center">
+                                    <ShieldAlert className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                                    <h4 className="text-red-400 font-bold mb-1">Deployment Blocked</h4>
+                                    <p className="text-xs text-red-300">
+                                        Security score is below 80/100. <br />
+                                        Return to Auditor to fix vulnerabilities.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Optional Wallet Connection Bar */}
+                            <div className="space-y-4">
+                                {!wcSession ? (
+                                    <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center backdrop-blur-md">
+                                        <div className="flex justify-between items-center w-full mb-3">
+                                            <div className="flex items-center space-x-2 text-nexus-cyan text-sm font-bold uppercase tracking-widest">
+                                                <Wallet className="w-4 h-4" />
+                                                <span>Optional Wallet</span>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            variant="glass"
+                                            className="w-full py-2 text-xs border-nexus-cyan/30 bg-black/40 text-gray-500 cursor-not-allowed group relative overflow-hidden"
+                                            disabled={true}
+                                            icon={<Lock className="w-4 h-4 text-gray-500 group-hover:text-nexus-purple transition-colors" />}
+                                        >
+                                            <span className="opacity-60">Connect Web3 Wallet</span>
+                                            <span className="absolute inset-0 flex items-center justify-center bg-black/80 text-nexus-purple font-black tracking-[0.2em] transform translate-y-full group-hover:translate-y-0 transition-transform duration-200">
+                                                COMING SOON
+                                            </span>
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center backdrop-blur-md">
+                                        <div className="flex items-center space-x-3">
+                                            {wcSession?.peer?.metadata?.icons?.[0] ? (
+                                                <img src={wcSession.peer.metadata.icons[0]} alt="Wallet" className="w-10 h-10 rounded-full border border-nexus-cyan/30" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-nexus-cyan/20 flex items-center justify-center">
+                                                    <Wallet className="w-5 h-5 text-nexus-cyan" />
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-xs text-nexus-cyan font-bold uppercase tracking-widest mb-0.5">Connected</p>
+                                                <h4 className="text-white font-medium text-sm">
+                                                    {wcSession?.peer?.metadata?.name || "Unknown Wallet"}
+                                                </h4>
+                                                <div className="flex items-center mt-1 space-x-2">
+                                                    <Badge variant="info" className="text-[10px] py-0 px-1.5 h-4">Chipnet</Badge>
+                                                    <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
+                                                        {walletAddress}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <Button variant="glass" onClick={handleDisconnectWC} className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full">
+                                            <XCircle className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {!artifact ? (
+                                    <div className="text-center p-8 bg-nexus-900/50 border border-dashed border-nexus-700 rounded-xl">
+                                        <FileCode className="w-8 h-8 text-gray-400 mx-auto mb-3 opacity-30" />
+                                        <p className="text-sm text-gray-500 uppercase font-black tracking-widest">Artifacts Not Compiled</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Deployment Phase Check */}
+                                        {/* IF artifact is configured AND derivedAddress exists, Show Funding Step right away  */}
+                                        {((deploymentStep === 2 || deploymentStep === 1) && derivedAddress) ? (
+                                            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl mt-4">
+                                                {!paymentRequestUri ? (
+                                                    // State BEFORE user clicks "Fund / Deploy"
+                                                    <div className="w-full text-center">
+                                                        <h3 className="text-xl font-bold text-white mb-2">Fund Contract Wrapper</h3>
+                                                        <p className="text-sm text-gray-400 mb-6">Contract artifacts have been prepared. The next step is to fund the generated address to make it live.</p>
+                                                        <Button
+                                                            variant="primary"
+                                                            className="w-full py-3 h-auto uppercase tracking-widest text-sm font-black"
+                                                            onClick={handleDeploy}
+                                                            isLoading={isDeploying}
+                                                        >
+                                                            Initiate Deployment
+                                                        </Button>
+                                                    </div>
+                                                ) : (
+                                                    // State AFTER user clicks Deploy (Active monitor)
+                                                    <>
+                                                        <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
+                                                            <QRCodeSVG value={paymentRequestUri} size={180} />
+                                                        </div>
+                                                        <div className="text-center space-y-1 mb-6">
+                                                            <p className="text-white font-black text-sm uppercase tracking-tighter">Funding Required</p>
+                                                            <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest leading-relaxed">Send {fundingAmount.toLocaleString()} sats to address below</p>
+                                                        </div>
+                                                        <div className="w-full bg-black/40 p-4 rounded-xl border border-white/5 mb-6 group cursor-pointer" onClick={() => {
+                                                            navigator.clipboard.writeText(derivedAddress!);
+                                                            toast.success("Address copied!");
+                                                        }}>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
+                                                                <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
+                                                            </div>
+                                                            <p className="text-nexus-cyan font-mono text-[10px] break-all leading-relaxed">
+                                                                {derivedAddress}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Funding Status */}
+                                                        <div className="w-full">
+                                                            {fundingStatus.status === 'monitoring' && (
+                                                                <div className="flex flex-col items-center space-y-3">
+                                                                    <div className="flex items-center justify-center text-nexus-cyan text-[11px] font-black uppercase tracking-widest">
+                                                                        <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                                                        Monitoring Indexer...
+                                                                    </div>
+                                                                    <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5">
+                                                                        <div
+                                                                            className="bg-nexus-cyan h-full transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
+                                                                            style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <p className="text-[10px] text-slate-400 font-bold">{fundingStatus.totalValue.toLocaleString()} / {fundingAmount.toLocaleString()} sats detected</p>
+                                                                </div>
+                                                            )}
+                                                            {fundingStatus.status === 'confirmed' && (
+                                                                <div className="flex flex-col items-center space-y-4">
+                                                                    <div className="flex items-center text-green-600 font-black uppercase tracking-widest text-sm">
+                                                                        <CheckCircle className="w-5 h-5 mr-2" />
+                                                                        Contract Live!
+                                                                    </div>
+                                                                    <Button onClick={() => onDeployed?.(derivedAddress!, artifact, constructorArgs, fundingUtxo!)} className="w-full py-4 bg-nexus-blue hover:bg-blue-600 shadow-[0_4px_15px_rgba(37,99,235,0.3)] font-black uppercase tracking-widest text-xs">
+                                                                        Enter Transaction Builder
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                            {fundingStatus.status === 'error' && (
+                                                                <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
+                                                                    {fundingStatus.error || 'Connection Timeout'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-nexus-cyan/20 flex items-center justify-center">
-                                                <Wallet className="w-5 h-5 text-nexus-cyan" />
+                                            <div className="space-y-4">
+                                                <div className="bg-nexus-900 border border-nexus-700/50 p-4 rounded-xl">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Initial Balance</label>
+                                                        <span className="text-xs font-mono text-white">{fundingAmount.toLocaleString()} Sats</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="1000"
+                                                        max="100000"
+                                                        step="1000"
+                                                        value={fundingAmount}
+                                                        onChange={(e) => setFundingAmount(Number(e.target.value))}
+                                                        className="w-full accent-nexus-cyan h-1.5 bg-nexus-800 rounded-lg appearance-none cursor-pointer"
+                                                    />
+                                                </div>
+
+                                                <Button
+                                                    onClick={handleDeploy}
+                                                    disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
+                                                    isLoading={isDeploying}
+                                                    className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
+                                                    icon={<Rocket className="w-5 h-5" />}
+                                                >
+                                                    {!isAuditPassed ? "Audit Failed" : "Launch Contract"}
+                                                </Button>
                                             </div>
                                         )}
-                                        <div>
-                                            <p className="text-xs text-nexus-cyan font-bold uppercase tracking-widest mb-0.5">Connected</p>
-                                            <h4 className="text-white font-medium text-sm">
-                                                {wcSession?.peer?.metadata?.name || "Unknown Wallet"}
-                                            </h4>
-                                            <div className="flex items-center mt-1 space-x-2">
-                                                <Badge variant="info" className="text-[10px] py-0 px-1.5 h-4">Chipnet</Badge>
-                                                <span className="text-[10px] text-gray-400 font-mono truncate max-w-[100px]">
-                                                    {walletAddress}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <Button variant="glass" onClick={handleDisconnectWC} className="h-8 w-8 p-0 border-red-500/30 hover:bg-red-500/20 text-red-400 rounded-full">
-                                        <XCircle className="w-4 h-4" />
-                                    </Button>
-                                </div>
-                            )}
-
-                            {!artifact ? (
-                                <div className="text-center p-8 bg-nexus-900/50 border border-dashed border-nexus-700 rounded-xl">
-                                    <FileCode className="w-8 h-8 text-gray-400 mx-auto mb-3 opacity-30" />
-                                    <p className="text-sm text-gray-500 uppercase font-black tracking-widest">Artifacts Not Compiled</p>
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Deployment Phase Check */}
-                                    {/* IF artifact is configured AND derivedAddress exists, Show Funding Step right away  */}
-                                    {((deploymentStep === 2 || deploymentStep === 1) && derivedAddress) ? (
-                                        <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl mt-4">
-                                            {!paymentRequestUri ? (
-                                                // State BEFORE user clicks "Fund / Deploy"
-                                                <div className="w-full text-center">
-                                                    <h3 className="text-xl font-bold text-white mb-2">Fund Contract Wrapper</h3>
-                                                    <p className="text-sm text-gray-400 mb-6">Contract artifacts have been prepared. The next step is to fund the generated address to make it live.</p>
-                                                    <Button
-                                                        variant="primary"
-                                                        className="w-full py-3 h-auto uppercase tracking-widest text-sm font-black"
-                                                        onClick={handleDeploy}
-                                                        isLoading={isDeploying}
-                                                    >
-                                                        Initiate Deployment
-                                                    </Button>
-                                                </div>
-                                            ) : (
-                                                // State AFTER user clicks Deploy (Active monitor)
-                                                <>
-                                                    <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
-                                                        <QRCodeSVG value={paymentRequestUri} size={180} />
-                                                    </div>
-                                                    <div className="text-center space-y-1 mb-6">
-                                                        <p className="text-white font-black text-sm uppercase tracking-tighter">Funding Required</p>
-                                                        <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest leading-relaxed">Send {fundingAmount.toLocaleString()} sats to address below</p>
-                                                    </div>
-                                                    <div className="w-full bg-black/40 p-4 rounded-xl border border-white/5 mb-6 group cursor-pointer" onClick={() => {
-                                                        navigator.clipboard.writeText(derivedAddress!);
-                                                        toast.success("Address copied!");
-                                                    }}>
-                                                        <div className="flex justify-between items-center mb-1">
-                                                            <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Contract Address</span>
-                                                            <Copy className="w-3 h-3 text-slate-600 group-hover:text-nexus-cyan transition-colors" />
-                                                        </div>
-                                                        <p className="text-nexus-cyan font-mono text-[10px] break-all leading-relaxed">
-                                                            {derivedAddress}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Funding Status */}
-                                                    <div className="w-full">
-                                                        {fundingStatus.status === 'monitoring' && (
-                                                            <div className="flex flex-col items-center space-y-3">
-                                                                <div className="flex items-center justify-center text-nexus-cyan text-[11px] font-black uppercase tracking-widest">
-                                                                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                                                                    Monitoring Indexer...
-                                                                </div>
-                                                                <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5">
-                                                                    <div
-                                                                        className="bg-nexus-cyan h-full transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"
-                                                                        style={{ width: `${Math.min((fundingStatus.totalValue / fundingAmount) * 100, 100)}%` }}
-                                                                    />
-                                                                </div>
-                                                                <p className="text-[10px] text-slate-400 font-bold">{fundingStatus.totalValue.toLocaleString()} / {fundingAmount.toLocaleString()} sats detected</p>
-                                                            </div>
-                                                        )}
-                                                        {fundingStatus.status === 'confirmed' && (
-                                                            <div className="flex flex-col items-center space-y-4">
-                                                                <div className="flex items-center text-green-600 font-black uppercase tracking-widest text-sm">
-                                                                    <CheckCircle className="w-5 h-5 mr-2" />
-                                                                    Contract Live!
-                                                                </div>
-                                                                <Button onClick={() => onDeployed?.(derivedAddress!, artifact, constructorArgs, fundingUtxo!)} className="w-full py-4 bg-nexus-blue hover:bg-blue-600 shadow-[0_4px_15px_rgba(37,99,235,0.3)] font-black uppercase tracking-widest text-xs">
-                                                                    Enter Transaction Builder
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                        {fundingStatus.status === 'error' && (
-                                                            <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
-                                                                {fundingStatus.error || 'Connection Timeout'}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            <div className="bg-nexus-900 border border-nexus-700/50 p-4 rounded-xl">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Initial Balance</label>
-                                                    <span className="text-xs font-mono text-white">{fundingAmount.toLocaleString()} Sats</span>
-                                                </div>
-                                                <input
-                                                    type="range"
-                                                    min="1000"
-                                                    max="100000"
-                                                    step="1000"
-                                                    value={fundingAmount}
-                                                    onChange={(e) => setFundingAmount(Number(e.target.value))}
-                                                    className="w-full accent-nexus-cyan h-1.5 bg-nexus-800 rounded-lg appearance-none cursor-pointer"
-                                                />
-                                            </div>
-
-                                            <Button
-                                                onClick={handleDeploy}
-                                                disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
-                                                isLoading={isDeploying}
-                                                className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
-                                                icon={<Rocket className="w-5 h-5" />}
-                                            >
-                                                {!isAuditPassed ? "Audit Failed" : "Launch Contract"}
-                                            </Button>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </Card>
-
-                {/* Deployment Details — always visible when funded */}
-                {(deploymentStep >= 4 || project?.deployedAddress) && (
-                    <Card className="border-green-500/20 bg-green-500/5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-black text-green-400 uppercase tracking-widest flex items-center gap-2">
-                                <ShieldCheck className="w-4 h-4" />
-                                Contract Deployed
-                            </h3>
-                            <span className="text-[9px] font-black uppercase tracking-widest text-green-500/60 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
-                                LIVE ON CHIPNET
-                            </span>
-                        </div>
-                        <div className="space-y-3">
-                            {/* Address */}
-                            <div>
-                                <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">Contract Address</p>
-                                <div
-                                    className="font-mono text-[10px] bg-black/40 border border-white/5 p-2 rounded-lg text-nexus-cyan break-all cursor-pointer group hover:border-nexus-cyan/30 transition-colors"
-                                    onClick={() => { navigator.clipboard.writeText(derivedAddress || project?.deployedAddress || ''); toast.success('Address copied!'); }}
-                                >
-                                    {derivedAddress || project?.deployedAddress}
-                                    <Copy className="w-3 h-3 inline ml-1.5 opacity-0 group-hover:opacity-50 transition-opacity" />
-                                </div>
+                                    </>
+                                )}
                             </div>
-                            {/* Stats row */}
-                            <div className="grid grid-cols-3 gap-2">
-                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
-                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Block</p>
-                                    <p className="text-xs font-mono text-white font-bold">{fundingUtxo?.height ?? '—'}</p>
-                                </div>
-                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
-                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Balance</p>
-                                    <p className="text-xs font-mono text-green-400 font-bold">{fundingUtxo ? `${fundingUtxo.value.toLocaleString()} sats` : '—'}</p>
-                                </div>
-                                <div className="bg-black/30 border border-white/5 rounded-lg p-2 text-center">
-                                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-0.5">Network</p>
-                                    <p className="text-xs font-mono text-nexus-cyan font-bold">Chipnet</p>
-                                </div>
-                            </div>
-                            {/* TxID */}
-                            {(txHash || fundingUtxo?.txid) && (
-                                <div>
-                                    <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest mb-1">Funding Tx</p>
-                                    <a
-                                        href={`https://chipnet.imaginary.cash/tx/${txHash || fundingUtxo?.txid}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="font-mono text-[10px] bg-black/40 border border-white/5 p-2 rounded-lg text-slate-400 hover:text-nexus-cyan break-all flex items-center gap-1 transition-colors"
-                                    >
-                                        <span className="truncate">{(txHash || fundingUtxo?.txid)?.slice(0, 32)}…</span>
-                                        <ExternalLink className="w-3 h-3 shrink-0" />
-                                    </a>
-                                </div>
-                            )}
                         </div>
                     </Card>
                 )}
+
+                {/* Duplicate deployed block removed */}
 
                 {/* Log Console */}
 
