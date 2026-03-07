@@ -8,6 +8,7 @@ import { LandingPage } from './pages/LandingPage';
 import { CreateProject } from './pages/CreateProject';
 import { RegistryPage } from './pages/RegistryPage';
 import { WizardPage } from './pages/WizardPage';
+import { Documentation } from './pages/Documentation';
 import { PublishModal } from './components/PublishModal';
 import { TopNav } from './components/TopNav';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
@@ -15,7 +16,7 @@ import { Toaster, toast } from 'react-hot-toast';
 import { SettingsModal } from './components/SettingsModal';
 import { BYOKSettings } from './types';
 
-type ViewState = 'home' | 'creator' | 'workspace' | 'wizard' | 'registry';
+type ViewState = 'home' | 'creator' | 'workspace' | 'wizard' | 'registry' | 'docs';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
@@ -385,6 +386,10 @@ const App: React.FC = () => {
 
         {currentView === 'registry' && (
           <RegistryPage onLoadContract={handleLoadFromRegistry} />
+        )}
+
+        {currentView === 'docs' && (
+          <Documentation />
         )}
 
         {activeProject && (

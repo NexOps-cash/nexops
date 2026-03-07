@@ -35,17 +35,15 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncin
                 <span className="text-white font-black tracking-tighter text-xl">NexOps</span>
             </div>
 
-            {/* Center: Nav Links */}
             <div className="hidden md:flex items-center space-x-8">
                 {navItems.map((item) => (
                     <button
                         key={item.id}
-                        onClick={() => item.id !== 'docs' && onNavigate(item.id)}
+                        onClick={() => onNavigate(item.id)}
                         className={`text-sm font-medium transition-colors hover:text-white flex items-center ${activeView === item.id ? 'text-nexus-cyan' : 'text-slate-400'
                             }`}
                     >
                         {item.label}
-                        {item.id === 'docs' && <span className="ml-1 text-[10px] opacity-50 uppercase tracking-tighter">(Soon)</span>}
                     </button>
                 ))}
             </div>
