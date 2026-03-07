@@ -164,9 +164,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
 
                     {/* Row 1: Core IDE (Full Width Dominant) */}
-                    <button
-                        onClick={onNavigateCreator}
-                        className="md:col-span-2 group relative p-10 bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-nexus-cyan/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] text-left overflow-hidden"
+                    <div
+                        onClick={() => onSelectProject(projects[0]?.id || '')} // Fallback logic or similar
+                        className="md:col-span-2 group relative p-10 bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-nexus-cyan/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] text-left overflow-hidden cursor-pointer"
                     >
                         <div className="absolute top-0 right-0 w-96 h-96 bg-nexus-cyan/10 blur-[100px] -mr-32 -mt-32 pointer-events-none rounded-full" />
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 relative z-10">
@@ -198,12 +198,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                                 </div>
                             </div>
                         </div>
-                    </button>
+                    </div>
 
                     {/* Row 2: Wizard (Secondary) */}
-                    <button
+                    <div
                         onClick={onNavigateWizard}
-                        className="group relative p-8 bg-white/[0.02] backdrop-blur-lg border border-white/5 hover:border-nexus-purple/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_25px_rgba(139,92,246,0.1)] text-left overflow-hidden"
+                        className="group relative p-8 bg-white/[0.02] backdrop-blur-lg border border-white/5 hover:border-nexus-purple/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_25px_rgba(139,92,246,0.1)] text-left overflow-hidden cursor-pointer"
                     >
                         <div className="absolute top-0 right-0 w-48 h-48 bg-nexus-purple/5 blur-3xl -mr-16 -mt-16 pointer-events-none rounded-full" />
                         <div className="w-14 h-14 rounded-xl bg-nexus-purple/10 border border-nexus-purple/20 flex items-center justify-center mb-6 group-hover:bg-nexus-purple/20 transition-all">
@@ -216,12 +216,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         <div className="text-nexus-purple font-bold text-sm tracking-widest uppercase flex items-center group-hover:gap-1 transition-all">
                             Launch Wizard (Beta) <ArrowRight className="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                         </div>
-                    </button>
+                    </div>
 
                     {/* Row 2: Registry (Secondary) */}
-                    <button
+                    <div
                         onClick={onNavigateRegistry}
-                        className="group relative p-8 bg-white/[0.02] backdrop-blur-lg border border-white/5 hover:border-green-400/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_25px_rgba(16,185,129,0.1)] text-left overflow-hidden"
+                        className="group relative p-8 bg-white/[0.02] backdrop-blur-lg border border-white/5 hover:border-green-400/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_25px_rgba(16,185,129,0.1)] text-left overflow-hidden cursor-pointer"
                     >
                         <div className="absolute top-0 right-0 w-48 h-48 bg-green-400/5 blur-3xl -mr-16 -mt-16 pointer-events-none rounded-full" />
                         <div className="w-14 h-14 rounded-xl bg-green-400/10 border border-green-400/20 flex items-center justify-center mb-6 group-hover:bg-green-400/20 transition-all">
@@ -234,7 +234,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         <div className="text-green-400 font-bold text-sm tracking-widest uppercase flex items-center group-hover:gap-1 transition-all">
                             Explore Registry <ArrowRight className="ml-2 w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                         </div>
-                    </button>
+                    </div>
                 </div>
 
                 {/* Legacy Project List Section */}

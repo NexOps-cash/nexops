@@ -53,6 +53,21 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction,
     };
 
     const handleItemClick = (item: string) => {
+        if (item === 'Documentation') {
+            window.open('https://docs.nexops.cash', '_blank');
+            setActiveMenu(null);
+            return;
+        }
+        if (item === 'Publish to Registry') {
+            onAction(item);
+            setActiveMenu(null);
+            return;
+        }
+        if (item === 'About NexOps') {
+            window.location.href = 'https://app.nexops.cash';
+            setActiveMenu(null);
+            return;
+        }
         if (item !== '---') {
             onAction(item);
             setActiveMenu(null);

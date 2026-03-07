@@ -14,10 +14,10 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncin
     const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
 
     const navItems = [
-        { id: 'workspace', label: 'Workspace', icon: FileCode },
-        { id: 'wizard', label: 'Wizard', icon: Zap },
-        { id: 'registry', label: 'Registry', icon: Box },
-        { id: 'docs', label: 'Docs', icon: StickyNote },
+        { id: 'workspace', label: 'Workspace' },
+        { id: 'wizard', label: 'Wizard' },
+        { id: 'registry', label: 'Registry' },
+        { id: 'docs', label: 'Docs' },
     ];
 
     return (
