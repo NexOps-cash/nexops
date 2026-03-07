@@ -426,7 +426,7 @@ export const Documentation: React.FC = () => {
                 </div>
                 <div className="p-6 bg-zinc-900 border border-white/5 rounded-2xl">
                   <h5 className="text-white font-bold text-xs mb-3 uppercase tracking-widest">Pre-Flight Rule #2</h5>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"Identity Drift Protection must be enabled for all contracts handling > 10 BCH."</p>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"Identity Drift Protection must be enabled for all contracts handling &gt; 10 BCH."</p>
                 </div>
               </div>
             </div>

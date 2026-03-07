@@ -399,17 +399,27 @@ export async function requestFaucetFunds(address: string): Promise<FaucetRespons
             body: JSON.stringify({ cashaddr: formattedAddress }),
         });
 
-        const data = await response.json();
-
-        if (data.txId) {
-            return { success: true, txid: data.txId };
-        } else if (data.error) {
-            return { success: false, error: data.error };
-        } else if (response.status === 405) {
-            return { success: false, error: 'Faucet server rejected address (405). Ensure it is a valid P2PKH Testnet address.' };
+        if (response.status === 405) {
+            return {
+                success: false,
+                error: 'Faucet rejected request (405). Possible reasons: Address already has funds, rate limit hit (1 per 15m), or invalid address format.'
+            };
         }
 
-        return { success: true }; // Assume success if no txId but no error (faucet behaves differently sometimes)
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, error: `Faucet error (${response.status}): ${errorText || 'Unknown error'}` };
+        }
+
+        const data = await response.json();
+
+        if (data.txid || data.txId) {
+            return { success: true, txid: data.txid || data.txId };
+        } else if (data.error) {
+            return { success: false, error: data.error };
+        }
+
+        return { success: true };
     } catch (error: any) {
         console.error("Faucet error:", error);
         return { success: false, error: 'Funding API unreachable. Check network connection.' };
