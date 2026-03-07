@@ -102,66 +102,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             <div className="max-w-6xl w-full mx-auto p-12 space-y-24 relative z-10">
 
-                {/* 1. Protocol Hero Section */}
-                <div className="text-center space-y-6 pt-10 pb-12 relative overflow-hidden">
-                    <div className="space-y-2 relative z-10">
-                        {/* Layered Depth: BCH Watermark & Radial Glow */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-green-500/[0.03] blur-[150px] pointer-events-none -z-10" />
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-nexus-cyan/5 blur-[80px] pointer-events-none -z-10" />
-
-                        {/* Subtle BCH SVG Watermark */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[60%] w-32 h-32 text-green-500/[0.04] pointer-events-none -z-10">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-4-11h8v2h-8zM8 11h8v2H8zm0 2h5v2H8z" />
-                            </svg>
-                        </div>
-
-                        <h1
-                            className="text-6xl md:text-7xl font-black text-white tracking-tighter leading-[0.9]"
-                            style={{ textShadow: '0 0 40px rgba(0,227,165,0.15)' }}
-                        >
-                            NexOps
-                        </h1>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-400 tracking-tighter leading-[0.9] opacity-90">
-                            Deterministic Contract Infrastructure
-                        </h2>
-                        <h3 className="text-4xl md:text-5xl font-black text-white tracking-tighter leading-[0.9]">
-                            for Bitcoin Cash
-                        </h3>
-                    </div>
-
-                    <div className="space-y-6">
-                        <p className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto font-medium leading-relaxed">
-                            Build. Verify. Publish. Securely.<br />
-                            <span className="text-slate-400/80 text-base">A security-first platform for creating and distributing audited CashScript contracts.</span>
-                        </p>
-
-                        {/* Enhanced Built for BCH Badge */}
-                        <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-green-500/10 backdrop-blur-md border border-green-500/20 text-[10px] uppercase tracking-[0.25em] font-black text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.1)] animate-in zoom-in-95 duration-700">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-400 mr-2 animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.5)]" />
-                            Built for BCH
-                        </div>
-                    </div>
-                </div>
-
-                {/* 5. Protocol Status Strip */}
-                <div className="border-y border-white/5 py-5 flex flex-wrap justify-center gap-x-12 gap-y-4">
-                    <div className="flex items-center text-[10px] md:text-xs font-mono text-nexus-cyan uppercase tracking-[0.2em] group">
-                        <ShieldCheck className="w-3.5 h-3.5 mr-2 opacity-90 brightness-125 group-hover:text-nexus-cyan transition-colors" />
-                        <span className="opacity-70 mr-1.5 animate-pulse text-nexus-cyan">✓</span> Deterministic DSL Engine
-                    </div>
-                    <div className="flex items-center text-[10px] md:text-xs font-mono text-nexus-purple uppercase tracking-[0.2em] group">
-                        <Cpu className="w-3.5 h-3.5 mr-2 opacity-90 brightness-125 group-hover:text-nexus-purple transition-colors" />
-                        <span className="opacity-70 mr-1.5 animate-pulse text-nexus-purple">✓</span> TollGate Audit Engine v0.3
-                    </div>
-                    <div className="flex items-center text-[10px] md:text-xs font-mono text-green-400 uppercase tracking-[0.2em] group">
-                        <Database className="w-3.5 h-3.5 mr-2 opacity-90 brightness-125 group-hover:text-green-400 transition-colors" />
-                        <span className="opacity-70 mr-1.5 animate-pulse text-green-400">✓</span> Verified Contracts: <span className="ml-1 text-white group-hover:text-green-300 transition-colors"><NumberCounter target={registryCount} /></span>
-                    </div>
-                </div>
 
                 {/* 2 & 3. Asymmetric Card Hierarchy */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20 pt-10">
 
                     {/* Row 1: Core IDE (Full Width Dominant) */}
                     <div

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
 import { Project, ChainType } from './types';
 import { TopMenuBar } from './components/TopMenuBar';
@@ -18,6 +18,18 @@ import { BYOKSettings } from './types';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
+
+// Helper component to sync URL params to App state
+const WorkspaceSync: React.FC<{
+  setActiveProjectId: (id: string | null) => void;
+  children: React.ReactNode;
+}> = ({ setActiveProjectId, children }) => {
+  const { projectId } = useParams();
+  useEffect(() => {
+    if (projectId) setActiveProjectId(projectId);
+  }, [projectId, setActiveProjectId]);
+  return <>{children}</>;
+};
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -63,7 +75,7 @@ const App: React.FC = () => {
   };
   const persona = getPersona();
 
-  // Project loading from Supabase
+  // Project loading from Supabase when user logs in
   useEffect(() => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL;
     if (backendUrl) {
@@ -142,14 +154,14 @@ const App: React.FC = () => {
   const handleSelectProject = (projectId: string) => {
     setActiveProjectId(projectId);
     if (persona === 'app') navigate(`/workspace/${projectId}`);
-    else window.location.href = `https://app.nexops.cash/workspace/${projectId}`;
+    else window.location.href = `https://app.nexops.cash/#/workspace/${projectId}`;
   };
 
   const handleCreateProject = (project: Project) => {
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
     if (persona === 'app') navigate(`/workspace/${project.id}`);
-    else window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+    else window.location.href = `https://app.nexops.cash/#/workspace/${project.id}`;
   };
 
   const handleNavigate = (view: string) => {
@@ -164,9 +176,9 @@ const App: React.FC = () => {
     const targetSub = subdomainMap[view];
     const currentSub = subdomainMap[persona] || (window.location.hostname.includes('localhost') ? null : 'app');
 
-    // If crossing subdomains, use hard jump
+    // If crossing subdomains, use hard jump with HashRouter awareness
     if (targetSub && targetSub !== currentSub && !window.location.hostname.includes('localhost')) {
-      window.location.href = `https://${targetSub}.nexops.cash${view === 'workspace' && activeProjectId ? `/workspace/${activeProjectId}` : ''}`;
+      window.location.href = `https://${targetSub}.nexops.cash/#/${view === 'workspace' && activeProjectId ? `workspace/${activeProjectId}` : ''}`;
       return;
     }
 
@@ -212,7 +224,20 @@ const App: React.FC = () => {
                   <LandingPage projects={projects} onSelectProject={handleSelectProject} onNavigateCreator={() => navigate('/creator')} onNavigateWizard={() => handleNavigate('wizard')} onNavigateRegistry={() => handleNavigate('registry')} />
           } />
 
-          <Route path="/workspace/:projectId" element={activeProject ? <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} /> : <Navigate to="/" replace />} />
+          <Route path="/workspace/:projectId" element={
+            <WorkspaceSync setActiveProjectId={setActiveProjectId}>
+              {activeProject ? (
+                <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
+                  <div className="text-center space-y-4">
+                    <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
+                    <p className="opacity-50">Synchronizing Workspace...</p>
+                  </div>
+                </div>
+              )}
+            </WorkspaceSync>
+          } />
           <Route path="/creator" element={<div className="h-full w-full bg-nexus-900 overflow-auto"><CreateProject onNavigate={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></div>} />
           <Route path="/wizard" element={<WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} />} />
           <Route path="/registry" element={<RegistryPage onLoadContract={(c: any) => handleCreateProject({ ...c, id: crypto.randomUUID() })} />} />
