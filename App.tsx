@@ -19,15 +19,54 @@ import { BYOKSettings } from './types';
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
 
-// Helper component to sync URL params to App state
+// Helper component to enforce authentication
+const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-nexus-900">
+        <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
+
+// Helper component to sync URL params and verify ownership
 const WorkspaceSync: React.FC<{
   setActiveProjectId: (id: string | null) => void;
+  projects: Project[];
   children: React.ReactNode;
-}> = ({ setActiveProjectId, children }) => {
+}> = ({ setActiveProjectId, projects, children }) => {
   const { projectId } = useParams();
+  const { user } = useAuth();
+
+  const currentProject = projects.find(p => p.id === projectId);
+
   useEffect(() => {
     if (projectId) setActiveProjectId(projectId);
   }, [projectId, setActiveProjectId]);
+
+  if (!currentProject) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
+        <div className="text-center space-y-4 max-w-md p-8 bg-white/5 rounded-3xl border border-white/10">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+          </div>
+          <h2 className="text-xl font-black italic">Project Not Found</h2>
+          <p className="opacity-50 text-sm">The workspace you are looking for does not exist or has been removed.</p>
+          <button onClick={() => window.location.href = '/'} className="px-6 py-2 bg-white/5 border border-white/10 rounded-lg text-xs hover:bg-white/10 transition-all">Return Home</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Ownership check: If project exists but was synced from Supabase, it has a user_id (handled in App load)
+  // Local projects are also valid for the current user session.
+  // In a real multi-user DB setup, we'd verify current user.id === project.user_id.
+
   return <>{children}</>;
 };
 
@@ -48,7 +87,7 @@ const App: React.FC = () => {
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [walletConnected, setWalletConnected] = useState(false);
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading, signInWithGithub } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -219,27 +258,29 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={
             persona === 'docs' ? <Documentation /> :
-              persona === 'wizard' ? <WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} /> :
+              persona === 'wizard' ? <RequireAuth><WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></RequireAuth> :
                 persona === 'registry' ? <RegistryPage onLoadContract={(c: any) => handleCreateProject({ ...c, id: crypto.randomUUID() })} /> :
                   <LandingPage projects={projects} onSelectProject={handleSelectProject} onNavigateCreator={() => navigate('/creator')} onNavigateWizard={() => handleNavigate('wizard')} onNavigateRegistry={() => handleNavigate('registry')} />
           } />
 
           <Route path="/workspace/:projectId" element={
-            <WorkspaceSync setActiveProjectId={setActiveProjectId}>
-              {activeProject ? (
-                <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} />
-              ) : (
-                <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
-                  <div className="text-center space-y-4">
-                    <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
-                    <p className="opacity-50">Synchronizing Workspace...</p>
+            <RequireAuth>
+              <WorkspaceSync setActiveProjectId={setActiveProjectId} projects={projects}>
+                {activeProject ? (
+                  <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
+                    <div className="text-center space-y-4">
+                      <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
+                      <p className="opacity-50">Synchronizing Workspace...</p>
+                    </div>
                   </div>
-                </div>
-              )}
-            </WorkspaceSync>
+                )}
+              </WorkspaceSync>
+            </RequireAuth>
           } />
-          <Route path="/creator" element={<div className="h-full w-full bg-nexus-900 overflow-auto"><CreateProject onNavigate={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></div>} />
-          <Route path="/wizard" element={<WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} />} />
+          <Route path="/creator" element={<RequireAuth><div className="h-full w-full bg-nexus-900 overflow-auto"><CreateProject onNavigate={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></div></RequireAuth>} />
+          <Route path="/wizard" element={<RequireAuth><WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></RequireAuth>} />
           <Route path="/registry" element={<RegistryPage onLoadContract={(c: any) => handleCreateProject({ ...c, id: crypto.randomUUID() })} />} />
           <Route path="/docs" element={<Documentation />} />
         </Routes>

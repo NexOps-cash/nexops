@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShieldCheck, Download, Star, Code2, User, FileWarning, Eye, ChevronDown, ChevronUp, Github, Tag, Calendar, Layers, X, Copy, Check, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -9,6 +10,7 @@ interface RegistryPageProps {
 }
 
 export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) => {
+    const { user, signInWithGithub } = useAuth();
     const [searchQuery, setSearchQuery] = useState('');
     const [contracts, setContracts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -237,6 +239,10 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                                     <div className="pt-12 flex flex-col gap-4">
                                         <button
                                             onClick={() => {
+                                                if (!user) {
+                                                    signInWithGithub();
+                                                    return;
+                                                }
                                                 onLoadContract?.(selectedContract);
                                                 setSelectedContract(null);
                                             }}
