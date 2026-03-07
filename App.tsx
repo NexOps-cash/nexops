@@ -37,10 +37,10 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const WorkspaceSync: React.FC<{
   setActiveProjectId: (id: string | null) => void;
   projects: Project[];
+  projectsLoaded: boolean;
   children: React.ReactNode;
-}> = ({ setActiveProjectId, projects, children }) => {
+}> = ({ setActiveProjectId, projects, projectsLoaded, children }) => {
   const { projectId } = useParams();
-  const { user } = useAuth();
 
   const currentProject = projects.find(p => p.id === projectId);
 
@@ -48,6 +48,20 @@ const WorkspaceSync: React.FC<{
     if (projectId) setActiveProjectId(projectId);
   }, [projectId, setActiveProjectId]);
 
+  // While projects are still loading from Supabase, show a spinner instead of
+  // a false 'Project Not Found' error.
+  if (!projectsLoaded) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
+        <div className="text-center space-y-4">
+          <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
+          <p className="opacity-50 text-sm">Loading your workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Projects are loaded — if still not found, it genuinely doesn't exist for this user.
   if (!currentProject) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
@@ -56,16 +70,12 @@ const WorkspaceSync: React.FC<{
             <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
           </div>
           <h2 className="text-xl font-black italic">Project Not Found</h2>
-          <p className="opacity-50 text-sm">The workspace you are looking for does not exist or has been removed.</p>
+          <p className="opacity-50 text-sm">This workspace does not exist or you don't have access to it.</p>
           <button onClick={() => window.location.href = '/'} className="px-6 py-2 bg-white/5 border border-white/10 rounded-lg text-xs hover:bg-white/10 transition-all">Return Home</button>
         </div>
       </div>
     );
   }
-
-  // Ownership check: If project exists but was synced from Supabase, it has a user_id (handled in App load)
-  // Local projects are also valid for the current user session.
-  // In a real multi-user DB setup, we'd verify current user.id === project.user_id.
 
   return <>{children}</>;
 };
@@ -90,6 +100,9 @@ const App: React.FC = () => {
   const { user, isLoading: isAuthLoading, signInWithGithub } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Track whether we've finished loading projects from Supabase.
+  // If the user isn't logged in, we only use localStorage so it's instantly loaded.
+  const [projectsLoaded, setProjectsLoaded] = useState(!user);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublishingReg, setIsPublishingReg] = useState(false);
 
@@ -113,6 +126,11 @@ const App: React.FC = () => {
     return 'app'; // Central hub (app.nexops.cash or localhost)
   };
   const persona = getPersona();
+
+  // Reset projectsLoaded whenever user changes (e.g. logout → login)
+  useEffect(() => {
+    setProjectsLoaded(!user);
+  }, [!!user]);
 
   // Project loading from Supabase when user logs in
   useEffect(() => {
@@ -152,7 +170,10 @@ const App: React.FC = () => {
             return Array.from(localMap.values()).sort((a, b) => b.lastModified - a.lastModified);
           });
         }
-      } catch (err) { }
+      } catch (err) { } finally {
+        // Mark projects as loaded so WorkspaceSync stops showing the loading spinner
+        setProjectsLoaded(true);
+      }
     }
     loadProjects();
   }, [user]);
@@ -265,7 +286,7 @@ const App: React.FC = () => {
 
           <Route path="/workspace/:projectId" element={
             <RequireAuth>
-              <WorkspaceSync setActiveProjectId={setActiveProjectId} projects={projects}>
+              <WorkspaceSync setActiveProjectId={setActiveProjectId} projects={projects} projectsLoaded={projectsLoaded}>
                 {activeProject ? (
                   <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} />
                 ) : (
