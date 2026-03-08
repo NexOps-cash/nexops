@@ -108,7 +108,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
                     {/* Row 1: Core IDE (Full Width Dominant) */}
                     <div
-                        onClick={() => onSelectProject(projects[0]?.id || '')} // Fallback logic or similar
+                        onClick={() => projects[0] ? onSelectProject(projects[0].id) : onNavigateCreator()}
                         className="md:col-span-2 group relative p-10 bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-nexus-cyan/40 rounded-3xl transition-all duration-300 transform hover:translate-y-[-2px] hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] text-left overflow-hidden cursor-pointer"
                     >
                         <div className="absolute top-0 right-0 w-96 h-96 bg-nexus-cyan/10 blur-[100px] -mr-32 -mt-32 pointer-events-none rounded-full" />
