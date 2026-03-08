@@ -28,9 +28,9 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncin
                 onClick={() => onNavigate('home')}
             >
                 <img
-                    src="/dist/assets/Gemini_Generated_Image_3rwexy3rwexy3rwe.png"
+                    src="/logo.png"
                     alt="NexOps Logo"
-                    className="w-10 h-10 object-contain rounded-lg"
+                    className="w-9 h-9 object-contain rounded-lg"
                 />
                 <span className="text-white font-black tracking-tighter text-xl">NexOps</span>
             </div>
