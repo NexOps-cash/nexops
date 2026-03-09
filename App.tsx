@@ -347,7 +347,8 @@ const App: React.FC = () => {
           <Route path="/creator" element={<RequireAuth><div className="h-full w-full bg-nexus-900 overflow-auto"><CreateProject onNavigate={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></div></RequireAuth>} />
           <Route path="/wizard" element={<RequireAuth><WizardPage onNavigateHome={() => handleNavigate('home')} onCreateProject={handleCreateProject} /></RequireAuth>} />
           <Route path="/registry" element={<RegistryPage onLoadContract={(c: any) => handleCreateProject({ ...c, id: crypto.randomUUID() })} />} />
-          <Route path="/docs" element={<Documentation />} />
+           <Route path="/docs" element={<Documentation />} />
+          <Route path="/docs/:sectionId" element={<Documentation />} />
         </Routes>
       </div>
       <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} settings={byokSettings} onSave={setByokSettings} />

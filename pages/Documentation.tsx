@@ -1,814 +1,588 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { DocsLayout } from '../components/DocsLayout';
-import { ExternalLink, Info, AlertTriangle, CheckCircle2, Zap, Box, Shield, ChevronRight, ShieldCheck, LayoutIcon, Cpu, Terminal } from 'lucide-react';
+import {
+  Tag, Lead, SectionH2, SectionH3, Para, Code, CodeBlock, InfoBox,
+  BulletList, OrderedList, Table, Pipeline, CardGrid, Quote, PageTitle,
+  SeverityBadge, StepRow
+} from '../components/DocComponents';
 
+const G = '#00D855';
+
+// ─── Section content map ────────────────────────────────────────────────────
+const sections: Record<string, React.ReactNode> = {
+
+  introduction: (
+    <>
+      <Tag>Technical Whitepaper v4.0</Tag>
+      <PageTitle>NexOps Protocol Documentation</PageTitle>
+      <Quote>"The goal of NexOps is not to replace the developer. It is to make the developer's work provably safe."</Quote>
+      <Lead>NexOps is a Safety-First AI Synthesis Engine for Bitcoin Cash. Every smart contract passes through a four-phase guarded pipeline guaranteeing deterministic security verification before deployment.</Lead>
+      <SectionH2>What You'll Learn</SectionH2>
+      <BulletList items={[
+        '**Intent-Based Development** — express what you want, not how to write it',
+        '**Guarded Synthesis Pipeline** — four-phase protected contract generation',
+        '**TollGate Verification** — 14+ vulnerability patterns caught deterministically',
+        '**Audit Reports** — human-readable verification you can independently check',
+      ]} />
+      <SectionH2>Quick Navigation</SectionH2>
+      <CardGrid cards={[
+        { title:'Getting Started', body:'Core concepts and the protocol pipeline. Start here.',accent:G },
+        { title:'Core Protocol', body:'Deep technical internals — NexIR, TollGate, Scoring.', accent:'#818cf8' },
+        { title:'Developer Guide', body:'Practical tutorials for writing, compiling, deploying.',accent:'#38bdf8' },
+        { title:'Security', body:'Trust model, threat analysis, and LNC compliance.',accent:'#fb923c' },
+      ]} />
+    </>
+  ),
+
+  'what-is-nexops': (
+    <>
+      <PageTitle>What is NexOps</PageTitle>
+      <Lead>NexOps is a protocol for generating secure Bitcoin Cash smart contracts from high-level developer intent using deterministic compilation and automated security verification.</Lead>
+      <SectionH2>Three Pillars</SectionH2>
+      <CardGrid cards={[
+        { title:'Intent-Based Development', body:'Express what you want the contract to do. NexOps handles the translation to CashScript.', accent:G },
+        { title:'Deterministic Generation', body:'The same intent always produces the same verified code. Fully reproducible and auditable.', accent:'#818cf8' },
+        { title:'Security-First Design', body:'Every contract is checked against 20 LNC rules and 14 Anti-Pattern Detectors before delivery.', accent:'#fb923c' },
+      ]} />
+      <SectionH2>How It Differs</SectionH2>
+      <Table head={['Feature','NexOps','Generic AI Tools']} rows={[
+        ['Security Audit','✅ Deterministic (AST-based)','❌ Probabilistic (AI opinion)'],
+        ['BCH-Native','✅ Zero EVM assumptions','❌ Often EVM-biased'],
+        ['Reproducible','✅ Same input → same output','❌ Different every run'],
+        ['Transparency','✅ Full audit report with rule IDs','❌ Black-box output'],
+      ]} />
+    </>
+  ),
+
+  'why-nexops': (
+    <>
+      <PageTitle>Why NexOps Exists</PageTitle>
+      <SectionH2>The AI-Finance Gap</SectionH2>
+      <Para>The rise of LLM code generation has created a paradox in DeFi. AI can write thousands of lines per second — but it cannot reliably guarantee security invariants. This is uniquely dangerous on Bitcoin Cash:</Para>
+      <BulletList items={[
+        '**Code is immutable once deployed.** No proxy contracts, no admin keys, no recovery mechanism.',
+        '**Funds are locked by bytecode.** A single missing `require()` can freeze millions permanently.',
+        '**BCH VM has strict binary semantics.** A failed script terminates — it does not return `false`.',
+      ]} />
+      <InfoBox type="critical">Standard LLMs are trained on EVM-dominant data and routinely apply Ethereum mental models to Bitcoin Script — producing code that looks plausible but is fundamentally insecure.</InfoBox>
+      <SectionH2>The Trust Guarantee</SectionH2>
+      <Quote>Every contract that passes the NexOps TollGate has been verified by a deterministic, non-AI rule engine against 14+ specific vulnerability patterns. The AI can hallucinate anything — but it cannot pass a deterministic AST check with a known exploit.</Quote>
+    </>
+  ),
+
+  'architecture-overview': (
+    <>
+      <PageTitle>Architecture Overview</PageTitle>
+      <Lead>NexOps is organized into four horizontal layers. Each layer has strict responsibilities and cannot bypass the one below it.</Lead>
+      <Pipeline steps={[
+        { label:'Developer Intent', desc:'Plain-language description of desired contract behavior' },
+        { label:'Layer 1 — MCP / API Interface', desc:'Routes requests from clients to the pipeline controller', color:'#818cf8' },
+        { label:'Layer 2 — Synthesis Engine', desc:'Phase 1: Skeletonization → Phase 2: Logic Injection', color:'#38bdf8' },
+        { label:'Layer 3 — TollGate Enforcement', desc:'20 LNC rules + 14 Anti-Pattern detectors (non-AI)', color:'#fb923c' },
+        { label:'Layer 4 — Deterministic Deployment', desc:'Bytecode + P2SH32 address + full audit report', color:G },
+      ]} />
+      <SectionH2>Layer Responsibilities</SectionH2>
+      <Table head={['Layer','Role','Can Bypass Security?']} rows={[
+        ['**Layer 1 — Interface**','Route requests from MCP/API clients','No'],
+        ['**Layer 2 — Synthesis**','AI-driven NexIR generation and logic injection','No — all output flows to L3'],
+        ['**Layer 3 — Enforcement**','Deterministic rule checking (TollGate)','**This IS the security layer**'],
+        ['**Layer 4 — Grounding**','BCH Knowledge Base — read-only input','No'],
+      ]} />
+      <SectionH2>Contract Lifecycle</SectionH2>
+      {[
+        ['1','Intent Classification','IQS scored, semantic tags extracted, KB tier selected'],
+        ['2','Phase 1 — Skeletonization','NexIR structural JSON produced without any CashScript logic'],
+        ['3','Phase 2 — Logic Injection','KB-grounded LLM Synthesizer writes CashScript targeting NexIR'],
+        ['4','Phase 3 — TollGate','AST parser runs 20 LNC rules + 14 anti-pattern detectors'],
+        ['5','Phase 4 — Repair or Deliver','Violations → repair loop; Clean → bytecode + audit report delivered'],
+      ].map(([n,t,d]) => <StepRow key={n as string} n={parseInt(n as string)} title={t as string} desc={d as string} />)}
+    </>
+  ),
+
+  'intent-spec': (
+    <>
+      <PageTitle>Intent Specification</PageTitle>
+      <Lead>An intent is a plain-language description of the contract you want to build. NexOps classifies it semantically before any code is generated.</Lead>
+      <SectionH2>Schema</SectionH2>
+      <CodeBlock lang="intent" code={`intent {\n  name: "Escrow"\n  network: "chipnet"\n  parameters: {\n    sender: pubkey\n    recipient: pubkey\n    timeout: block_height\n  }\n  rules: [\n    "2-of-2 multisig release",\n    "sender refund after timeout"\n  ]\n}`} />
+      <SectionH2>Intent Quality Score (IQS)</SectionH2>
+      <Table head={['IQS Range','Classification','Action']} rows={[
+        ['≥ 0.8','High — clear domain keywords, explicit auth model','Proceed with Tier 1 KB injection'],
+        ['0.5–0.8','Medium — clear intent but lacks specifics','Draft NexIR with flagged assumptions'],
+        ['< 0.5','Low — ambiguous or missing critical parameters','Request structured clarification'],
+      ]} />
+      <SectionH2>Golden Keywords</SectionH2>
+      <Table head={['Keyword','Triggers','KB Pattern Injected']} rows={[
+        ['"Vault", "Lockbox"','STATEFUL + COVENANT','escrow_2of3.cash'],
+        ['"Vesting", "Cliff"','STATEFUL + TEMPORAL','linear_vesting.cash'],
+        ['"Atomic Swap", "HTLC"','STATELESS + SIGNATURE','htlc_pattern.cash'],
+        ['"DAO", "Multi-sig"','MULTI_CONTRACT + SIGNATURE','multisig_2of3.cash'],
+      ]} />
+    </>
+  ),
+
+  nexir: (
+    <>
+      <PageTitle>NexIR — Synthesis Intermediate Representation</PageTitle>
+      <Lead>NexIR is the pipeline's internal blueprint — a JSON schema describing contract architecture without any business logic. It prevents Schema Drift before synthesis begins.</Lead>
+      <SectionH2>Why It Exists</SectionH2>
+      <Para>NexIR prevents <strong style={{color:'#d4d4d8'}}>Schema Drift</strong> — where an LLM generates plausible business logic but with wrong parameter types, missing constructor fields, or mismatched function signatures. By validating structure before logic, we catch shape errors without spending synthesis tokens.</Para>
+      <SectionH2>NexIR Specification (LinearVesting Example)</SectionH2>
+      <CodeBlock lang="json" code={`{\n  "schema_version": "1.0",\n  "contract_meta": {\n    "name": "LinearVesting",\n    "pragma": "^0.13.0",\n    "statefulness": "STATEFUL",\n    "token_aware": true\n  },\n  "constructor": [\n    {"name": "beneficiary", "type": "pubkey", "role": "authorization"},\n    {"name": "startBlock",  "type": "int",    "role": "temporal_lower"},\n    {"name": "cliffBlock",  "type": "int",    "role": "temporal_upper"},\n    {"name": "totalAmount", "type": "int",    "role": "value_reference"}\n  ],\n  "functions": [{\n    "name": "vest",\n    "params": [{"name": "beneficiarySig", "type": "sig"}],\n    "spending_paths": ["AUTHORIZE_AND_TRANSFER"],\n    "covenant_required": true\n  }],\n  "structural_elements": {\n    "requires_output_limit": true,\n    "requires_self_anchor": true,\n    "requires_value_anchor": true\n  }\n}`} />
+      <InfoBox>Phase 1 explicitly forbids the LLM from writing any logic. If output is not valid NexIR JSON, Phase 1 retries before consuming Phase 2 tokens.</InfoBox>
+    </>
+  ),
+
+  'logic-injection': (
+    <>
+      <PageTitle>Phase 2: Knowledge-Grounded Logic Injection</PageTitle>
+      <Lead>Phase 2 bridges high-level intent to low-level VM constraints using Tiered Knowledge Injection (TKI) — a targeted context strategy that avoids token bloat.</Lead>
+      <SectionH2>Tiered Knowledge Injection</SectionH2>
+      <Table head={['Tier','Content','When Injected']} rows={[
+        ['**Tier 0**','`core_language.yaml` — types, builtins, critical gotchas','Every prompt, always'],
+        ['**Tier 1**','`covenant_security.yaml`, `FAQ_DISTILLED.md`','Matched to intent semantic tags'],
+        ['**Tier 2**','`CORE_REFERENCE.md`, `SECURITY_ARCHITECTURE.md`','Retry escalation only (≥ 2 failures)'],
+      ]} />
+      <SectionH2>Retrieval Logic</SectionH2>
+      <CodeBlock lang="python" code={`intent_tags = classifier.classify(user_intent)\n# e.g., {"STATEFUL", "TOKEN", "TEMPORAL"}\n\ncontext = [knowledge_retriever.core_language_rules]  # Tier 0 always\nfor tag in intent_tags:\n    context += knowledge_retriever.get_by_tag(tag)   # Tier 1 tag-matched`} />
+      <SectionH2>Phase 2 Output Contract</SectionH2>
+      <BulletList items={[
+        'Valid CashScript syntax with `pragma cashscript ^0.X.Y;`',
+        'Every constructor parameter from the NexIR must be present',
+        'No Solidity keywords (`msg.sender`, `mapping`, `emit`, `uint256`)',
+        'Function names must match the NexIR function list exactly',
+      ]} />
+      <InfoBox type="warn">Any violation of the Output Contract triggers immediate Phase 3 rejection before AST parsing begins.</InfoBox>
+    </>
+  ),
+
+  tollgate: (
+    <>
+      <PageTitle>TollGate Verification</PageTitle>
+      <Lead>Phase 3. Non-AI, non-bypassable, transparent, and reproducible. No contract reaches delivery without passing through it.</Lead>
+      <SectionH2>Execution Order</SectionH2>
+      <Pipeline steps={[
+        { label:'1. Compilation Check', desc:'Can cashc compile this code at all?', color:'#818cf8' },
+        { label:'2. LNC Lint (20 rules)', desc:'Syntax, signature, covenant, arithmetic, temporal rules', color:'#38bdf8' },
+        { label:'3. AST Construction', desc:'Traversable syntax tree built from compiled output', color:'#fb923c' },
+        { label:'4. Anti-Pattern Scan (14 detectors)', desc:'Exploit-modeled vulnerability checks against AST', color:'#f43f5e' },
+        { label:'5. Score Calculation', desc:'Deterministic Score 0–70 + Semantic Score 0–30', color:G },
+      ]} />
+      <InfoBox type="critical">A CRITICAL violation immediately halts the TollGate with `passed=False`. Non-critical violations accumulate and reduce the score.</InfoBox>
+      <SectionH2>TollGateResult Data Model</SectionH2>
+      <CodeBlock lang="python" code={`@dataclass\nclass TollGateResult:\n    passed: bool\n    violations: list[Violation]\n    deterministic_score: int      # 0 to 70\n    compilation_succeeded: bool\n    lnc_rules_passed: int\n    anti_patterns_detected: int\n    code_fingerprint: str         # SHA-256 of input\n\n@dataclass\nclass Violation:\n    rule_id: str      # e.g. "LNC-003" or "APD-009"\n    severity: str     # CRITICAL | HIGH | MEDIUM | LOW\n    reason: str       # Why this code violates the rule\n    exploit: str      # Attack vector\n    fix_hint: str     # Canonical correction`} />
+    </>
+  ),
+
+  deployment: (
+    <>
+      <PageTitle>Deterministic Deployment</PageTitle>
+      <Lead>After passing the TollGate, the contract is compiled to final bytecode and delivered with a complete audit report. A passing score is necessary but not sufficient.</Lead>
+      <SectionH2>Deployment Gate — All 4 Conditions Required</SectionH2>
+      <Table head={['Condition','Threshold','Rationale']} rows={[
+        ['Compilation','Must succeed','Non-compiling code cannot be deployed'],
+        ['CRITICAL violations','0 allowed','CRITICAL = known exploit vector'],
+        ['Semantic override','Not `funds_unspendable`','Permanently locked funds'],
+        ['Total Score','≥ 75','Minimum bar for production deployment'],
+      ]} />
+      <SectionH2>Compliance Grades</SectionH2>
+      <Table head={['Grade','Score','Status']} rows={[
+        ['**A+**','100','Perfect. Zero violations. Optimal logic.'],
+        ['**A**','90–99','Production-ready. Minor inefficiencies only.'],
+        ['**B**','80–89','Deployable. Non-critical improvements available.'],
+        ['**C**','75–79','Deployable. Structural warnings issued.'],
+        ['**D**','60–74','❌ Not deployable. HIGH violations present.'],
+        ['**F**','0–59','❌ Not deployable. CRITICAL failures.'],
+      ]} />
+    </>
+  ),
+
+  'writing-intents': (
+    <>
+      <PageTitle>Writing Intents</PageTitle>
+      <Lead>An intent is your contract specification. Writing a high-quality intent directly determines the quality of the generated contract.</Lead>
+      <SectionH2>Example Intent</SectionH2>
+      <CodeBlock lang="intent" code={`intent {\n  name: "TwoPartyEscrow"\n  parameters: { sender: pubkey, recipient: pubkey, timeout: int }\n  rules: [\n    "2-of-2 multisig for release",\n    "sender can refund after timeout block"\n  ]\n}`} />
+      <SectionH2>Best Practices</SectionH2>
+      <BulletList items={[
+        'Use **Golden Keywords** — "vault", "timelock", "HTLC", "vesting"',
+        'Specify the **authorization model** explicitly (who signs, when)',
+        'Include a **fallback path** (what if the primary path fails)',
+        'Name parties explicitly: "Alice", "Bob", "admin", "recipient"',
+        'Include a `timeout` even on simple contracts to prevent fund permanence',
+      ]} />
+      <InfoBox>Intents with IQS ≥ 0.8 produce significantly better NexIR. Include domain keywords and explicit authorization rules.</InfoBox>
+    </>
+  ),
+
+  compiling: (
+    <>
+      <PageTitle>Compiling Contracts</PageTitle>
+      <SectionH2>CLI</SectionH2>
+      <CodeBlock lang="bash" code={`# Basic compilation\nnexops compile escrow.intent --network chipnet\n\n# Verbose — shows full audit report\nnexops compile vault.intent --verbose --network mainnet\n\n# Export compiled artifact\nnexops compile htlc.intent --output ./artifacts/`} />
+      <SectionH2>Compilation Stages</SectionH2>
+      {[
+        ['1','Parse','Intent tokenized and classified into semantic tags (IQS scored)'],
+        ['2','Skeletonize','Phase 1 produces NexIR structural schema'],
+        ['3','Synthesize','Phase 2 injects CashScript logic via KB-grounded LLM'],
+        ['4','Audit','Phase 3 runs 20 LNC rules + 14 anti-pattern detectors'],
+        ['5','Deliver','Bytecode + P2SH32 address + audit report returned'],
+      ].map(([n,t,d]) => <StepRow key={n as string} n={parseInt(n as string)} title={t as string} desc={d as string} />)}
+    </>
+  ),
+
+  'security-verification': (
+    <>
+      <PageTitle>Security Verification</PageTitle>
+      <Lead>Every NexOps contract includes a verifiable audit report. You do not need to trust the AI — you verify the deterministic findings.</Lead>
+      <SectionH2>Reading the Audit Report</SectionH2>
+      <CodeBlock lang="markdown" code={`## NexOps Audit Report\n- Code Fingerprint: SHA-256:e3b0c44298fc1c149...\n- Total Score: 87 / 100  (Grade: B)\n- Deployment Allowed: Yes\n\n### Deterministic Analysis (64/70)\n- LNC Rules: 20 checked / 18 passed / 2 failed\n  - LNC-016 [HIGH] Line 24: int share = amount / participants\n    Exploit: Pass participants=0 to brick this function.\n    Fix: Add require(participants > 0) before line 24.\n\n### Semantic Analysis (23/30)\n- Category: minor_inefficiency  Confidence: 0.88`} />
+      <SectionH2>Third-Party Verification</SectionH2>
+      <OrderedList items={[
+        'Parse the generated code with any CashScript-compatible AST tool',
+        'Walk through each LNC rule in the public registry',
+        'Compare results with the NexOps report — deterministic output must match',
+      ]} />
+      <InfoBox>The `code_fingerprint` (SHA-256) proves the audit ran against the code you submitted, not an altered version.</InfoBox>
+    </>
+  ),
+
+  deploying: (
+    <>
+      <PageTitle>Deploying Contracts</PageTitle>
+      <SectionH2>Single Contract</SectionH2>
+      <OrderedList items={[
+        'Obtain the compiled P2SH32 address from the audit report',
+        'Fund the address from a BCH wallet (Chipnet or Mainnet)',
+        'Use **NexOps Workbench** to construct and broadcast spending transactions',
+      ]} />
+      <SectionH2>Multi-Contract (masterNFT)</SectionH2>
+      <OrderedList items={[
+        'Deploy all contracts separately → collect P2SH32 addresses',
+        'If contracts reference each others addresses, hardcode them and recompile',
+        'Execute the genesis transaction to create the Token Category',
+        'Mint one masterNFT per contract from the genesis UTXO',
+        'Send each masterNFT to its designated contract address',
+        'Verify each contract holds its masterNFT before going live',
+      ]} />
+      <InfoBox type="warn">Step 2 means multi-contract protocols require two compilation passes if contracts reference each other's addresses.</InfoBox>
+    </>
+  ),
+
+  interaction: (
+    <>
+      <PageTitle>Contract Interaction</PageTitle>
+      <SectionH2>SDK Setup</SectionH2>
+      <CodeBlock lang="bash" code={`npm install @nexops/protocol-sdk @cashscript/sdk`} />
+      <SectionH2>Reading Contract State</SectionH2>
+      <CodeBlock lang="typescript" code={`import { NexOpsClient } from '@nexops/protocol-sdk';\n\nconst client = new NexOpsClient({ network: 'chipnet' });\nconst utxos = await client.getContractUtxos(contractAddress);\nconst state = await client.decodeNftCommitment(utxos[0].token?.nft?.commitment);`} />
+      <SectionH2>Spending a Contract</SectionH2>
+      <CodeBlock lang="typescript" code={`const tx = await contract.functions\n  .spend(recipientSig)\n  .to(recipient, amount)\n  .withAge(timelock)\n  .send();\n\nconsole.log('txid:', tx.txid);`} />
+    </>
+  ),
+
+  workbench: (
+    <>
+      <PageTitle>NexOps Workbench</PageTitle>
+      <Lead>The primary developer IDE for NexOps — intent writing, compilation, UTXO monitoring, and transaction broadcasting in one environment.</Lead>
+      <CardGrid cards={[
+        { title:'Intent Editor', body:'Write and validate intents with real-time IQS scoring.' , accent:G },
+        { title:'Live Audit Panel', body:'See violations, scores, and fix hints as you iterate.', accent:'#818cf8' },
+        { title:'UTXO Monitor', body:'Track funds locked in contracts via Chipnet Electrum nodes.', accent:'#38bdf8' },
+        { title:'Transaction Builder', body:'Construct spending transactions with visual parameter validation.', accent:'#fb923c' },
+      ]} />
+      <SectionH2>Electrum Network</SectionH2>
+      <Para>The Workbench connects to a weighted server rotation pool of Chipnet Electrum nodes ensuring high-availability UTXO detection at ~120ms average query latency.</Para>
+    </>
+  ),
+
+  nexhub: (
+    <>
+      <PageTitle>NexHub Registry</PageTitle>
+      <Lead>Public registry of verified contract templates and community patterns. Every template has been audited to Grade A or above.</Lead>
+      <CardGrid cards={[
+        { title:'Canonical Templates', body:'Escrow, Multisig, Timelock, HTLC — production-ready starters.', accent:G },
+        { title:'Community Patterns', body:'Vetted patterns contributed by BCH developers.', accent:'#818cf8' },
+        { title:'Intent Sharing', body:'Publish your intent for others to fork and adapt.', accent:'#38bdf8' },
+      ]} />
+      <SectionH2>Submitting to NexHub</SectionH2>
+      <OrderedList items={[
+        'Generate a contract achieving Grade A or above',
+        'Submit the intent + audit report to NexHub',
+        'Community review period (48 hours)',
+        'Template becomes publicly searchable and forkable',
+      ]} />
+    </>
+  ),
+
+  nexwizard: (
+    <>
+      <PageTitle>NexWizard Builder</PageTitle>
+      <Lead>Low-code covenant builder — fill in fields, Wizard generates a valid intent that feeds directly into the synthesis pipeline.</Lead>
+      <SectionH2>Available Templates</SectionH2>
+      <Table head={['Template','Category','Complexity']} rows={[
+        ['Multisig Vault (2-of-3)','Vault','Starter'],
+        ['Time-Locked Escrow','Vault','Starter'],
+        ['Fee Splitter','Utility','Starter'],
+        ['Linear Vesting','Vesting','Policy'],
+        ['Token Covenant Vault','DeFi','Policy'],
+      ]} />
+    </>
+  ),
+
+  'abi-visualizer': (
+    <>
+      <PageTitle>ABI Visualizer</PageTitle>
+      <Lead>Renders a compiled contract's Application Binary Interface as an interactive diagram, showing all spending paths and authentication requirements.</Lead>
+      <BulletList items={[
+        'All contract **functions** and their required signatures',
+        '**Spending path logic** — which keys unlock which paths',
+        '**Covenant constraints** — required output structure per path',
+        '**Timelock requirements** per function',
+      ]} />
+      <InfoBox>Powered by the same AST engine used by the TollGate — what you see is exactly what the compiler sees.</InfoBox>
+    </>
+  ),
+
+  'flow-palette': (
+    <>
+      <PageTitle>Flow Palette</PageTitle>
+      <Lead>Visual AST-based execution graph of a compiled contract showing every node: Function Entries, Conditional Branches, Covenant Checks, Validation Checkpoints.</Lead>
+      <SectionH2>Use Cases</SectionH2>
+      <BulletList items={[
+        'Visually confirm all spending paths are **reachable**',
+        'Identify **dead code** or unreachable branches',
+        'Understand **covenant output structure** at a glance',
+        'Share diagrams with auditors or stakeholders',
+      ]} />
+    </>
+  ),
+
+  'ex-escrow': (
+    <>
+      <PageTitle>Example: Escrow Contract</PageTitle>
+      <SectionH2>Problem</SectionH2>
+      <Para>A two-party escrow where funds are released when both parties agree, or returned to the sender after a timeout.</Para>
+      <SectionH2>Intent</SectionH2>
+      <CodeBlock lang="intent" code={`intent {\n  name: "Escrow"\n  rules: ["2-of-2 multisig release", "timeout release to sender after block 2000000"]\n}`} />
+      <SectionH2>Generated Contract</SectionH2>
+      <CodeBlock code={`pragma cashscript ^0.13.0;\n\ncontract Escrow(pubkey sender, pubkey recipient, int timeout) {\n    function release(sig senderSig, sig recipientSig) {\n        require(checkMultiSig([senderSig, recipientSig], [sender, recipient]));\n    }\n    function refund(sig senderSig) {\n        require(tx.time >= timeout);\n        require(checkSig(senderSig, sender));\n    }\n}`} />
+      <SectionH2>TollGate Results</SectionH2>
+      <Table head={['Check','Result','']} rows={[
+        ['LNC Rules','20/20 passed','✅'],
+        ['Anti-Patterns','0 detected','✅'],
+        ['Total Score','98 / 100','**Grade: A**'],
+      ]} />
+    </>
+  ),
+
+  'ex-multisig': (
+    <>
+      <PageTitle>Example: Multisig Contract</PageTitle>
+      <Para>A 2-of-3 multisig vault requiring any two of three authorized keys to spend funds.</Para>
+      <CodeBlock code={`pragma cashscript ^0.13.0;\n\ncontract MultisigVault(pubkey pk1, pubkey pk2, pubkey pk3) {\n    function spend(sig s1, sig s2) {\n        require(checkMultiSig([s1, s2], [pk1, pk2, pk3]));\n    }\n}`} />
+      <Table head={['Check','Result']} rows={[
+        ['LNC-006 Sig Authorization','✅ checkMultiSig present'],
+        ['APD-013 Bare Sig','✅ N/A — checkMultiSig context'],
+        ['Total Score','100/100 — **Grade: A+**'],
+      ]} />
+    </>
+  ),
+
+  'ex-timelock': (
+    <>
+      <PageTitle>Example: Timelock Contract</PageTitle>
+      <Para>Locks funds until a specific block height, then allows the recipient to claim them.</Para>
+      <CodeBlock code={`pragma cashscript ^0.13.0;\n\ncontract TimeLockedEscrow(pubkey recipient, int unlockHeight) {\n    function claim(sig s) {\n        require(checkSig(s, recipient));\n        require(tx.time >= unlockHeight);\n    }\n}`} />
+      <InfoBox>Note <Code>tx.time &gt;= unlockHeight</Code> uses <Code>&gt;=</Code> (block-inclusive), not <Code>&gt;</Code>. LNC-019 enforces this to prevent off-by-one timing errors.</InfoBox>
+    </>
+  ),
+
+  'ex-covenant': (
+    <>
+      <PageTitle>Covenant Patterns</PageTitle>
+      <Lead>Covenants constrain where funds can be sent, enabling stateful contracts on BCH through self-replication.</Lead>
+      <CodeBlock code={`pragma cashscript ^0.13.0;\n\ncontract StatefulVault(pubkey owner) {\n    function withdraw(sig ownerSig, int amount) {\n        require(checkSig(ownerSig, owner));\n        require(tx.outputs.length == 2);\n        // Output 0: contract continues (self-anchor)\n        require(tx.outputs[0].lockingBytecode ==\n          tx.inputs[this.activeInputIndex].lockingBytecode);\n        require(tx.outputs[0].value >=\n          tx.inputs[this.activeInputIndex].value - amount - 1000);\n        // Output 1: withdrawal to owner\n        require(tx.outputs[1].value == amount);\n    }\n}`} />
+      <SectionH2>Key Covenant Rules</SectionH2>
+      <BulletList items={[
+        'Always bind `tx.outputs.length` first — prevents APD-002 (Unchecked Output Count)',
+        'Always check `lockingBytecode` before `value` — prevents APD-001 (Implicit Output Ordering)',
+        'Use `this.activeInputIndex`, never hardcoded `tx.inputs[0]` — prevents APD-005',
+      ]} />
+    </>
+  ),
+
+  'security-model': (
+    <>
+      <PageTitle>Security Model</PageTitle>
+      <Lead>NexOps reframes the trust question entirely: instead of "is the AI reliable?", we ask "does the deterministic report pass?"</Lead>
+      <SectionH2>Auditor Independence</SectionH2>
+      <CardGrid cards={[
+        { title:'LLM Synthesizer', body:'temperature=0.7 — creative code generation. Isolated from auditor.', accent:'#818cf8' },
+        { title:'LLM Auditor', body:'temperature=0.1 — conservative evaluation. No visibility into synthesis.', accent:'#fb923c' },
+        { title:'Deterministic Layer', body:'Zero LLM involvement. Pure AST + rule matching. Fully reproducible.', accent:G },
+      ]} />
+      <SectionH2>The Negative Type System</SectionH2>
+      <Para>Every Anti-Pattern detector is a theorem: <em style={{color:'#a1a1aa'}}>"If code contains pattern X, then exploit Y is possible."</em> The proof of security is the <strong style={{color:'#d4d4d8'}}>absence</strong> of any matching pattern X across the full registry.</Para>
+      <SectionH2>Bias Prevention</SectionH2>
+      <BulletList items={[
+        '**Anchoring Bias**: Auditor independently assesses intent before reading code',
+        '**Sycophancy Guard**: System prompt — "Assume the code is wrong until proven correct"',
+        '**Code Fingerprinting**: SHA-256 proves audit ran on the code you submitted',
+      ]} />
+    </>
+  ),
+
+  'tollgate-checks': (
+    <>
+      <PageTitle>TollGate Checks — LNC Rule Registry</PageTitle>
+      <Lead>20 Layered Nexus Compliance rules, each with a unique ID, severity, and machine-checkable condition.</Lead>
+      <SectionH2>Syntax & Language (MANDATORY)</SectionH2>
+      <Table head={['ID','Name','Severity']} rows={[
+        ['LNC-001','No EVM Syntax','CRITICAL'],
+        ['LNC-002','Valid Pragma','HIGH'],
+        ['LNC-003','Boolean Semantics','MEDIUM'],
+        ['LNC-004','No Compound Assignment','MEDIUM'],
+        ['LNC-005','Valid Types Only','HIGH'],
+      ]} />
+      <SectionH2>Covenant & Output Anchoring (CRITICAL)</SectionH2>
+      <Table head={['ID','Name','Severity']} rows={[
+        ['LNC-009','Output Count Bound','CRITICAL'],
+        ['LNC-010','Identity Anchor','CRITICAL'],
+        ['LNC-011','Value Anchor','CRITICAL'],
+        ['LNC-012','LockingBytecode Continuity','HIGH'],
+        ['LNC-016','Division Safety','HIGH'],
+        ['LNC-019','Timelock Operator','HIGH'],
+      ]} />
+      <SectionH2>Score Deduction Table</SectionH2>
+      <Table head={['Severity','Score Deduction']} rows={[
+        ['CRITICAL','-30 points'],
+        ['HIGH','-10 points'],
+        ['MEDIUM','-5 points'],
+        ['LOW','-2 points'],
+      ]} />
+    </>
+  ),
+
+  'deterministic-verify': (
+    <>
+      <PageTitle>Deterministic Verification</PageTitle>
+      <Lead>The scoring engine produces a reproducible, mathematical score. The 70/30 split is structural — not a weighted average.</Lead>
+      <SectionH2>Score Formula</SectionH2>
+      <CodeBlock lang="python" code={`# Deterministic component (0-70)\n# Start at 70, subtract per violation:\nScore_Det = max(0, 70 - sum(deductions))\nif not compilation_succeeded:\n    Score_Det = 0\n\n# Semantic component (0-30)\nScore_Cat = category_scores[semantic_category]  # 0-20\nScore_Biz = min(10, business_logic_score)        # 0-10\nScore_Sem = min(30, Score_Cat + Score_Biz)\nif semantic_category in ["funds_unspendable","exploit_pathway"]:\n    Score_Sem = 0\n\n# Total\nScore_Total = Score_Det + Score_Sem  # max 100`} />
+      <SectionH2>Semantic Risk Categories</SectionH2>
+      <Table head={['Category','Score','Description']} rows={[
+        ['`none`','20/20','No structural flaws detected'],
+        ['`minor_inefficiency`','15/20','Redundant checks, non-optimal resource use'],
+        ['`logic_gap`','10/20','Edge case exists but is not a security failure'],
+        ['`major_protocol_flaw`','5/20','Flaw causing incorrect behavior under specific conditions'],
+        ['`funds_unspendable`','0/20','⛔ Funds enter but can never be retrieved'],
+        ['`exploit_pathway`','0/20','⛔ Described attack path exists in logic'],
+      ]} />
+    </>
+  ),
+
+  'threat-model': (
+    <>
+      <PageTitle>Threat Model</PageTitle>
+      <Lead>NexOps models 14 distinct attack categories against BCH smart contracts, each formalized as a theorem with an exploit vector and canonical fix.</Lead>
+      <Table head={['APD','Attack','Severity','Exploit Summary']} rows={[
+        ['APD-001','Implicit Output Ordering','CRITICAL','Attacker places payout at index 0 before contract continuation'],
+        ['APD-002','Unchecked Output Count','CRITICAL','Extra outputs attached to drain unauthorized funds'],
+        ['APD-003','Missing Value Anchor','CRITICAL','lockingBytecode checked but value unchecked → fund draining'],
+        ['APD-004','Missing LockingBytecode Anchor','CRITICAL','Value checked but redirect address unverified'],
+        ['APD-008','Solidity Keyword','CRITICAL','Invalid compilation masked by plausible-looking code'],
+        ['APD-009','EVM State Model','CRITICAL','State stored in contract vars — not persisted between calls'],
+        ['APD-010','Token Sum Not Preserved','CRITICAL','Token inflation via unbound output token amounts'],
+        ['APD-005','Missing Input Index Anchor','HIGH','`tx.inputs[0]` wrong in multi-input context'],
+        ['APD-006','Division By Zero','HIGH','User passes 0 as divisor → script bricks permanently'],
+        ['APD-013','Bare Sig Without Auth','HIGH','Any valid signature spends regardless of context'],
+      ]} />
+    </>
+  ),
+
+  'intent-schema': (
+    <>
+      <PageTitle>Intent Schema Reference</PageTitle>
+      <SectionH2>TypeScript Definition</SectionH2>
+      <CodeBlock lang="typescript" code={`interface Intent {\n  name: string;          // PascalCase, 2-50 chars\n  network: "chipnet" | "mainnet";\n  parameters: {\n    [key: string]: "pubkey"|"int"|"bytes"|"bytes20"|"bytes32"|"sig"\n  };\n  rules: string[];       // Min 1 plain-language spending rule\n  metadata?: {\n    author?: string;\n    version?: string;\n  };\n}`} />
+      <SectionH2>Validation Rules</SectionH2>
+      <Table head={['Field','Rule']} rows={[
+        ['`name`','Required. PascalCase. 2–50 characters.'],
+        ['`network`','Required. `"chipnet"` for test, `"mainnet"` for production.'],
+        ['`rules`','At least 1 rule required. Plain English preferred.'],
+      ]} />
+    </>
+  ),
+
+  'nexir-spec': (
+    <>
+      <PageTitle>NexIR Specification</PageTitle>
+      <SectionH2>Constructor Parameter Roles</SectionH2>
+      <Table head={['Role','Description','Types']} rows={[
+        ['authorization','Signing key for a spending path','pubkey'],
+        ['temporal_lower','Earliest valid block or time','int'],
+        ['temporal_upper','Latest valid block or time','int'],
+        ['value_reference','Amount in satoshis','int'],
+        ['data_anchor','Hash or commitment value','bytes32, bytes20'],
+      ]} />
+      <SectionH2>Statefulness Values</SectionH2>
+      <CardGrid cards={[
+        { title:'STATELESS', body:'Simple signature-based spending. No covenant output propagation required. (HTLC, P2PKH)', accent:'#818cf8' },
+        { title:'STATEFUL', body:'Covenant-based self-replication. Requires output_limit, self_anchor, value_anchor checks.', accent:G },
+      ]} />
+    </>
+  ),
+
+  'cli-commands': (
+    <>
+      <PageTitle>CLI Commands (coming soon)</PageTitle>
+      <SectionH2>nexops compile</SectionH2>
+      <CodeBlock lang="bash" code={`nexops compile <intent-file> [options]\n\nOptions:\n  --network, -n    chipnet | mainnet         [required]\n  --verbose, -v    Show full audit report\n  --output, -o     Write artifacts to directory\n  --max-retries    TollGate repair iterations [default: 3]\n\nExample:\n  nexops compile escrow.intent --network chipnet --verbose`} />
+      <SectionH2>nexops verify</SectionH2>
+      <CodeBlock lang="bash" code={`nexops verify <cashscript-file> --network chipnet\n\n# Run TollGate against an existing .cash file\nexops verify myvault.cash --network chipnet --verbose`} />
+      <SectionH2>nexops deploy</SectionH2>
+      <CodeBlock lang="bash" code={`nexops deploy <artifact-dir> [options]\n\nOptions:\n  --fund-from    WIF private key or wallet path\n  --amount       Satoshis to lock in contract\n\nExample:\n  nexops deploy ./artifacts/escrow --network chipnet --amount 100000`} />
+    </>
+  ),
+
+  terminology: (
+    <>
+      <PageTitle>Protocol Terminology</PageTitle>
+      <Table head={['Term','Definition']} rows={[
+        ['**Intent**','Plain-language specification of a contract\'s desired behavior'],
+        ['**NexIR**','Synthesis Intermediate Representation — structural JSON before logic injection'],
+        ['**TollGate**','Phase 3 deterministic enforcement — non-AI, non-bypassable'],
+        ['**LNC**','Layered Nexus Compliance — the 20-rule registry governing all contracts'],
+        ['**APD**','Anti-Pattern Detector — one of 14 formalized vulnerability models'],
+        ['**IQS**','Intent Quality Score — pre-synthesis quality rating of user input'],
+        ['**Covenant**','Contract that constrains where funds can be sent, enabling state persistence'],
+        ['**masterNFT**','Identity token for trustless inter-contract authentication'],
+        ['**GSP**','Guarded Synthesis Pipeline — the four-phase generation process'],
+        ['**DEL**','Deterministic Enforcement Layer — the security subsystem guaranteeing safety invariants'],
+        ['**Chipnet**','BCH development testnet for all NexOps pre-production testing'],
+        ['**P2SH32**','Pay-to-Script-Hash-32 — preferred contract address format (32-byte, collision-resistant)'],
+      ]} />
+    </>
+  ),
+};
+
+// ─── Main component ──────────────────────────────────────────────────────────
 export const Documentation: React.FC = () => {
+  const { sectionId } = useParams<{ sectionId: string }>();
+  const activeId = sectionId || 'introduction';
+
+  useEffect(() => {
+    // Scroll to top of the main scrollable pane
+    const main = document.querySelector('main');
+    if (main) main.scrollTop = 0;
+  }, [activeId]);
+
   return (
-    <DocsLayout>
-      <div className="space-y-24 pb-32">
-        {/* I. SYSTEM OVERVIEW */}
-        <section id="overview" className="scroll-mt-20">
-          <div className="flex items-center gap-3 mb-6">
-            <LayoutIcon className="text-yellow-500" size={32} />
-            <h1 className="text-5xl font-black text-white tracking-tighter">System Overview</h1>
-          </div>
-
-          <p className="text-xl text-zinc-400 leading-relaxed max-w-3xl mb-12">
-            NexOps is a comprehensive infrastructure layer for Bitcoin Cash (BCH), designed to unify human intention with cryptographically secure contract logic. This "Nexus" represents a paradigm shift from manual script writing to **Intent-Based Operations**.
-          </p>
-
-          {/* 1-Page Master Architecture Diagram */}
-          <div className="relative p-12 bg-[#0d0d0f] border border-white/5 rounded-3xl overflow-hidden group mb-16 shadow-2xl">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-yellow-500/5 blur-[100px] rounded-full -mr-48 -mt-48 transition-all duration-1000 group-hover:bg-yellow-500/10"></div>
-
-            <div className="relative z-10 flex flex-col gap-12">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center lg:items-start text-center">
-
-                {/* Stage 1: The Input */}
-                <div className="space-y-4">
-                  <div className="h-44 bg-zinc-900/80 border border-white/5 rounded-2xl flex flex-col items-center justify-center p-6 shadow-inner">
-                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mb-3">
-                      <Zap className="text-yellow-500" size={24} />
-                    </div>
-                    <span className="text-white font-bold text-lg">Natural Intent</span>
-                    <span className="text-zinc-500 text-xs mt-1">Language / Wizard / API</span>
-                  </div>
-                  <div className="text-xs text-zinc-600 font-mono">BROADCAST_INTENT</div>
-                </div>
-
-                {/* Stage 2: The Core Processing */}
-                <div className="lg:col-span-1 space-y-4 flex flex-col items-center">
-                  <div className="w-full h-56 bg-gradient-to-br from-zinc-800 to-[#0a0a0c] border border-yellow-500/20 rounded-2xl p-8 shadow-2xl flex flex-col items-center justify-center relative overflow-hidden">
-                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
-                    <div className="w-16 h-16 bg-yellow-500/10 rounded-xl flex items-center justify-center mb-4 border border-yellow-500/30">
-                      <Cpu className="text-yellow-500 animate-pulse" size={32} />
-                    </div>
-                    <span className="text-yellow-500 font-black text-xl tracking-widest uppercase">The Nexus</span>
-                    <span className="text-zinc-400 text-[10px] mt-2 text-center max-w-[150px] leading-tight">INFERENCE + TOLL GATE + AUDIT</span>
-                  </div>
-                  <div className="text-xs text-zinc-600 font-mono">REASONING_LOOP_v2</div>
-                </div>
-
-                {/* Stage 3: The Output */}
-                <div className="space-y-4">
-                  <div className="h-44 bg-zinc-900/80 border border-white/5 rounded-2xl flex flex-col items-center justify-center p-6 shadow-inner">
-                    <div className="w-12 h-12 bg-green-500/5 rounded-full flex items-center justify-center mb-3">
-                      <ShieldCheck className="text-green-500" size={24} />
-                    </div>
-                    <span className="text-white font-bold text-lg">Execution</span>
-                    <span className="text-zinc-500 text-xs mt-1">Transaction / Deploy / Monitor</span>
-                  </div>
-                  <div className="text-xs text-zinc-600 font-mono">BCH_NETWORK_FLUSH</div>
-                </div>
-
-              </div>
-
-              <div className="hidden lg:flex justify-around items-center px-12 -mt-4 text-zinc-700">
-                <ChevronRight className="animate-bounce-x" size={32} />
-                <ChevronRight size={32} />
-              </div>
-            </div>
-
-            <div className="mt-12 pt-8 border-t border-white/5 flex flex-wrap justify-between gap-6">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Inference Driven</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Zero-Trust Audit</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Native Utility</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* II. INTRODUCTION */}
-        <section id="intro" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🌌 1. Introduction</h2>
-          <div className="prose prose-invert max-w-none space-y-6">
-            <p className="text-zinc-400 leading-relaxed text-lg">
-              NexOps isn't just an IDE or a library; it's a **living protocol** designed to act as the cognitive glue for the Bitcoin Cash ecosystem. As BCH matures with upgrades like **CashTokens (CHIP-2021-02)** and complex covenant capability, the barrier for entry for developers has paradoxically increased.
-            </p>
-            <p className="text-zinc-400 leading-relaxed">
-              We started NexOps to solve "The Script Problem": the reality that while the BCH VM is extremely powerful and deterministic, it is also notoriously difficult for non-specialist developers to work with safely. One misplaced opcode can mean the permanent loss of millions in value.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mt-12">
-              <div className="space-y-4">
-                <h4 className="text-yellow-500 font-bold uppercase tracking-widest text-xs">The Vision</h4>
-                <p className="text-sm text-zinc-500 leading-relaxed italic">
-                  "To make Bitcoin Cash as programmable as Ethereum, but with the security and determinism of the UTXO model."
-                </p>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-zinc-300 font-bold uppercase tracking-widest text-xs">The Mission</h4>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                  Provide a verified, AI-anchored development pipeline that guarantees every line of generated code has been audited against the latest security patterns.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* III. CORE CONCEPTS */}
-        <section id="concepts" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">✨ 2. Core Concepts</h2>
-
-          <div className="space-y-16">
-            <div className="group">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2 group-hover:text-yellow-500 transition-colors">
-                <Zap size={20} />
-                2.1 Intent-Based Development
-              </h3>
-              <p className="text-zinc-400 leading-relaxed mb-6">
-                In the NexOps worldview, you don't write "scripts"—you broadcast "Intents". An Intent is a high-level, human-readable specification of a financial state transition.
-              </p>
-              <div className="bg-zinc-900 border border-white/5 rounded-2xl p-8 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                  <Terminal size={120} />
-                </div>
-                <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center">
-                  <div className="flex-1 space-y-4">
-                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Example Intent</p>
-                    <div className="bg-black/60 p-4 rounded-lg font-mono text-sm text-green-400 border border-green-500/10 italic">
-                      "I need a recurring vault that allows Bob to withdraw 5 BCH every 30 days,
-                      but Alice can cancel the entire flow at any point before the next epoch."
-                    </div>
-                  </div>
-                  <div className="text-zinc-700">
-                    <ChevronRight size={32} />
-                  </div>
-                  <div className="flex-1 space-y-4">
-                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">NexOps Artifact</p>
-                    <div className="bg-black/60 p-4 rounded-lg font-mono text-[10px] text-yellow-500/80 border border-yellow-500/10 overflow-x-auto whitespace-pre">
-                      {`contract RecurringVault(pubkey alice, pubkey bob) {
-    function withdraw(sig s) {
-        require(checkSig(s, bob));
-        require(tx.age >= 30d);
-        // ... complex covenant logic
-    }
-}`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="group">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2 group-hover:text-yellow-500 transition-colors">
-                <Box size={20} />
-                2.2 The UTXO Mental Model
-              </h3>
-              <p className="text-zinc-400 leading-relaxed mb-8">
-                To build with NexOps, you must understand that Bitcoin Cash uses **UTXOs (Unspent Transaction Outputs)**, not Account Balances. Think of a UTXO as a physical "bill" or "coin" that is locked inside an envelope (the script). To spend it, you must satisfy the conditions written on that envelope.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-xl hover:border-yellow-500/20 transition-all">
-                  <div className="w-8 h-8 bg-yellow-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <span className="text-yellow-500 font-bold text-xs">U</span>
-                  </div>
-                  <h4 className="text-white font-bold text-sm mb-2">Immutable Identity</h4>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed">Each UTXO has a unique TxID and Index. It exists until it is completely consumed as an input to a new transaction.</p>
-                </div>
-                <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-xl hover:border-blue-500/20 transition-all">
-                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <span className="text-blue-500 font-bold text-xs">S</span>
-                  </div>
-                  <h4 className="text-white font-bold text-sm mb-2">Script Logic</h4>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed">The script doesn't "run" on a server; it's a validation gate that the network nodes check before miners include the Tx in a block.</p>
-                </div>
-                <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-xl hover:border-purple-500/20 transition-all">
-                  <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center mb-4">
-                    <span className="text-purple-500 font-bold text-xs">D</span>
-                  </div>
-                  <h4 className="text-white font-bold text-sm mb-2">Determinism</h4>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed">BCH transactions are stateless. You know exactly if a Tx will succeed or fail locally before ever broadcasting it.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* IV. PROTOCOL ARCHITECTURE */}
-        <section id="architecture" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🏗️ 3. Protocol Architecture</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12">
-            The NexOps architecture is designed as a **Multi-Tiered Cognitive Stack**. It separates the high-risk logic generation from the heavy-lifting verification and deployment layers.
-          </p>
-
-          <div className="space-y-12">
-            {/* 3.1 Interface Layer */}
-            <div className="border-l-4 border-yellow-500 pl-8 space-y-6">
-              <h3 className="text-xl font-bold text-white">3.1 Nexus Interface Layer</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                The Interface Layer (implemented in React + Vite) is the primary entry point for the {"Build \u2192 Fund \u2192 Run"} loop.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-zinc-900/80 rounded-lg border border-white/5">
-                  <h5 className="text-[10px] text-zinc-600 font-bold uppercase tracking-tight mb-2">State Management</h5>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Utilizes advanced React hooks and Context providers to sync blockchain state (UTXOs) with the AI inference state in real-time.</p>
-                </div>
-                <div className="p-4 bg-zinc-900/80 rounded-lg border border-white/5">
-                  <h5 className="text-[10px] text-zinc-600 font-bold uppercase tracking-tight mb-2">Visual Mapping</h5>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Transforms raw JSON data from the <strong>VisualFlow Execution Graph</strong> into a React FLOW workspace for interactive auditing.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 3.2 Inference Layer */}
-            <div className="border-l-4 border-blue-500 pl-8 space-y-6">
-              <h3 className="text-xl font-bold text-white">3.2 Cognitive Inference Layer</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                This layer coordinates multiple Large Language Models (LLMs) through a structured **RAG (Retrieval-Augmented Generation)** strategy.
-              </p>
-              <div className="h-64 bg-zinc-950 border border-white/5 rounded-2xl relative overflow-hidden p-8 flex items-center justify-center">
-                {/* Visual Representation of Tiers */}
-                <div className="relative flex flex-col items-center gap-2 w-full max-w-xs">
-                  <div className="w-full h-12 bg-yellow-500/10 border border-yellow-500/30 rounded-t-xl flex items-center justify-center text-[10px] font-bold text-yellow-500 tracking-widest uppercase">Tier A: Canonical Truth</div>
-                  <div className="w-[90%] h-12 bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-[10px] font-bold text-blue-400 tracking-widest uppercase italic">Tier B: Security Patterns</div>
-                  <div className="w-[80%] h-12 bg-zinc-800/50 border border-white/5 rounded-b-xl flex items-center justify-center text-[10px] font-bold text-zinc-500 tracking-widest uppercase">Tier C: Ecosystem FAQ</div>
-                </div>
-                <div className="absolute top-1/2 left-32 -translate-y-1/2 flex flex-col items-end gap-16 text-[8px] text-zinc-600 font-bold uppercase invisible md:visible">
-                  <span>Logic Seeds</span>
-                  <span>Safety Rails</span>
-                  <span>Ecosystem Knowledge</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 3.3 Network Interface */}
-            <div className="border-l-4 border-green-500 pl-8 space-y-6">
-              <h3 className="text-xl font-bold text-white">3.3 Blockchain Network Protocol</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                Direct blockchain connectivity is brokered through the **Electrum-Cash Protocol**. Unlike standard HTTP-based explorers, NexOps maintains persistent WebSocket subscriptions to the network.
-              </p>
-              <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="px-2 py-1 bg-green-500/20 text-green-500 font-mono text-[10px] rounded">SUBSCRIPTION_ACTIVE</div>
-                  <div className="text-xs text-zinc-400 font-mono italic">nexops:socket_pool#chipnet...</div>
-                </div>
-                <p className="text-xs text-zinc-500 leading-relaxed">
-                  When a scriptHash is subscribed, the network notifies the Nexus interface within 150ms of a mempool entry. This enables **0-Conf Operational Intelligence**—allowing developers to see funds arriving before the next block.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Section: MCP */}
-        <section id="mcp">
-          <h2 className="text-2xl font-semibold text-white mb-6">🔗 MCP Integration</h2>
-          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6 mb-6">
-            <div className="flex items-center gap-3 text-red-400 mb-3">
-              <AlertTriangle size={20} />
-              <h4 className="font-bold uppercase tracking-tight text-sm">Experimental Section</h4>
-            </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
-              Model Context Protocol (MCP) allows AI agents to act as "remote brains" for your local IDE. NexOps exposes its services via MCP tools.
-            </p>
-          </div>
-
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10">
-              <tr>
-                <th className="py-2 text-zinc-500 font-bold uppercase tracking-tight text-[10px]">Tool (Placeholder)</th>
-                <th className="py-2 text-zinc-500 font-bold uppercase tracking-tight text-[10px]">Description</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              <tr>
-                <td className="py-3 font-mono text-yellow-500/80">compile_contract</td>
-                <td className="py-3 text-zinc-400">Wraps cashc to provide ASM/ABI output to the agent.</td>
-              </tr>
-              <tr>
-                <td className="py-3 font-mono text-yellow-500/80">run_audit</td>
-                <td className="py-3 text-zinc-400">Triggers the 2-Phase security report.</td>
-              </tr>
-              <tr>
-                <td className="py-3 font-mono text-yellow-500/80">get_utxos</td>
-                <td className="py-3 text-zinc-400">Fetches unspent outputs for a Chipnet address.</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
-        {/* V. INTENT EXECUTION PIPELINE */}
-        <section id="pipeline" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🌀 4. Intent Execution Pipeline</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12">
-            The NexOps Intent Pipeline is a high-availability, WebSocket-driven system that manages the lifecycle of a smart contract from natural language seed to on-chain confirmation.
-          </p>
-
-          <div className="space-y-16">
-            {/* 4.1 Lifecycle Trace */}
-            <div className="bg-[#050505] border border-white/5 rounded-2xl p-8 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-[0.02] -mr-8 -mt-8">
-                <Cpu size={180} />
-              </div>
-              <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-[0.2em] mb-8">Intent Lifecycle Trace (Real-time Log)</h4>
-
-              <div className="space-y-6 relative z-10">
-                <div className="flex gap-4 items-start">
-                  <div className="text-[10px] font-mono text-zinc-700 mt-1 whitespace-nowrap">00:00.000</div>
-                  <div className="flex-1">
-                    <div className="text-xs font-bold text-white mb-1">INTENT_BROADCAST</div>
-                    <p className="text-[10px] text-zinc-500 font-mono">Payload: {"{ type: 'Escrow', users: ['alice', 'bob'], conditions: '2-of-2' }"}</p>
-                    <p className="text-[9px] text-zinc-600 italic">Nexus receives the message via Secure WebSocket (WSS).</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 items-start border-l-2 border-yellow-500/20 pl-4">
-                  <div className="text-[10px] font-mono text-zinc-700 mt-1 whitespace-nowrap">00:00.245</div>
-                  <div className="flex-1">
-                    <div className="text-xs font-bold text-yellow-500 mb-1">COGNITIVE_NEGOTIATION</div>
-                    <p className="text-[10px] text-zinc-500 font-mono">RAG_Context: Multi-Sig, Time-Lock, Auth_Signer</p>
-                    <p className="text-[9px] text-zinc-600 italic">Inference engine anchors the intent against verified pattern libraries.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 items-start border-l-2 border-red-500/20 pl-4">
-                  <div className="text-[10px] font-mono text-zinc-700 mt-1 whitespace-nowrap">00:00.890</div>
-                  <div className="flex-1">
-                    <div className="text-xs font-bold text-red-500 mb-1">TOLL_GATE_AUDIT</div>
-                    <p className="text-[10px] text-zinc-500 font-mono">Status: PASSED | Rules: TG-01, TG-02, TG-03</p>
-                    <p className="text-[9px] text-zinc-600 italic">Deterministic linter verifies zero cross-chain evasion logic.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 items-start border-l-2 border-green-500/20 pl-4">
-                  <div className="text-[10px] font-mono text-zinc-700 mt-1 whitespace-nowrap">00:01.400</div>
-                  <div className="flex-1">
-                    <div className="text-xs font-bold text-green-500 mb-1">NETWORK_FULFILLMENT</div>
-                    <p className="text-[10px] text-zinc-500 font-mono">Action: OP_CHECKDATASIG_VERIFY | Target: Chipnet</p>
-                    <p className="text-[9px] text-zinc-600 italic">Signed Transaction broadcasted to Electrum-Cash node pool.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-sm text-zinc-500 italic text-center">
-              "Predictability is the primary feature of the NexOps Pipeline."
-            </p>
-          </div>
-        </section>
-
-        {/* VI. PROTOCOL SPECIFICATION */}
-        <section id="spec" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🏛️ 5. Protocol Specification</h2>
-          <p className="text-zinc-400 leading-relaxed max-w-2xl mb-12">
-            The formal specification ensures that independent implementations of NexOps remain compatible. Every data structure is strictly typed and versioned.
-          </p>
-
-          <div className="space-y-16">
-            {/* 5.1 Intent Protocol (V1) */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-white uppercase tracking-tight">5.1 Intent Message Schema (V1.0.4)</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm whitespace-nowrap">
-                  <thead className="bg-zinc-900 border-b border-white/10">
-                    <tr>
-                      <th className="p-4 text-zinc-500 font-bold text-[10px] uppercase">Property</th>
-                      <th className="p-4 text-zinc-500 font-bold text-[10px] uppercase">Type</th>
-                      <th className="p-4 text-zinc-500 font-bold text-[10px] uppercase">Requirement</th>
-                      <th className="p-4 text-zinc-500 font-bold text-[10px] uppercase">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5 font-mono">
-                    <tr>
-                      <td className="p-4 text-yellow-500">intent_id</td>
-                      <td className="p-4 text-zinc-400 font-bold">UUID v4</td>
-                      <td className="p-4 text-red-500/50">Required</td>
-                      <td className="p-4 text-zinc-500 text-xs font-sans">Unique operational identifier.</td>
-                    </tr>
-                    <tr>
-                      <td className="p-4 text-yellow-500">context_tier</td>
-                      <td className="p-4 text-zinc-400 font-bold">Enum[A, B, C]</td>
-                      <td className="p-4 text-red-500/50">Required</td>
-                      <td className="p-4 text-zinc-500 text-xs font-sans">Level of RAG ground truth required.</td>
-                    </tr>
-                    <tr>
-                      <td className="p-4 text-yellow-500">gas_strategy</td>
-                      <td className="p-4 text-zinc-400 font-bold">Object</td>
-                      <td className="p-4 text-blue-500/30">Optional</td>
-                      <td className="p-4 text-zinc-500 text-xs font-sans">Custom sat/byte distribution rules.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="p-4 bg-zinc-950 border border-white/5 rounded-xl">
-                <pre className="text-[10px] text-zinc-500 scrollbar-hide py-2">
-                  {`{
-  "version": "1.0.4",
-  "payload": {
-    "auth": "PKL_ADDR_...",
-    "logic": "require(tx.age > 100)",
-    "security_level": "Strict"
-  }
-}`}
-                </pre>
-              </div>
-            </div>
-
-            {/* 5.2 Deterministic Deployment Rules */}
-            <div className="group border-t border-white/5 pt-12">
-              <h3 className="text-xl font-bold text-white mb-4">5.2 Deterministic Deployment Rules</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed mb-6">
-                Deployment in NexOps is not a random event. It follows the **Identity Mapping Theorem**: any given set of keys and contract code MUST result in the same deterministic scriptHash, regardless of the network (Mainnet vs. Chipnet).
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="p-6 bg-zinc-900 border border-white/5 rounded-2xl">
-                  <h5 className="text-white font-bold text-xs mb-3 uppercase tracking-widest">Pre-Flight Rule #1</h5>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"No transaction shall be broadcast if the local scriptHash does not match the computed remote scriptHash."</p>
-                </div>
-                <div className="p-6 bg-zinc-900 border border-white/5 rounded-2xl">
-                  <h5 className="text-white font-bold text-xs mb-3 uppercase tracking-widest">Pre-Flight Rule #2</h5>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"Identity Drift Protection must be enabled for all contracts handling &gt; 10 BCH."</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* VII. VISUALFLOW EXECUTION GRAPH */}
-        <section id="visualflow" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">📊 6. VisualFlow Execution Graph</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12 max-w-3xl">
-            VisualFlow is the protocol's primary transparency layer. It allows developers to "see" the branching logic of a CashScript contract before it is compiled into opaque BCH bytecode.
-          </p>
-
-          <div className="space-y-16">
-            {/* 6.1 AST Extraction Logic */}
-            <div className="flex flex-col lg:flex-row gap-12">
-              <div className="lg:w-1/2 space-y-6">
-                <h3 className="text-xl font-bold text-white">6.1 AST Decomposition</h3>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                  The NexOps parser traverses the Abstract Syntax Tree (AST) produced by the compiler. It identifies three critical node types:
-                </p>
-                <ul className="space-y-4">
-                  <li className="flex gap-4">
-                    <div className="w-6 h-6 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px] font-bold border border-blue-500/30">F</div>
-                    <div>
-                      <h6 className="text-white text-xs font-bold leading-6">Function Entries</h6>
-                      <p className="text-[11px] text-zinc-600">The external interfaces through which the contract can be spent.</p>
-                    </div>
-                  </li>
-                  <li className="flex gap-4">
-                    <div className="w-6 h-6 rounded bg-yellow-500/20 text-yellow-400 flex items-center justify-center text-[10px] font-bold border border-yellow-500/30">C</div>
-                    <div>
-                      <h6 className="text-white text-xs font-bold leading-6">Conditional Branches</h6>
-                      <p className="text-[11px] text-zinc-600">Decision diamonds where script-path spending diverts based on boolean state.</p>
-                    </div>
-                  </li>
-                  <li className="flex gap-4">
-                    <div className="w-6 h-6 rounded bg-red-500/20 text-red-400 flex items-center justify-center text-[10px] font-bold border border-red-500/30">V</div>
-                    <div>
-                      <h6 className="text-white text-xs font-bold leading-6">Validation Checkpoints</h6>
-                      <p className="text-[11px] text-zinc-600">Mandatory opcodes such as OP_CHECKDATASIG or OP_CHECKSEQUENCEVERIFY.</p>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="lg:w-1/2 bg-[#08080a] border border-white/5 rounded-3xl p-8 relative shadow-2xl overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/5 to-transparent"></div>
-                <div className="relative z-10 flex flex-col items-center">
-                  <div className="w-full bg-zinc-900/80 p-4 rounded-xl border border-white/5 mb-8">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">AST Node Extraction</span>
-                      <div className="flex gap-1">
-                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-700"></div>
-                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-700"></div>
-                      </div>
-                    </div>
-                    <code className="text-[10px] text-yellow-500/80 font-mono italic leading-relaxed">
-                      const nodes = visit(ast, {"{"} <br />
-                      {"  Function: (node) => process(node),"} <br />
-                      {"  IfStatement: (node) => fork(node)"} <br />
-                      {"}"});
-                    </code>
-                  </div>
-
-                  {/* Simplified Visual Graph Mockup */}
-                  <div className="relative w-full h-32 flex justify-center items-center">
-                    <div className="absolute w-24 h-10 bg-zinc-800 border border-blue-500/30 rounded flex items-center justify-center text-[10px] font-bold text-white z-20 left-4">spend()</div>
-                    <div className="absolute w-12 h-12 bg-zinc-900 border border-yellow-500/30 rotate-45 flex items-center justify-center z-10">
-                      <span className="-rotate-45 text-[10px] font-bold text-yellow-500">?</span>
-                    </div>
-                    <div className="absolute w-24 h-10 bg-zinc-800 border border-green-500/30 rounded flex items-center justify-center text-[10px] font-bold text-white z-20 right-4">SUCCESS</div>
-
-                    {/* SVG Connector Path */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20" preserveAspectRatio="none">
-                      <line x1="120" y1="64" x2="190" y2="64" stroke="white" strokeWidth="1" />
-                      <line x1="260" y1="64" x2="330" y2="64" stroke="white" strokeWidth="1" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-sm text-zinc-500 italic text-center max-w-md mx-auto">
-              "VisualFlow bridges the gap between trust and verification by making the AST human-accessible."
-            </p>
-          </div>
-        </section>
-
-        {/* VIII. AI AUDIT ENGINE */}
-        <section id="audit" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🛡️ 7. AI Audit Engine</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12 max-w-2xl">
-            The AI Audit Engine is the sentinel of the NexOps Protocol. It ensures that every contract generated or imported adheres to strict BCH security standards.
-          </p>
-
-          <div className="space-y-12">
-            {/* 7.1 Two-Phase Audit Methodology */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="p-8 bg-zinc-900 border border-white/5 rounded-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 bg-blue-500/10 rounded-bl-xl text-[10px] font-bold text-blue-400 uppercase tracking-widest">Phase 1</div>
-                <h4 className="text-white font-bold mb-4">Static Pattern Linter</h4>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                  A high-speed, deterministic pass that verifies syntax and catches "Low-Hanging Fruit" such as missing transaction fee padding or unauthorized use of experimental opcodes.
-                </p>
-              </div>
-              <div className="p-8 bg-zinc-900 border border-white/5 rounded-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 bg-yellow-500/10 rounded-bl-xl text-[10px] font-bold text-yellow-500 uppercase tracking-widest">Phase 2</div>
-                <h4 className="text-white font-bold mb-4">Semantic Reasoning</h4>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                  Leveraging LLM reasoning and the Multi-Tier RAG context, this phase analyzes the **Intended Meaning** of the contract vs its **Actual Logic**, catching complex logical errors that static linters miss.
-                </p>
-              </div>
-            </div>
-
-            {/* 7.2 Security Rule Repository */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-white uppercase tracking-tight">7.2 Formal Audit Rule-Set (SEC-XXX)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-black/40 border border-red-500/20 rounded-xl">
-                  <span className="text-[10px] font-mono text-red-500 font-bold">SEC-001</span>
-                  <h6 className="text-white text-xs font-bold mt-1">Covenant Identity Drift</h6>
-                  <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">Ensures the output contract's scriptHash is verified within the transaction itself to prevent redirection.</p>
-                </div>
-                <div className="p-4 bg-black/40 border border-red-500/20 rounded-xl">
-                  <span className="text-[10px] font-mono text-red-500 font-bold">SEC-002</span>
-                  <h6 className="text-white text-xs font-bold mt-1">Replay Attack Guard</h6>
-                  <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">Mandates the use of unique nonce or sequence-based locktimes for recurring spending paths.</p>
-                </div>
-                <div className="p-4 bg-black/40 border border-red-500/20 rounded-xl">
-                  <span className="text-[10px] font-mono text-red-500 font-bold">SEC-003</span>
-                  <h6 className="text-white text-xs font-bold mt-1">Oracle Authenticity</h6>
-                  <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">Validates that OP_CHECKDATASIG is tied to a verified public key from the NexOps Trust List.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* IX. SECURITY MODEL */}
-        <section id="security" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🛡️ 8. Security Model</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12 max-w-3xl">
-            The NexOps security model is built on the principle of **Defense in Depth**. We assume that any single component (AI, Interface, or RPC) could be compromised.
-          </p>
-
-          <div className="space-y-16">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              <div className="space-y-8">
-                <h3 className="text-xl font-bold text-white">8.1 Trust Anchors</h3>
-                <div className="space-y-4">
-                  <div className="flex gap-4 p-6 bg-zinc-900 border border-white/5 rounded-2xl">
-                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center shrink-0 border border-white/10">
-                      <Shield className="text-blue-400" size={24} />
-                    </div>
-                    <div>
-                      <h5 className="text-white font-bold text-sm mb-1">Covenant Containment</h5>
-                      <p className="text-xs text-zinc-500 leading-relaxed">By enforcing strict spending rules on the transaction outputs, NexOps ensures that even if a private key is leaked, the funds can only flow to authorized destinations.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 p-6 bg-zinc-900 border border-white/5 rounded-2xl">
-                    <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center shrink-0 border border-white/10">
-                      <ShieldCheck className="text-purple-400" size={24} />
-                    </div>
-                    <div>
-                      <h5 className="text-white font-bold text-sm mb-1">Non-Custodial Logic</h5>
-                      <p className="text-xs text-zinc-500 leading-relaxed">NexOps never stores private seeds. All signatures occur locally in the Nexus Interface or are brokered via secure WalletConnect sessions.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-8">
-                <h3 className="text-xl font-bold text-white">8.2 Threat Identification (MITRE Mapping)</h3>
-                <div className="bg-black/50 border border-white/5 rounded-2xl p-8 space-y-6">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center bg-zinc-800 px-4 py-2 rounded-lg">
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase">Malicious Prompting</span>
-                      <span className="text-[10px] text-red-500 font-bold">Mitigated</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-600 px-4">Toll Gate rejects any intent attempting to bypass script security.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center bg-zinc-800 px-4 py-2 rounded-lg">
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase">Backend MITM</span>
-                      <span className="text-[10px] text-red-500 font-bold">Mitigated</span>
-                    </div>
-                    <p className="text-[10px] text-zinc-600 px-4">Transaction signing hash is verified against the local AST output.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* X. DEVELOPER GUIDE */}
-        <section id="devguide" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🛠️ 9. Developer Guide</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12 max-w-2xl">
-            Get started building on NexOps. These guides will take you from setting up your environment to deploying your first audited covenant.
-          </p>
-          <div className="space-y-16">
-            {/* 9.1 The First Intent Walkthrough */}
-            <div className="space-y-8">
-              <h3 className="text-xl font-bold text-white">9.1 Creating Your First Intent</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="space-y-4">
-                  <div className="text-3xl font-black text-yellow-500/20">01</div>
-                  <h6 className="text-white font-bold text-sm">Formulate Requirement</h6>
-                  <p className="text-xs text-zinc-600 leading-relaxed">Enter the "Nexus Lab" and describe your contract logic. Be as specific as possible about participants and lock-times.</p>
-                </div>
-                <div className="space-y-4">
-                  <div className="text-3xl font-black text-blue-500/20">02</div>
-                  <h6 className="text-white font-bold text-sm">Visual Verification</h6>
-                  <p className="text-xs text-zinc-600 leading-relaxed">Review the VisualFlow graph to ensure the AI's understanding of your intent matches your expectations.</p>
-                </div>
-                <div className="space-y-4">
-                  <div className="text-3xl font-black text-green-500/20">03</div>
-                  <h6 className="text-white font-bold text-sm">Audit & Fund</h6>
-                  <p className="text-xs text-zinc-600 leading-relaxed">Trigger the 2-Phase Audit. Once passed, use the built-in Faucet to fund your contract on Chipnet.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 9.2 Integrating MCP Tools */}
-            <div className="p-8 bg-zinc-950 border border-white/5 rounded-3xl group">
-              <h3 className="text-xl font-bold text-white mb-6 group-hover:text-yellow-500 transition-colors">9.2 Using NexOps MCP Tools</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed mb-8">
-                If you use VSCode, Cursor, or Zed, you can integrate NexOps tools directly via the **Model Context Protocol (MCP)**. This allows your local AI agents to perform audits and fetch UTXO data.
-              </p>
-              <div className="bg-black p-6 rounded-xl border border-white/10 font-mono text-[11px] text-zinc-400 space-y-2">
-                <div className="flex gap-4">
-                  <span className="text-green-500">$</span>
-                  <span>npx @nexops/mcp-server --network chipnet</span>
-                </div>
-                <div className="text-zinc-700 italic mt-4">// Available Tools:</div>
-                <div className="text-yellow-500/60">- nexops.audit_contract(source: string)</div>
-                <div className="text-yellow-500/60">- nexops.get_balance(addr: string)</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* XI. DEPLOYMENT & OPERATIONS */}
-        <section id="deployment" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">🚀 10. Deployment & Operations</h2>
-          <p className="text-zinc-400 leading-relaxed mb-12 max-w-3xl">
-            Transitioning from the Nexus Lab to a live production environment requires understanding the NexOps operational stack, including custodial-free burner management and identity drift protection.
-          </p>
-
-          <div className="space-y-16">
-            {/* 10.1 Burner Wallets & Entropy */}
-            <div className="group">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <Box size={20} className="text-yellow-500" />
-                10.1 Burner Core Management
-              </h3>
-              <p className="text-sm text-zinc-500 leading-relaxed mb-6">
-                For rapid testing and isolated operations, NexOps utilizes **Ephemeral Burner Wallets**. These are transient keypairs generated in-browser with high-entropy seeding.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="p-6 bg-zinc-900 border border-white/5 rounded-2xl border-l-4 border-l-yellow-600">
-                  <h5 className="text-white font-bold text-xs mb-3 uppercase tracking-widest">Entropy Source</h5>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"crypto.getRandomValues() is used to seed the BIP39 mnemonic, ensuring no server-side key exposure."</p>
-                </div>
-                <div className="p-6 bg-zinc-900 border border-white/5 rounded-2xl border-l-4 border-l-blue-600">
-                  <h5 className="text-white font-bold text-xs mb-3 uppercase tracking-widest">Auto-Cleanup</h5>
-                  <p className="text-[11px] text-zinc-500 leading-relaxed italic">"Burners are purged from session storage upon contract finalization or 24-hour timeout."</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 10.2 Bridging & Liquidity Flows */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-white">10.2 Cross-Chain Intent Bridging</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                While NexOps is native to BCH, it facilitates bridging through **Lock-and-Swap Covenants**. An intent can be broadcast that locks BCH until a cryptographic proof is provided from an external chain (e.g., a Solana signature).
-              </p>
-              <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex flex-col md:flex-row gap-8 items-center">
-                <div className="flex-1 text-center font-mono text-xs">
-                  BCH Chain <span className="text-blue-500 mx-2">&harr;</span> Relayer Network <span className="text-blue-500 mx-2">&harr;</span> Destination Protocol
-                </div>
-              </div>
-            </div>
-
-            {/* 10.3 Identity Drift Mitigation */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-white">10.3 Identity Drift Mitigation</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                Production deployments monitor for **Identity Drift**—a scenario where the underlying UTXO state changes before the AI-audited transaction is mined. NexOps uses a "Pre-Broadcast Validation" check that re-runs the Phase 1 audit 500ms before submission to ensure the ScriptHash remains deterministic.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* XII. REFERENCE & FAQ */}
-        <section id="reference" className="scroll-mt-20">
-          <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/5 pb-4">📚 11. Reference & Roadmap</h2>
-
-          <div className="space-y-16">
-            {/* 11.1 FAQ */}
-            <div className="space-y-8">
-              <h3 className="text-xl font-bold text-white mb-6">Frequently Asked Questions</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { q: "Is NexOps a bridge?", a: "No, it's a protocol to BUILD secure bridges and contracts. It provides the security primitives (Toll Gates, AI Audits) that bridges use." },
-                  { q: "What is Chipnet?", a: "The official BCH staging network where all NexOps tests occur. It has a separate faucet and allows for risk-free experimentation." },
-                  { q: "Are the audits 100% safe?", a: "Audits provide high-confidence security by catching common and complex logical errors, but users should always review the VisualFlow graph." },
-                  { q: "Can I use NexOps on Mainnet?", a: "Yes, once your contract passes Phase 2 Audit on Chipnet, it can be seamlessly migrated to Mainnet by switching the provider URL." },
-                  { q: "Does NexOps store my keys?", a: "Never. All signing happens locally in your browser or through 3rd-party wallets like Electrum Cash or Paytaca." },
-                  { q: "What is the fee structure?", a: "The protocol is open-source. Application developers may implement their own fee logic within their intents." }
-                ].map((item, idx) => (
-                  <div key={idx} className="p-6 bg-zinc-900 border border-white/5 rounded-2xl hover:border-white/10 transition-colors">
-                    <h6 className="text-xs font-bold text-yellow-500 mb-2">{item.q}</h6>
-                    <p className="text-[11px] text-zinc-500 leading-relaxed">{item.a}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 11.2 Detailed Roadmap */}
-            <div className="bg-[#0a0a0c] border border-white/5 rounded-3xl p-10 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/5 blur-[80px] -mr-32 -mt-32"></div>
-              <h3 className="text-xl font-bold text-white mb-10 relative z-10">2026/27 Protocol Roadmap</h3>
-              <div className="space-y-12 relative z-10">
-                <div className="flex gap-6">
-                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                    <span className="text-[10px] font-bold text-zinc-500 italic">Q2 26</span>
-                  </div>
-                  <div>
-                    <h5 className="text-white font-bold text-xs mb-1">VisualFlow v2: Real-time Debugging</h5>
-                    <p className="text-[10px] text-zinc-600">Interactive breakpoint support during the VisualFlow trace execution. Step through script validation line-by-line.</p>
-                  </div>
-                </div>
-                <div className="flex gap-6">
-                  <div className="w-12 h-12 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
-                    <span className="text-[10px] font-bold text-yellow-500 italic border-b border-yellow-500/30">Q4 26</span>
-                  </div>
-                  <div>
-                    <h5 className="text-yellow-500 font-bold text-xs mb-1">Identity Mesh Integration</h5>
-                    <p className="text-[10px] text-zinc-600">Direct integration with Decentralized ID (DID) providers for multi-party intents and reputation-based toll gates.</p>
-                  </div>
-                </div>
-                <div className="flex gap-6">
-                  <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                    <span className="text-[10px] font-bold text-blue-400 italic">Q1 27</span>
-                  </div>
-                  <div>
-                    <h5 className="text-blue-400 font-bold text-xs mb-1">ZKP Toll Gates</h5>
-                    <p className="text-[10px] text-zinc-600">Experimental Zero-Knowledge Proof validation for private intent parameters, keeping sensitive data off-chain while maintaining verifiability.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* XIII. ECOSYSTEM */}
-        <section id="ecosystem" className="scroll-mt-20">
-          <div className="py-24 border-t border-white/5 text-center space-y-8">
-            <div className="flex justify-center gap-4">
-              <div className="w-1 h-1 rounded-full bg-zinc-800"></div>
-              <div className="w-1 h-1 rounded-full bg-zinc-800"></div>
-              <div className="w-1 h-1 rounded-full bg-zinc-800"></div>
-            </div>
-            <h2 className="text-4xl font-black text-white tracking-tighter">Join the Nexus.</h2>
-            <p className="text-zinc-500 max-w-lg mx-auto leading-relaxed text-sm">
-              NexOps is an open-standard protocol. We invite developers, security researchers, and AI engineers to contribute to the future of Intent-Based Bitcoin Cash.
-            </p>
-            <div className="flex justify-center gap-4 pt-4">
-              <button className="px-8 py-3 bg-white text-black font-bold rounded-full text-xs hover:bg-zinc-200 transition-colors">Github Repository</button>
-              <button className="px-8 py-3 bg-zinc-900 text-white font-bold rounded-full border border-white/10 text-xs hover:bg-zinc-800 transition-colors">Developer Discord</button>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer info */}
-        <footer className="pt-20 border-t border-white/5 text-center">
-          <p className="text-zinc-600 text-[10px] uppercase tracking-[0.4em] font-black">
-            NexOps Protocol © 2026 // Decentralized Context Layer
-          </p>
-        </footer>
+    <DocsLayout activeId={activeId}>
+      <div style={{ paddingBottom: 32 }}>
+        {sections[activeId] ?? sections.introduction}
       </div>
     </DocsLayout>
   );

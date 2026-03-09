@@ -84,7 +84,7 @@ export const ProjectPicker: React.FC<ProjectPickerProps> = ({ projects, onSelect
                                     </div>
                                 </div>
                                 <p className="text-sm text-slate-400 line-clamp-2 mb-3">
-                                    {project.description || 'No description'}
+                                    {project.files.find(f => f.name.endsWith('.cash'))?.name ?? project.chain}
                                 </p>
                                 <div className="flex items-center text-xs text-slate-500">
                                     <Clock className="w-3 h-3 mr-1" />
