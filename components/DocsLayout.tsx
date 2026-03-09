@@ -64,32 +64,34 @@ export const DocsLayout: React.FC<DocsLayoutProps> = ({ activeId, children }) =>
 
       {/* ── Sidebar ── */}
       <aside style={{ width: 240, flexShrink: 0 }} className="border-r border-white/[0.04] sticky top-0 h-screen overflow-y-auto py-8 px-3">
-        <div className="mb-8 px-3">
+        <div className="mb-10 px-4">
           <p style={{ fontSize: 9, fontWeight: 900, letterSpacing: '0.2em', color: '#3f3f46', textTransform: 'uppercase', marginBottom: 4 }}>Protocol Docs</p>
           <p style={{ fontSize: 9, color: '#27272a' }}>v4.0 · Whitepaper Edition</p>
         </div>
         <nav>
           {sections.map(section => (
-            <div key={section} style={{ marginBottom: 24 }}>
-              <p style={{ fontSize: 9, fontWeight: 900, letterSpacing: '0.2em', color: '#3f3f46', textTransform: 'uppercase', padding: '0 8px', marginBottom: 6 }}>{section}</p>
+            <div key={section} style={{ marginBottom: 28 }}>
+              <p style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', padding: '0 16px', marginBottom: 10 }}>{section}</p>
               {NAV_ITEMS.filter(i => i.section === section).map(item => {
                 const Icon = item.icon;
                 const active = item.id === activeId;
+                const G = '#00D855';
                 return (
                   <button key={item.id} onClick={() => handleNav(item.id)}
                     style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '6px 8px', borderRadius: 8, textAlign: 'left', border: 'none', cursor: 'pointer',
-                      background: active ? 'rgba(0,216,85,0.08)' : 'transparent',
-                      color: active ? '#00D855' : '#71717a', marginBottom: 1,
-                      fontSize: 11, fontWeight: active ? 600 : 400, transition: 'all 0.15s',
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 16px', borderRadius: 8, textAlign: 'left', border: 'none', cursor: 'pointer',
+                      background: active ? `${G}15` : 'transparent',
+                      color: active ? G : '#fafafa', marginBottom: 2,
+                      fontSize: 16, fontWeight: active ? 650 : 450, transition: 'all 0.2s',
+                      lineHeight: 1.2,
                     }}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.color = '#e4e4e7'; }}
-                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.color = '#71717a'; }}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                    onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                   >
-                    <Icon size={11} style={{ flexShrink: 0 }} />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
-                    {active && <ChevronRight size={9} style={{ flexShrink: 0 }} />}
+                    <Icon size={18} style={{ flexShrink: 0, opacity: active ? 1 : 0.8 }} />
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {active && <ChevronRight size={14} style={{ flexShrink: 0 }} />}
                   </button>
                 );
               })}
@@ -106,7 +108,7 @@ export const DocsLayout: React.FC<DocsLayoutProps> = ({ activeId, children }) =>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#52525b', fontFamily: 'monospace', marginBottom: 32 }}>
             <span>docs</span>
             <ChevronRight size={10} />
-            <span style={{ color: '#71717a' }}>{activeItem?.section}</span>
+            <span style={{ color: '#a1a1aa' }}>{activeItem?.section}</span>
             <ChevronRight size={10} />
             <span style={{ color: '#00D855' }}>{activeItem?.label}</span>
           </div>
@@ -122,18 +124,18 @@ export const DocsLayout: React.FC<DocsLayoutProps> = ({ activeId, children }) =>
               <button onClick={() => handleNav(prevItem.id)} style={{ flex: 1, maxWidth: 280, padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)'; (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                <p style={{ fontSize: 9, fontWeight: 900, color: '#3f3f46', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 }}>← Previous</p>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#d4d4d8' }}>{prevItem.label}</p>
-                <p style={{ fontSize: 10, color: '#3f3f46', marginTop: 2 }}>{prevItem.section}</p>
+                <p style={{ fontSize: 9, fontWeight: 900, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 }}>← Previous</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#fafafa' }}>{prevItem.label}</p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{prevItem.section}</p>
               </button>
             ) : <div />}
             {nextItem ? (
               <button onClick={() => handleNav(nextItem.id)} style={{ flex: 1, maxWidth: 280, padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', cursor: 'pointer', textAlign: 'right', transition: 'all 0.2s', marginLeft: 'auto' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,216,85,0.25)'; (e.currentTarget as HTMLElement).style.background = 'rgba(0,216,85,0.04)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                <p style={{ fontSize: 9, fontWeight: 900, color: '#3f3f46', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 }}>Next →</p>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#d4d4d8' }}>{nextItem.label}</p>
-                <p style={{ fontSize: 10, color: '#3f3f46', marginTop: 2 }}>{nextItem.section}</p>
+                <p style={{ fontSize: 9, fontWeight: 900, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 }}>Next →</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#fafafa' }}>{nextItem.label}</p>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{nextItem.section}</p>
               </button>
             ) : <div />}
           </div>

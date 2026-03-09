@@ -258,14 +258,14 @@ const App: React.FC = () => {
   const handleSelectProject = (projectId: string) => {
     setActiveProjectId(projectId);
     if (persona === 'app') navigate(`/workspace/${projectId}`);
-    else window.location.href = `https://app.nexops.cash/#/workspace/${projectId}`;
+    else window.location.href = `https://app.nexops.cash/workspace/${projectId}`;
   };
 
   const handleCreateProject = (project: Project) => {
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
     if (persona === 'app') navigate(`/workspace/${project.id}`);
-    else window.location.href = `https://app.nexops.cash/#/workspace/${project.id}`;
+    else window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
   };
 
   const handleNavigate = (view: string) => {
@@ -280,16 +280,15 @@ const App: React.FC = () => {
     const targetSub = subdomainMap[view];
     const currentSub = subdomainMap[persona] || (window.location.hostname.includes('localhost') ? null : 'app');
 
-    // If crossing subdomains, use hard jump with HashRouter awareness
+    // If crossing subdomains, use hard jump with clean URL awareness
     if (targetSub && targetSub !== currentSub && !window.location.hostname.includes('localhost')) {
-      window.location.href = `https://${targetSub}.nexops.cash/#/${view === 'workspace' && activeProjectId ? `workspace/${activeProjectId}` : ''}`;
+      window.location.href = `https://${targetSub}.nexops.cash/${view === 'workspace' && activeProjectId ? `workspace/${activeProjectId}` : ''}`;
       return;
     }
 
     // Internal navigation
     if (view === 'workspace') {
-      if (activeProjectId) navigate(`/workspace/${activeProjectId}`);
-      else navigate('/creator');
+      navigate('/creator');
     } else if (view === 'home') {
       navigate('/');
     } else {

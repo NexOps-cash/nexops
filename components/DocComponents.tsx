@@ -11,7 +11,7 @@ export const Tag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 export const Lead: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p style={{ fontSize:18, color:'rgba(255,255,255,0.7)', lineHeight:1.7, marginBottom:40, maxWidth:720, fontWeight:400 }}>{children}</p>
+  <p style={{ fontSize:18, color:'rgba(255,255,255,0.9)', lineHeight:1.7, marginBottom:40, maxWidth:720, fontWeight:400 }}>{children}</p>
 );
 
 export const SectionH2: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -23,7 +23,7 @@ export const SectionH3: React.FC<{ children: React.ReactNode }> = ({ children })
 );
 
 export const Para: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p style={{ fontSize:14, color:'#a1a1aa', lineHeight:1.8, marginBottom:16 }}>{children}</p>
+  <p style={{ fontSize:14, color:'#d4d4d8', lineHeight:1.8, marginBottom:16 }}>{children}</p>
 );
 
 export const Code: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -38,7 +38,7 @@ export const CodeBlock: React.FC<{ lang?: string; code: string }> = ({ lang = 'c
       <span style={{ width:8,height:8,borderRadius:'50%',background:`${G}60`,display:'inline-block'}} />
       <span style={{ marginLeft:8, fontSize:9, fontWeight:900, color:'#3f3f46', textTransform:'uppercase', letterSpacing:'0.2em' }}>{lang}</span>
     </div>
-    <pre style={{ margin:0, padding:'24px', fontSize:11, fontFamily:'monospace', color:'#a1a1aa', overflowX:'auto', lineHeight:1.7, whiteSpace:'pre-wrap', wordBreak:'break-word' }}><code style={{ color:'#a1a1aa' }}>{code}</code></pre>
+    <pre style={{ margin:0, padding:'24px', fontSize:11, fontFamily:'monospace', color:'#d4d4d8', overflowX:'auto', lineHeight:1.7, whiteSpace:'pre-wrap', wordBreak:'break-word' }}><code style={{ color:'#d4d4d8' }}>{code}</code></pre>
   </div>
 );
 
@@ -59,7 +59,7 @@ export const InfoBox: React.FC<{ type?: 'info'|'warn'|'critical'; children: Reac
 export const BulletList: React.FC<{ items: string[] }> = ({ items }) => (
   <ul style={{ listStyle:'none', padding:0, margin:'16px 0 24px', display:'flex', flexDirection:'column', gap:10 }}>
     {items.map((item, i) => (
-      <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:12, fontSize:14, color:'#a1a1aa', lineHeight:1.6 }}>
+      <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:12, fontSize:14, color:'#d4d4d8', lineHeight:1.6 }}>
         <span style={{ marginTop:6, width:6, height:6, borderRadius:'50%', background:G, flexShrink:0, boxShadow:`0 0 8px ${G}` }} />
         <span dangerouslySetInnerHTML={{ __html: item.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fafafa;font-weight:600">$1</strong>').replace(/`(.+?)`/g, `<code style="font-family:monospace;font-size:11px;color:${G};background:${G}12;padding:2px 6px;border-radius:4px;border:1px solid ${G}20">$1</code>`) }} />
       </li>
@@ -70,7 +70,7 @@ export const BulletList: React.FC<{ items: string[] }> = ({ items }) => (
 export const OrderedList: React.FC<{ items: string[] }> = ({ items }) => (
   <ol style={{ listStyle:'none', padding:0, margin:'16px 0 24px', display:'flex', flexDirection:'column', gap:10, counterReset:'item' }}>
     {items.map((item, i) => (
-      <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:12, fontSize:13, color:'#71717a', lineHeight:1.6 }}>
+      <li key={i} style={{ display:'flex', alignItems:'flex-start', gap:12, fontSize:14, color:'#d4d4d8', lineHeight:1.6 }}>
         <span style={{ flexShrink:0, width:22, height:22, borderRadius:'50%', border:`1px solid ${G}40`, color:G, fontSize:10, fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', marginTop:1 }}>{i+1}</span>
         <span dangerouslySetInnerHTML={{ __html: item.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#d4d4d8;font-weight:600">$1</strong>').replace(/`(.+?)`/g, `<code style="font-family:monospace;font-size:10px;color:${G};background:${G}12;padding:1px 5px;border-radius:4px">$1</code>`) }} />
       </li>
@@ -93,7 +93,7 @@ export const Table: React.FC<{ head: string[]; rows: string[][] }> = ({ head, ro
             transition: 'background 0.2s',
           }}>
             {row.map((cell, ci) => (
-              <td key={ci} style={{ padding:'14px 20px', color:'#a1a1aa', borderBottom: ri < rows.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
+              <td key={ci} style={{ padding:'14px 20px', color:'#d4d4d8', borderBottom: ri < rows.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}
                 dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#00D855;font-weight:600">$1</strong>').replace(/`(.+?)`/g, `<code style="font-family:monospace;font-size:11px;color:#818cf8;background:rgba(129,140,248,0.1);padding:2px 6px;border-radius:4px">$1</code>`) }} />
             ))}
           </tr>
@@ -109,7 +109,7 @@ export const Pipeline: React.FC<{ steps: { label: string; desc?: string; color?:
       <React.Fragment key={i}>
         <div style={{ padding:'12px 28px', borderRadius:12, border:`1px solid ${s.color||G}30`, background:`${s.color||G}08`, minWidth:280, maxWidth:420, textAlign:'center' }}>
           <p style={{ margin:0, fontSize:12, fontWeight:700, color:s.color||G, fontFamily:'monospace' }}>{s.label}</p>
-          {s.desc && <p style={{ margin:'4px 0 0', fontSize:10, color:'#52525b' }}>{s.desc}</p>}
+          {s.desc && <p style={{ margin:'4px 0 0', fontSize:10, color:'#a1a1aa' }}>{s.desc}</p>}
         </div>
         {i < steps.length-1 && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'4px 0' }}>
@@ -127,7 +127,7 @@ export const CardGrid: React.FC<{ cards: { title: string; body: string; accent?:
     {cards.map((c, i) => (
       <div key={i} style={{ padding:'20px', borderRadius:14, border:`1px solid ${c.accent||G}20`, background:`${c.accent||G}06`, transition:'border-color 0.2s' }}>
         <p style={{ margin:'0 0 8px', fontSize:12, fontWeight:700, color:c.accent||G }}>{c.title}</p>
-        <p style={{ margin:0, fontSize:11, color:'#71717a', lineHeight:1.6 }}>{c.body}</p>
+        <p style={{ margin:0, fontSize:11, color:'#a1a1aa', lineHeight:1.6 }}>{c.body}</p>
       </div>
     ))}
   </div>
@@ -135,7 +135,7 @@ export const CardGrid: React.FC<{ cards: { title: string; body: string; accent?:
 
 export const Quote: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <blockquote style={{ margin:'28px 0', padding:'16px 24px', borderLeft:`3px solid ${G}`, background:`${G}06`, borderRadius:'0 12px 12px 0' }}>
-    <p style={{ margin:0, fontSize:13, color:'#a1a1aa', lineHeight:1.7, fontStyle:'italic' }}>{children}</p>
+    <p style={{ margin:0, fontSize:13, color:'#d4d4d8', lineHeight:1.7, fontStyle:'italic' }}>{children}</p>
   </blockquote>
 );
 
@@ -159,7 +159,7 @@ export const StepRow: React.FC<{ n: number; title: string; desc: string }> = ({ 
     <div style={{ flexShrink:0, width:28, height:28, borderRadius:'50%', border:`1px solid ${G}50`, color:G, fontSize:11, fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', marginTop:2 }}>{n}</div>
     <div>
       <p style={{ margin:'0 0 4px', fontSize:13, fontWeight:700, color:'#d4d4d8' }}>{title}</p>
-      <p style={{ margin:0, fontSize:12, color:'#71717a', lineHeight:1.6 }}>{desc}</p>
+      <p style={{ margin:0, fontSize:12, color:'#a1a1aa', lineHeight:1.6 }}>{desc}</p>
     </div>
   </div>
 );
