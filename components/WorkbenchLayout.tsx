@@ -75,42 +75,36 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                             onClick={() => onNavigateHome?.()}
                         />
                     </div>
-                    <div className="flex-1 flex flex-col pt-2 space-y-2 overflow-y-auto no-scrollbar">
+                    <div className="flex-1 flex flex-col pt-2 space-y-2 no-scrollbar">
                         <ActivityBarItem
                             icon={Files}
-                            label="Contracts (Explorer)"
+                            label="Files"
                             shortcut="Ctrl+E"
                             isActive={activeView === 'EXPLORER'}
                             onClick={() => onViewChange('EXPLORER')}
                         />
                         <ActivityBarItem
                             icon={ShieldCheck}
-                            label="AI / Auditor"
+                            label="AI Agent"
                             shortcut="Ctrl+K"
                             isActive={activeView === 'AUDITOR'}
                             onClick={() => onViewChange('AUDITOR')}
                         />
-                        {/* <ActivityBarItem
-                            icon={Play}
-                            label="Contract Flow"
-                            isActive={activeView === 'DEBUG'}
-                            onClick={() => onViewChange('DEBUG')}
-                        /> */}
                         <ActivityBarItem
                             icon={Rocket}
-                            label="Deploy Panel"
+                            label="Deploy"
                             isActive={activeView === 'DEPLOY'}
                             onClick={() => onViewChange('DEPLOY')}
                         />
                         <ActivityBarItem
                             icon={Play}
-                            label="Transaction Builder"
+                            label="Spend"
                             isActive={activeView === 'INTERACT'}
                             onClick={() => onViewChange('INTERACT')}
                         />
                         <ActivityBarItem
                             icon={GitBranch}
-                            label="Visual Flow Builder"
+                            label="Contract Visualizer"
                             isActive={activeView === 'FLOW'}
                             onClick={() => onViewChange('FLOW')}
                         />

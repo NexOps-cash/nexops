@@ -234,10 +234,12 @@ export const editSmartContract = async (code: string, instruction: string, useEx
                 };
             }
 
-            const scoreInfo = data.new_report ? ` New Security Score: ${data.new_report.score}` : '';
+            const scoreInfo = (data.new_report && data.new_report.score !== undefined)
+                ? ` New Security Score: ${data.new_report.score}`
+                : '';
             return {
                 code: data.edited_code || code,
-                explanation: `✅ Edit Applied Successfully.${scoreInfo}`
+                explanation: `✅ Edit Suggested successfully.${scoreInfo}\n\n**Action Required:** Click **[Insert]** below to apply these changes to your file.`
             };
         } catch (error) {
             console.error("External Edit Error:", error);
@@ -282,7 +284,7 @@ export const fixSmartContract = async (code: string, instructions: string, useEx
             if (data.success) {
                 return {
                     code: data.fixed_code || code,
-                    explanation: "✅ AI Fix Applied via External Engine."
+                    explanation: "✅ AI Fix Suggested via External Engine.\n\n**Action Required:** Click **[Insert]** above to apply this fix to your file."
                 };
             }
         } catch (error) {
