@@ -269,17 +269,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
                     <div
                         onClick={onNavigateWizard}
-                        className="group relative p-7 rounded-2xl border border-violet-500/20 bg-[#0c1218]/90 shadow-xl shadow-black/40 ring-1 ring-white/[0.04] hover:border-violet-400/35 text-left overflow-hidden cursor-pointer transition-all duration-300"
+                        className="group relative p-7 rounded-2xl border border-emerald-500/25 bg-[#0a1410]/90 shadow-xl shadow-black/40 ring-1 ring-white/[0.04] hover:border-emerald-400/40 text-left overflow-hidden cursor-pointer transition-all duration-300"
                     >
-                        <div className="absolute top-0 right-0 w-40 h-40 bg-violet-500/10 blur-3xl -mr-12 -mt-12 pointer-events-none rounded-full" />
-                        <div className="w-12 h-12 rounded-xl bg-violet-500/15 border border-violet-400/25 flex items-center justify-center mb-5">
-                            <Wand2 className="w-6 h-6 text-violet-400" />
+                        <div className="absolute top-0 right-0 w-40 h-40 bg-emerald-500/10 blur-3xl -mr-12 -mt-12 pointer-events-none rounded-full" />
+                        <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center mb-5">
+                            <Wand2 className="w-6 h-6 text-emerald-400" />
                         </div>
                         <h2 className="text-xl font-bold text-white mb-2 tracking-tight">Smart Wizard (Beta)</h2>
                         <p className="text-slate-400 text-sm leading-relaxed mb-6">
                             Audited templates with deterministic parameters — reproducible by design.
                         </p>
-                        <div className="text-violet-400 font-semibold text-sm flex items-center group-hover:gap-1 transition-all">
+                        <div className="text-emerald-400 font-semibold text-sm flex items-center group-hover:gap-1 transition-all">
                             Launch wizard <ArrowRight className="ml-2 w-4 h-4" />
                         </div>
                     </div>

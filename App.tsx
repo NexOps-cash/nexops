@@ -292,13 +292,17 @@ const App: React.FC = () => {
 
     // If crossing subdomains, use hard jump with clean URL awareness
     if (targetSub && targetSub !== currentSub && !window.location.hostname.includes('localhost')) {
-      window.location.href = `https://${targetSub}.nexops.cash/${view === 'workspace' && activeProjectId ? `workspace/${activeProjectId}` : ''}`;
+      if (view === 'workspace') {
+        window.location.href = 'https://app.nexops.cash/';
+        return;
+      }
+      window.location.href = `https://${targetSub}.nexops.cash/${view}`;
       return;
     }
 
-    // Internal navigation
+    // Internal navigation — Workspace = home hub (recent projects, Core IDE cards)
     if (view === 'workspace') {
-      navigate('/creator');
+      navigate('/');
     } else if (view === 'home') {
       navigate('/');
     } else {
@@ -312,7 +316,11 @@ const App: React.FC = () => {
         <TopNav
           isSyncing={isSyncing}
           syncError={syncError}
-          activeView={location.pathname.startsWith('/workspace') ? 'workspace' : location.pathname.split('/')[1] || persona}
+          activeView={
+            location.pathname === '/' || location.pathname === ''
+              ? 'workspace'
+              : location.pathname.split('/')[1] || persona
+          }
           onNavigate={handleNavigate}
         />
       )}
