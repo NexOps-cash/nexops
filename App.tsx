@@ -256,12 +256,22 @@ const App: React.FC = () => {
   };
 
   const handleSelectProject = (projectId: string) => {
+    try {
+      localStorage.setItem('nexops_last_project_id', projectId);
+    } catch {
+      /* ignore quota / private mode */
+    }
     setActiveProjectId(projectId);
     if (persona === 'app') navigate(`/workspace/${projectId}`);
     else window.location.href = `https://app.nexops.cash/workspace/${projectId}`;
   };
 
   const handleCreateProject = (project: Project) => {
+    try {
+      localStorage.setItem('nexops_last_project_id', project.id);
+    } catch {
+      /* ignore */
+    }
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
     if (persona === 'app') navigate(`/workspace/${project.id}`);
