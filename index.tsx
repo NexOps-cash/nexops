@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { WalletProvider } from './contexts/WalletContext';
+import { InfraHealthProvider } from './contexts/InfraHealthContext';
 import { BrowserRouter as Router } from 'react-router-dom';
 
 const rootElement = document.getElementById('root');
@@ -15,9 +16,11 @@ root.render(
   <React.StrictMode>
     <AuthProvider>
       <WalletProvider>
-        <Router>
-          <App />
-        </Router>
+        <InfraHealthProvider>
+          <Router>
+            <App />
+          </Router>
+        </InfraHealthProvider>
       </WalletProvider>
     </AuthProvider>
   </React.StrictMode>

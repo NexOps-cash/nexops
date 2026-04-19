@@ -1,5 +1,5 @@
 import React from 'react';
-import { GitMerge, Cpu, Terminal, FileCode, Satellite } from 'lucide-react';
+import { GitMerge, Terminal, FileCode, Satellite } from 'lucide-react';
 import { StatusBarState } from '../types';
 
 interface StatusBarProps {
@@ -21,7 +21,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({ state }) => {
         <div className="h-6 w-full bg-[#0d0d0f] border-t border-white/5 flex items-center justify-between px-3 text-[10px] text-slate-500 font-mono z-[100]">
             {/* Left Side: Indicator & Git */}
             <div className="flex items-center h-full">
-                {/* Blue Indicator Strip (VS Code style) */}
                 <div className="flex items-center bg-nexus-cyan/10 px-2 h-full mr-3 border-x border-nexus-cyan/20">
                     <span className="flex items-center gap-1.5 text-nexus-cyan font-bold uppercase tracking-tight">
                         <Satellite size={10} className="animate-pulse" />
@@ -47,7 +46,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ state }) => {
                 </div>
             </div>
 
-            {/* Right Side: Language & Terminal Info */}
+            {/* Right Side: Terminal & editor meta (system health lives in the top menu bar) */}
             <div className="flex items-center space-x-4 h-full">
                 {isTerminalActive && (
                     <div className="flex items-center gap-3 border-l border-white/10 pl-4 h-4">

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, Github, User as UserIcon, Maximize, Minimize } from 'lucide-react';
 import { Project } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { SystemHealthControl } from './SystemHealthControl';
 
 interface TopMenuBarProps {
     activeProject: Project | null;
@@ -137,6 +138,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction,
                 <div className="text-xs text-slate-500 font-mono hidden md:block">
                     {activeProject ? activeProject.name : 'No Project'}
                 </div>
+
+                <SystemHealthControl variant="topBar" />
 
                 {/* Fullscreen Toggle */}
                 <button

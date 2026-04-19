@@ -74,6 +74,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 }) => {
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
+    const activeFileNameRef = useRef(activeFileName);
+    useEffect(() => {
+        activeFileNameRef.current = activeFileName;
+    }, [activeFileName]);
     const [wcSession, setWcSession] = useState<any>(null);
 
     // Initialize WalletConnect on mount
@@ -131,7 +135,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [constructorArgs, setConstructorArgs] = useState<string[]>(project.constructorArgs || []);
     const [fundingUtxo, setFundingUtxo] = useState<UTXO | null>(null);
     const [showLiveModal, setShowLiveModal] = useState(false);
-    const [isWsConnected, setIsWsConnected] = useState(false);
+    const [isWsConnected, setIsWsConnected] = useState(() => websocketService.isConnected());
     const [lastGeneratedIntent, setLastGeneratedIntent] = useState<string>('');
     const [openFileNames, setOpenFileNames] = useState<string[]>(project.files.map(f => f.name));
     const [fileToDelete, setFileToDelete] = useState<string | null>(null);
@@ -384,7 +388,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 addLog('SYSTEM', progressText);
             } else if (data.type === 'success') {
                 const { code, contract_name, toll_gate, fallback_used, metadata } = data.data;
-                const fileName = `${contract_name || (activeFileName?.split('.')[0] || 'Generated')}.cash`;
+                const fileName = `${contract_name || (activeFileNameRef.current?.split('.')[0] || 'Generated')}.cash`;
                 const isFallback = fallback_used === true;
 
                 console.log("✅ Synthesis Success Processing:", { fileName, codeLength: code.length });
@@ -483,7 +487,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             websocketService.off('disconnected', handleDisconnected);
             websocketService.off('message', handleMessage);
         };
-    }, [isWsConnected, activeFileName]);
+        // Intentionally stable: do not depend on isWsConnected or activeFileName — those caused listener churn
+        // and flaky MCP state. Use activeFileNameRef inside handleMessage for latest file name.
+    }, []);
 
     // -- Handlers --
 

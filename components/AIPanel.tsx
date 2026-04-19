@@ -7,6 +7,7 @@ import { ExplainPanelView } from './ExplainPanelView';
 import { ContractExplanation } from '../services/groqService';
 import { AuditReport, Vulnerability, BYOKSettings } from '../types';
 import { websocketService } from '../services/websocketService';
+import { useInfraHealth } from '../contexts/InfraHealthContext';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -40,6 +41,8 @@ export const AIPanel: React.FC<AIPanelProps> = ({
     history, onSend, isBusy, onApply, onAccept, onReject, onFixVulnerability, draftInput,
     useExternalGenerator = false, onToggleExternal, isWsConnected = false, byokSettings
 }) => {
+    const infra = useInfraHealth();
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
     const [input, setInput] = useState('');
     const [showCommands, setShowCommands] = useState(false);
     const [filteredCommands, setFilteredCommands] = useState<string[]>([]);
@@ -125,10 +128,53 @@ export const AIPanel: React.FC<AIPanelProps> = ({
                         </div>
                     )}
                     <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isWsConnected ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse' : 'bg-red-500'}`}></span>
-                        <span className={`text-[9px] font-bold uppercase tracking-tighter ${isWsConnected ? 'text-nexus-cyan' : 'text-red-500'}`}>
-                            {isWsConnected ? 'MCP: ACTIVE' : 'MCP: OFFLINE'}
-                        </span>
+                        {(() => {
+                            const svcOk = infra.api.status === 'ok';
+                            const svcDown = infra.api.status === 'down';
+                            let dot: string;
+                            let label: string;
+                            let textCls: string;
+                            if (!backendUrl) {
+                                dot = isWsConnected
+                                    ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse'
+                                    : 'bg-red-500';
+                                label = isWsConnected ? 'MCP: ACTIVE' : 'MCP: OFFLINE';
+                                textCls = isWsConnected ? 'text-nexus-cyan' : 'text-red-500';
+                            } else if (svcOk && isWsConnected) {
+                                dot = 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse';
+                                label = 'MCP: LIVE';
+                                textCls = 'text-nexus-cyan';
+                            } else if (svcOk && !isWsConnected) {
+                                dot = 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.45)]';
+                                label = 'MCP: READY';
+                                textCls = 'text-amber-400';
+                            } else if (svcDown && !isWsConnected) {
+                                dot = 'bg-red-500';
+                                label = 'MCP: DOWN';
+                                textCls = 'text-red-500';
+                            } else {
+                                dot = isWsConnected
+                                    ? 'bg-nexus-cyan shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse'
+                                    : 'bg-amber-500';
+                                label = isWsConnected ? 'MCP: LIVE' : 'MCP: READY';
+                                textCls = isWsConnected ? 'text-nexus-cyan' : 'text-amber-400';
+                            }
+                            return (
+                                <>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                                    <span
+                                        className={`text-[9px] font-bold uppercase tracking-tighter ${textCls}`}
+                                        title={
+                                            backendUrl
+                                                ? `Service (HTTP): ${infra.api.status}${infra.api.detail ? ` — ${infra.api.detail}` : ''}\nBridge (WS): ${isWsConnected ? 'connected' : 'disconnected'}`
+                                                : 'Set VITE_BACKEND_URL for service vs bridge status.'
+                                        }
+                                    >
+                                        {label}
+                                    </span>
+                                </>
+                            );
+                        })()}
                         <button
                             onClick={() => websocketService.connect()}
                             className="p-1 hover:bg-white/10 rounded transition-colors"
