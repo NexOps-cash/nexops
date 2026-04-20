@@ -18,6 +18,7 @@ import { BYOKSettings } from './types';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
+const IMPORT_PROJECT_QUERY_KEY = 'importProject';
 
 // Helper component to enforce authentication
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -274,9 +275,44 @@ const App: React.FC = () => {
     }
     setProjects(prev => [project, ...prev]);
     setActiveProjectId(project.id);
-    if (persona === 'app') navigate(`/workspace/${project.id}`);
-    else window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+    if (persona === 'app') {
+      navigate(`/workspace/${project.id}`);
+    } else {
+      // Cross-subdomain handoff: include project payload so app subdomain can import then route.
+      const payload = encodeURIComponent(
+        btoa(unescape(encodeURIComponent(JSON.stringify(project))))
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '')
+      );
+      window.location.href = `https://app.nexops.cash/?${IMPORT_PROJECT_QUERY_KEY}=${payload}`;
+    }
   };
+
+  useEffect(() => {
+    if (persona !== 'app') return;
+    const qs = new URLSearchParams(window.location.search);
+    const encoded = qs.get(IMPORT_PROJECT_QUERY_KEY);
+    if (!encoded) return;
+    try {
+      const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+      const decoded = decodeURIComponent(escape(atob(b64 + pad)));
+      const imported = JSON.parse(decoded) as Project;
+      if (!imported?.id || !Array.isArray(imported?.files)) {
+        throw new Error('Invalid project payload');
+      }
+      setProjects((prev) => {
+        const without = prev.filter((p) => p.id !== imported.id);
+        return [imported, ...without];
+      });
+      setActiveProjectId(imported.id);
+      navigate(`/workspace/${imported.id}`, { replace: true });
+    } catch (e) {
+      console.error('Failed to import wizard project from URL', e);
+      navigate('/', { replace: true });
+    }
+  }, [persona, navigate]);
 
   const handleNavigate = (view: string) => {
     const subdomainMap: Record<string, string> = {

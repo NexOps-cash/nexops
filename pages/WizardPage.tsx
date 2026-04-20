@@ -261,7 +261,11 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                                 </div>
                             )}
                             <ActionsBar
-                                disabled={!canAct}
+                                copyDisabled={false}
+                                compileDisabled={isCompiling}
+                                downloadDisabled={!canAct}
+                                shareDisabled={!canAct}
+                                openDisabled={!canAct}
                                 onCopy={onCopy}
                                 onDownload={onDownload}
                                 onShare={onShare}
