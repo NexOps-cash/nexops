@@ -1,4 +1,4 @@
-# UX improvement plan
+9# UX improvement plan
 
 Branch: `ux-improvement`  
 Purpose: Reduce confusion, align language, fix dead ends, and make the primary workflow obvious (edit → compile → deploy).
@@ -75,3 +75,31 @@ Purpose: Reduce confusion, align language, fix dead ends, and make the primary w
 ## References
 
 - Internal UX review notes (activity bar, duplicate deploy, FLOW hides terminal, dashboard placeholders, expert jargon).
+
+---
+
+## Wizard v2 (UTXO Composer)
+
+### Contract kinds
+
+- `MultisigVault` — threshold signer flow with optional timelock/emergency/oracle policy.
+- `HashTimeLock` — HTLC claim/refund structure for cross-system coordination.
+- `ArbitrationEscrow` — buyer/seller/arbiter model with timeout fallback.
+- `LinearVesting` — time-based vesting schedule with optional admin revocation path.
+- `PolicyCovenant` — owner spend flow with output-policy controls.
+- `CashTokenPolicy` — token-aware policy skeleton for category/mint/burn behavior.
+
+### Feature library
+
+- Auth: multisig guards, emergency key flow, oracle attestations.
+- Timing: relative/absolute lock constraints.
+- Outputs: amount cap, recipient whitelist, continuation covenant (staged where safe).
+- Tokens: HASH160/SHA256 hash branches, token policy placeholders for advanced introspection.
+- Policy: revocation/daily-limit style controls and future migration hooks.
+
+### UX shape
+
+- 3-pane composer: kind tabs, feature toggles + fields, live source preview.
+- Deterministic source hash from actual generated source (no synthetic hash labels).
+- Action bar: Copy, Download, Share, Compile, Open in Workspace.
+- Share links encode full config state and rehydrate wizard selections.

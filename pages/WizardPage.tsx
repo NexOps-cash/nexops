@@ -1,324 +1,283 @@
-import React, { useState } from 'react';
-import { ContractTemplate, CONTRACT_TEMPLATES } from '../services/wizardService';
-import { Card, Button, Input } from '../components/UI';
-import { ShieldCheck, Wand2, ArrowRight, ArrowLeft, CheckCircle, Code2, Layers, Shield, Activity, HardDrive, Info } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import JSZip from 'jszip';
+import toast from 'react-hot-toast';
+import { Button } from '../components/UI';
+import { Wand2 } from 'lucide-react';
 import { Project, ChainType } from '../types';
+import { KINDS, KINDS_BY_ID } from '../services/wizard/kinds';
+import {
+    BuildOptions,
+    ContractKind,
+    FieldDef,
+    defaultValueForField,
+    validateAllFields,
+} from '../services/wizard/schema';
+import { generate } from '../services/wizard/generator';
+import { compileCashScript } from '../services/compilerService';
+import { KindTabs } from '../components/wizard/KindTabs';
+import { FeaturePanel } from '../components/wizard/FeaturePanel';
+import { CodePreview } from '../components/wizard/CodePreview';
+import { ActionsBar } from '../components/wizard/ActionsBar';
 
 interface WizardPageProps {
     onNavigateHome: () => void;
     onCreateProject: (project: Project) => void;
 }
 
-type WizardStep = 'SELECT_PATTERN' | 'CONFIGURE' | 'REVIEW';
+const HASH_KEY = 'nxw=';
+
+interface WizardState {
+    kindId: string;
+    fields: Record<string, string | number | boolean>;
+    enabled: Record<string, boolean>;
+}
+
+function base64UrlEncode(text: string): string {
+    return btoa(unescape(encodeURIComponent(text)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+}
+
+function base64UrlDecode(text: string): string {
+    const pad = text.length % 4 ? '='.repeat(4 - (text.length % 4)) : '';
+    const normalized = text.replace(/-/g, '+').replace(/_/g, '/') + pad;
+    return decodeURIComponent(escape(atob(normalized)));
+}
+
+function initialStateForKind(kind: ContractKind): WizardState {
+    const fields: Record<string, string | number | boolean> = {};
+    const enabled: Record<string, boolean> = {};
+    kind.fields.forEach((field) => {
+        fields[field.id] = defaultValueForField(field);
+    });
+    kind.features.forEach((feature) => {
+        enabled[feature.id] = false;
+        (feature.fields ?? []).forEach((field) => {
+            fields[field.id] = defaultValueForField(field);
+        });
+    });
+    return { kindId: kind.id, fields, enabled };
+}
+
+function loadStateFromHash(): WizardState | null {
+    const hash = window.location.hash || '';
+    const idx = hash.indexOf(HASH_KEY);
+    if (idx === -1) return null;
+    try {
+        const encoded = hash.slice(idx + HASH_KEY.length);
+        const decoded = base64UrlDecode(encoded);
+        const parsed = JSON.parse(decoded) as WizardState;
+        if (!parsed.kindId || !KINDS_BY_ID[parsed.kindId]) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
 
 export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreateProject }) => {
-    const [step, setStep] = useState<WizardStep>('SELECT_PATTERN');
-    const [selectedTemplate, setSelectedTemplate] = useState<ContractTemplate | null>(null);
-    const [parameters, setParameters] = useState<Record<string, any>>({});
-    const [generatedCode, setGeneratedCode] = useState('');
+    const defaultKind = KINDS[0];
+    const [wizardState, setWizardState] = useState<WizardState>(() => loadStateFromHash() ?? initialStateForKind(defaultKind));
+    const [compileOutput, setCompileOutput] = useState<string>('Compile output will appear here.');
+    const [isCompiling, setIsCompiling] = useState(false);
+    const [debouncedBuild, setDebouncedBuild] = useState<BuildOptions>({
+        fields: wizardState.fields,
+        enabled: wizardState.enabled,
+    });
 
-    const handleSelectTemplate = (template: ContractTemplate) => {
-        setSelectedTemplate(template);
-        // Initialize default values
-        const defaults: Record<string, any> = {};
-        template.parameters.forEach(p => {
-            if (p.defaultValue !== undefined) defaults[p.id] = p.defaultValue;
+    const activeKind = KINDS_BY_ID[wizardState.kindId] ?? defaultKind;
+
+    useEffect(() => {
+        const t = window.setTimeout(() => {
+            setDebouncedBuild({ fields: wizardState.fields, enabled: wizardState.enabled });
+        }, 120);
+        return () => window.clearTimeout(t);
+    }, [wizardState.fields, wizardState.enabled]);
+
+    const generated = useMemo(
+        () => generate(activeKind, debouncedBuild),
+        [activeKind, debouncedBuild]
+    );
+    const fieldErrors = useMemo(
+        () => validateAllFields(activeKind, wizardState.enabled, wizardState.fields),
+        [activeKind, wizardState.enabled, wizardState.fields]
+    );
+    const canAct = Object.keys(fieldErrors).length === 0 && generated.constraintErrors.length === 0;
+
+    const handleSelectKind = (kindId: string) => {
+        const kind = KINDS_BY_ID[kindId];
+        if (!kind) return;
+        setWizardState(initialStateForKind(kind));
+        setCompileOutput('Compile output will appear here.');
+    };
+
+    const handleToggleFeature = (featureId: string) => {
+        const feature = activeKind.features.find((f) => f.id === featureId);
+        if (!feature || feature.disabled) return;
+        setWizardState((prev) => {
+            const nextEnabled = { ...prev.enabled, [featureId]: !prev.enabled[featureId] };
+            if (nextEnabled[featureId]) {
+                for (const conflict of feature.conflicts ?? []) nextEnabled[conflict] = false;
+            }
+            return { ...prev, enabled: nextEnabled };
         });
-        setParameters(defaults);
-        setStep('CONFIGURE');
     };
 
-    const handleParamChange = (id: string, value: any) => {
-        setParameters(prev => ({ ...prev, [id]: value }));
+    const handleFieldChange = (field: FieldDef, value: string | number | boolean) => {
+        setWizardState((prev) => ({
+            ...prev,
+            fields: { ...prev.fields, [field.id]: value },
+        }));
     };
 
-    const handleGenerate = () => {
-        if (!selectedTemplate) return;
-        const code = selectedTemplate.generateSource(parameters);
-        setGeneratedCode(code);
-        setStep('REVIEW');
-    };
-
-    const handleFinalize = () => {
-        if (!selectedTemplate) return;
-
-        const newProject: Project = {
+    const createProjectFromCode = (code: string) => {
+        const name = `${activeKind.name} Instance`;
+        const artifact = compileCashScript(code);
+        const files: Project['files'] = [
+            { name: 'contract.cash', content: code, language: 'cashscript' },
+            {
+                name: 'artifact.json',
+                content: JSON.stringify(
+                    artifact.success ? artifact.artifact : { errors: artifact.errors },
+                    null,
+                    2
+                ),
+                language: 'json',
+            },
+        ];
+        const project: Project = {
             id: crypto.randomUUID(),
-            name: `${selectedTemplate.name} Instance`,
+            name,
             chain: ChainType.BCH_TESTNET,
-            contractCode: generatedCode,
-            files: [
-                {
-                    name: 'contract.cash',
-                    content: generatedCode,
-                    language: 'cashscript'
-                }
-            ],
+            contractCode: code,
+            files,
             versions: [
                 {
                     id: 'init',
                     timestamp: Date.now(),
                     fileName: 'contract.cash',
-                    code: generatedCode,
-                    description: `Generated from ${selectedTemplate.name} template`,
-                    author: 'SYSTEM'
-                }
+                    code,
+                    description: `Generated from ${activeKind.name} composer`,
+                    author: 'SYSTEM',
+                },
             ],
-            lastModified: Date.now()
+            lastModified: Date.now(),
         };
-
-        onCreateProject(newProject);
+        onCreateProject(project);
     };
 
-    return (
-        <div className="h-full w-full bg-[#050a08] overflow-auto p-8">
-            <div className="max-w-4xl mx-auto space-y-8">
+    const onCopy = async () => {
+        await navigator.clipboard.writeText(generated.source);
+        toast.success('Source copied');
+    };
 
-                {/* Wizard Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
-                            <Wand2 className="w-6 h-6 text-emerald-400" />
+    const onDownload = async () => {
+        const zip = new JSZip();
+        zip.file('contract.cash', generated.source);
+        zip.file('metadata.json', JSON.stringify({
+            kindId: activeKind.id,
+            fields: wizardState.fields,
+            enabled: wizardState.enabled,
+            hash: generated.hash,
+            warnings: generated.warnings,
+        }, null, 2));
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${activeKind.id}-wizard.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const onShare = async () => {
+        const payload: WizardState = {
+            kindId: activeKind.id,
+            fields: wizardState.fields,
+            enabled: wizardState.enabled,
+        };
+        const encoded = base64UrlEncode(JSON.stringify(payload));
+        const link = `${window.location.origin}${window.location.pathname}#${HASH_KEY}${encoded}`;
+        await navigator.clipboard.writeText(link);
+        window.history.replaceState({}, '', `#${HASH_KEY}${encoded}`);
+        toast.success('Share link copied');
+    };
+
+    const onCompile = async () => {
+        setIsCompiling(true);
+        try {
+            const out = compileCashScript(generated.source);
+            if (out.success && out.artifact) {
+                setCompileOutput(
+                    [
+                        'Compile: PASS',
+                        `Contract: ${out.artifact.contractName}`,
+                        `Bytecode length: ${out.artifact.bytecode.length}`,
+                    ].join('\n')
+                );
+            } else {
+                setCompileOutput(['Compile: FAIL', ...(out.errors ?? ['Unknown error'])].join('\n'));
+            }
+        } finally {
+            setIsCompiling(false);
+        }
+    };
+
+    const onOpenWorkspace = () => createProjectFromCode(generated.source);
+
+    return (
+        <div className="h-full w-full bg-[#050a08] overflow-auto p-6">
+            <div className="max-w-7xl mx-auto">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                            <Wand2 className="w-5 h-5 text-emerald-400" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-black text-white tracking-tight">Contract Wizard (Beta)</h1>
-                            <p className="text-slate-400 text-sm">Guided, safe contract generation for the NexOps Ecosystem.</p>
+                            <h1 className="text-2xl font-black text-white tracking-tight">NexWizard UTXO Composer</h1>
+                            <p className="text-slate-500 text-xs">OpenZeppelin-style feature composer for BCH CashScript</p>
                         </div>
                     </div>
                     <Button variant="ghost" onClick={onNavigateHome}>Exit Wizard</Button>
                 </div>
 
-                {/* Step Indicator */}
-                <div className="relative flex items-center justify-between pb-4">
-                    {/* Horizontal Connector Line */}
-                    <div className="absolute top-1/2 left-0 right-0 h-px bg-slate-800 -translate-y-[1.5rem] z-0" />
-
-                    {[
-                        { id: 'SELECT_PATTERN', label: 'Select Template', step: 1 },
-                        { id: 'CONFIGURE', label: 'Configure Parameters', step: 2 },
-                        { id: 'REVIEW', label: 'Security Review', step: 3 }
-                    ].map((s, idx) => {
-                        const isActive = step === s.id;
-                        const isPast = (step === 'CONFIGURE' && s.step < 2) || (step === 'REVIEW' && s.step < 3);
-
-                        return (
-                            <div key={s.id} className="relative z-10 flex flex-col items-center group">
-                                <div className={`
-                                    w-10 h-10 rounded-full border-2 flex items-center justify-center text-sm font-black transition-all duration-300
-                                    ${isActive
-                                        ? 'border-emerald-500 bg-emerald-500/20 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)] scale-110'
-                                        : isPast
-                                            ? 'border-emerald-600/50 bg-emerald-500/10 text-emerald-400'
-                                            : 'border-slate-800 bg-[#050a08] text-slate-600'}
-                                `}>
-                                    {isPast ? <CheckCircle className="w-5 h-5" /> : s.step}
+                <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden">
+                    <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
+                    <div className="grid grid-cols-1 lg:grid-cols-[360px,1fr] min-h-[700px]">
+                        <div className="border-r border-white/10">
+                            <FeaturePanel
+                                kind={activeKind}
+                                values={wizardState.fields}
+                                enabled={wizardState.enabled}
+                                errors={fieldErrors}
+                                onToggle={handleToggleFeature}
+                                onFieldChange={handleFieldChange}
+                            />
+                        </div>
+                        <div className="p-4 space-y-4">
+                            {generated.constraintErrors.length > 0 && (
+                                <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
+                                    {generated.constraintErrors.map((e) => <div key={e}>- {e}</div>)}
                                 </div>
-                                <span className={`mt-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-600'}`}>
-                                    {s.label}
-                                </span>
-                                {isActive && (
-                                    <div className="absolute -bottom-1 w-1 h-1 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.85)]" />
-                                )}
+                            )}
+                            <ActionsBar
+                                disabled={!canAct}
+                                onCopy={onCopy}
+                                onDownload={onDownload}
+                                onShare={onShare}
+                                onCompile={onCompile}
+                                onOpenWorkspace={onOpenWorkspace}
+                            />
+                            <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
+                            <div className="rounded-md border border-white/10 bg-black/20 p-3">
+                                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
+                                    Compile Output {isCompiling ? '(running...)' : ''}
+                                </div>
+                                <pre className="text-xs text-slate-300 whitespace-pre-wrap">{compileOutput}</pre>
                             </div>
-                        );
-                    })}
+                        </div>
+                    </div>
                 </div>
-
-                {/* Step Content */}
-                {step === 'SELECT_PATTERN' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                        {CONTRACT_TEMPLATES.map((t) => (
-                            <button
-                                key={t.id}
-                                onClick={() => handleSelectTemplate(t)}
-                                className="p-5 bg-emerald-950/20 backdrop-blur-sm border border-white/10 hover:border-emerald-500/40 rounded-lg text-left transition-all group relative overflow-hidden flex flex-col justify-between h-52"
-                            >
-                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                    <Layers className="w-12 h-12 text-emerald-500/40" />
-                                </div>
-                                <div>
-                                    <div className="text-[9px] font-black text-emerald-400 uppercase mb-1 tracking-[0.2em] flex items-center">
-                                        <Activity className="w-3 h-3 mr-1.5" />
-                                        {t.category} Pattern
-                                    </div>
-                                    <h3 className="text-lg font-black text-white mb-2 tracking-tight group-hover:text-emerald-300 transition-colors italic">{t.name}</h3>
-                                    <p className="text-slate-500 text-xs mb-4 line-clamp-2 leading-relaxed">{t.description}</p>
-                                </div>
-
-                                <div className="border-t border-white/5 pt-3 mt-auto flex items-center justify-between">
-                                    <div className="space-y-0.5">
-                                        <div className="text-[8px] font-mono text-slate-600 uppercase">Engine: Deterministic v1.0</div>
-                                        <div className="text-[8px] font-mono text-slate-600 uppercase flex items-center">
-                                            Security: <span className="text-emerald-400 ml-1 font-semibold">High / Audited</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-emerald-400 font-black text-[10px] uppercase tracking-widest flex items-center group-hover:translate-x-1 transition-transform">
-                                        Configure &rarr;
-                                    </div>
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {step === 'CONFIGURE' && selectedTemplate && (
-                    <div className="bg-nexus-800/60 backdrop-blur-md border border-white/5 p-8 rounded-lg space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        <div className="flex items-center justify-between border-b border-white/5 pb-6">
-                            <div>
-                                <h2 className="text-2xl font-black text-white tracking-tight italic flex items-center">
-                                    <Activity className="w-5 h-5 mr-3 text-emerald-400" />
-                                    {selectedTemplate.name}
-                                </h2>
-                                <p className="text-slate-500 text-xs mt-1 font-mono uppercase tracking-wider">Parameter Configuration Interface</p>
-                            </div>
-                            <Button variant="glass" size="sm" onClick={() => setStep('SELECT_PATTERN')} icon={<ArrowLeft className="w-3 h-3" />}>
-                                <span className="text-[10px] uppercase tracking-widest">Change Plan</span>
-                            </Button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-6">
-                            {selectedTemplate.parameters.map((p) => {
-                                const val = parameters[p.id] || '';
-                                const isHex = p.type === 'string' && selectedTemplate.id !== 'token-splitter'; // Rough check for PK fields
-                                const isValidHex = isHex ? /^[0-9a-fA-F]*$/.test(val) && (val.length === 0 || val.length === 66 || val.length === 130) : true;
-
-                                return (
-                                    <div key={p.id} className="group">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{p.label}</label>
-                                            {isHex && val.length > 0 && (
-                                                <div className={`text-[10px] font-mono flex items-center ${isValidHex ? 'text-emerald-400' : 'text-red-500'}`}>
-                                                    {isValidHex ? <CheckCircle className="w-3 h-3 mr-1" /> : <Info className="w-3 h-3 mr-1" />}
-                                                    {isValidHex ? 'Valid Format' : 'Invalid Hex Length'}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                placeholder={p.placeholder}
-                                                type={p.type === 'number' ? 'number' : 'text'}
-                                                value={val}
-                                                onChange={(e) => handleParamChange(p.id, p.type === 'number' ? Number(e.target.value) : e.target.value)}
-                                                className={`
-                                                    w-full bg-nexus-900 border px-4 py-3 text-sm transition-all outline-none font-mono rounded-md
-                                                    ${isHex && val.length > 0 && !isValidHex ? 'border-red-500/50' : 'border-white/5 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20'}
-                                                    ${isHex ? 'text-nexus-cyan' : 'text-slate-200'}
-                                                `}
-                                            />
-                                            {isHex && (
-                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-700 pointer-events-none">
-                                                    {val.length} chars
-                                                </div>
-                                            )}
-                                        </div>
-                                        <p className="text-[10px] text-slate-600 mt-2 leading-relaxed">{p.description}</p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="pt-6 border-t border-white/5 flex justify-end">
-                            <Button
-                                onClick={handleGenerate}
-                                size="lg"
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-[0.15em] text-xs h-12 px-8 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
-                                icon={<ArrowRight className="w-4 h-4" />}
-                            >
-                                Initialize Pipeline
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
-                {step === 'REVIEW' && selectedTemplate && (
-                    <div className="bg-nexus-800/60 backdrop-blur-md border border-white/5 p-8 rounded-lg space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
-                            <div className="flex items-center space-x-4">
-                                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20">
-                                    <ShieldCheck className="w-6 h-6 text-green-400" />
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-black text-white tracking-tight italic">Security Inspection</h2>
-                                    <p className="text-slate-500 text-[10px] font-mono uppercase tracking-widest">Verification Status: Deterministic PASS</p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/5 p-3 rounded-md border border-white/5">
-                                <div className="text-center md:border-r border-white/10 pr-2">
-                                    <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Compiler</div>
-                                    <div className="text-[10px] font-mono text-white text-nowrap">cashc v0.13.0</div>
-                                </div>
-                                <div className="text-center md:border-r border-white/10 px-2">
-                                    <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Audit</div>
-                                    <div className="text-[10px] font-mono text-green-400">PASSED</div>
-                                </div>
-                                <div className="text-center md:border-r border-white/10 px-2">
-                                    <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Issues</div>
-                                    <div className="text-[10px] font-mono text-slate-400">0</div>
-                                </div>
-                                <div className="text-center pl-2">
-                                    <div className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Logic</div>
-                                    <div className="text-[10px] font-mono text-nexus-cyan">STATIC</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="relative group">
-                            <div className="absolute top-4 right-4 z-10 flex items-center space-x-2">
-                                <div className="group relative">
-                                    <div className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] font-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(34,197,94,0.15)] animate-pulse">
-                                        <Shield className="w-3 h-3" />
-                                        <span>Audited Locally</span>
-                                    </div>
-                                    <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-nexus-900 border border-white/10 rounded text-[9px] text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl z-50 leading-relaxed">
-                                        Verified against NexOps deterministic template engine. Reproducibility guaranteed.
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-slate-900/50 rounded-md border border-white/5 overflow-hidden">
-                                <div className="flex items-center px-4 py-2 border-b border-white/5 bg-white/5">
-                                    <Code2 className="w-3 h-3 text-slate-500 mr-2" />
-                                    <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest italic">source_manifest.cash</span>
-                                </div>
-                                <pre className="p-6 text-slate-400 font-mono text-xs overflow-auto max-h-[350px] custom-scrollbar leading-relaxed">
-                                    <code>{generatedCode}</code>
-                                </pre>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2">
-                            <div className="flex items-center space-x-4">
-                                <div className="text-[9px] font-mono text-slate-600 flex items-center">
-                                    <HardDrive className="w-3 h-3 mr-2" />
-                                    <span className="opacity-50 mr-2 uppercase tracking-tighter">DETERMINISTIC HASH:</span>
-                                    <span className="text-slate-500">0x{crypto.randomUUID().split('-')[0].toUpperCase()}7A9B42...</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-nexus-cyan/5 border border-nexus-cyan/20 rounded-md p-4 flex items-start space-x-4">
-                            <ShieldCheck className="w-5 h-5 text-nexus-cyan mt-0.5" />
-                            <p className="text-[11px] text-nexus-cyan/70 leading-relaxed italic">
-                                Infrastructure Note: This contract was synthesized using audited primitives. All logical branching is deterministic and verified against the NexOps static analysis engine.
-                            </p>
-                        </div>
-
-                        <div className="pt-6 border-t border-white/5 flex justify-between">
-                            <Button variant="ghost" onClick={() => setStep('CONFIGURE')} icon={<ArrowLeft className="w-3 h-3" />}>
-                                <span className="text-[10px] uppercase font-bold tracking-widest">Adjust Parameters</span>
-                            </Button>
-                            <Button
-                                onClick={handleFinalize}
-                                size="lg"
-                                className="bg-green-500 hover:bg-green-400 text-nexus-900 font-black uppercase tracking-[0.15em] text-xs h-12 px-8 flex items-center transition-all transform hover:-translate-y-1 hover:shadow-[0_4px_20px_rgba(34,197,94,0.3)]"
-                                icon={<ArrowRight className="w-4 h-4" />}
-                            >
-                                Create Workspace & Execute
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
             </div>
         </div>
     );
