@@ -71,14 +71,14 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
     };
 
     return (
-        <div className="h-full w-full bg-nexus-900 overflow-auto p-8">
+        <div className="h-full w-full bg-[#050a08] overflow-auto p-8">
             <div className="max-w-4xl mx-auto space-y-8">
 
                 {/* Wizard Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 rounded-xl bg-nexus-purple/20 flex items-center justify-center">
-                            <Wand2 className="w-6 h-6 text-nexus-purple" />
+                        <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                            <Wand2 className="w-6 h-6 text-emerald-400" />
                         </div>
                         <div>
                             <h1 className="text-3xl font-black text-white tracking-tight">Contract Wizard (Beta)</h1>
@@ -106,18 +106,18 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                                 <div className={`
                                     w-10 h-10 rounded-full border-2 flex items-center justify-center text-sm font-black transition-all duration-300
                                     ${isActive
-                                        ? 'border-nexus-purple bg-nexus-purple/20 text-white shadow-[0_0_15px_rgba(168,85,247,0.3)] scale-110'
+                                        ? 'border-emerald-500 bg-emerald-500/20 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)] scale-110'
                                         : isPast
-                                            ? 'border-green-500/50 bg-green-500/10 text-green-400'
-                                            : 'border-slate-800 bg-nexus-900 text-slate-600'}
+                                            ? 'border-emerald-600/50 bg-emerald-500/10 text-emerald-400'
+                                            : 'border-slate-800 bg-[#050a08] text-slate-600'}
                                 `}>
                                     {isPast ? <CheckCircle className="w-5 h-5" /> : s.step}
                                 </div>
-                                <span className={`mt-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors ${isActive ? 'text-nexus-purple' : 'text-slate-600'}`}>
+                                <span className={`mt-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-600'}`}>
                                     {s.label}
                                 </span>
                                 {isActive && (
-                                    <div className="absolute -bottom-1 w-1 h-1 bg-nexus-purple rounded-full animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
+                                    <div className="absolute -bottom-1 w-1 h-1 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.85)]" />
                                 )}
                             </div>
                         );
@@ -131,17 +131,17 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                             <button
                                 key={t.id}
                                 onClick={() => handleSelectTemplate(t)}
-                                className="p-5 bg-nexus-800/40 backdrop-blur-sm border border-white/5 hover:border-nexus-purple/40 rounded-lg text-left transition-all group relative overflow-hidden flex flex-col justify-between h-52"
+                                className="p-5 bg-emerald-950/20 backdrop-blur-sm border border-white/10 hover:border-emerald-500/40 rounded-lg text-left transition-all group relative overflow-hidden flex flex-col justify-between h-52"
                             >
                                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                    <Layers className="w-12 h-12 text-nexus-purple" />
+                                    <Layers className="w-12 h-12 text-emerald-500/40" />
                                 </div>
                                 <div>
-                                    <div className="text-[9px] font-black text-nexus-purple uppercase mb-1 tracking-[0.2em] flex items-center">
+                                    <div className="text-[9px] font-black text-emerald-400 uppercase mb-1 tracking-[0.2em] flex items-center">
                                         <Activity className="w-3 h-3 mr-1.5" />
                                         {t.category} Pattern
                                     </div>
-                                    <h3 className="text-lg font-black text-white mb-2 tracking-tight group-hover:text-nexus-purple transition-colors italic">{t.name}</h3>
+                                    <h3 className="text-lg font-black text-white mb-2 tracking-tight group-hover:text-emerald-300 transition-colors italic">{t.name}</h3>
                                     <p className="text-slate-500 text-xs mb-4 line-clamp-2 leading-relaxed">{t.description}</p>
                                 </div>
 
@@ -149,10 +149,10 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                                     <div className="space-y-0.5">
                                         <div className="text-[8px] font-mono text-slate-600 uppercase">Engine: Deterministic v1.0</div>
                                         <div className="text-[8px] font-mono text-slate-600 uppercase flex items-center">
-                                            Security: <span className="text-green-500/70 ml-1">High / Audited</span>
+                                            Security: <span className="text-emerald-400 ml-1 font-semibold">High / Audited</span>
                                         </div>
                                     </div>
-                                    <div className="text-nexus-purple font-black text-[10px] uppercase tracking-widest flex items-center group-hover:translate-x-1 transition-transform">
+                                    <div className="text-emerald-400 font-black text-[10px] uppercase tracking-widest flex items-center group-hover:translate-x-1 transition-transform">
                                         Configure &rarr;
                                     </div>
                                 </div>
@@ -166,7 +166,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                         <div className="flex items-center justify-between border-b border-white/5 pb-6">
                             <div>
                                 <h2 className="text-2xl font-black text-white tracking-tight italic flex items-center">
-                                    <Activity className="w-5 h-5 mr-3 text-nexus-purple" />
+                                    <Activity className="w-5 h-5 mr-3 text-emerald-400" />
                                     {selectedTemplate.name}
                                 </h2>
                                 <p className="text-slate-500 text-xs mt-1 font-mono uppercase tracking-wider">Parameter Configuration Interface</p>
@@ -187,7 +187,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                                         <div className="flex items-center justify-between mb-2">
                                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{p.label}</label>
                                             {isHex && val.length > 0 && (
-                                                <div className={`text-[10px] font-mono flex items-center ${isValidHex ? 'text-green-500' : 'text-red-500'}`}>
+                                                <div className={`text-[10px] font-mono flex items-center ${isValidHex ? 'text-emerald-400' : 'text-red-500'}`}>
                                                     {isValidHex ? <CheckCircle className="w-3 h-3 mr-1" /> : <Info className="w-3 h-3 mr-1" />}
                                                     {isValidHex ? 'Valid Format' : 'Invalid Hex Length'}
                                                 </div>
@@ -201,7 +201,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                                                 onChange={(e) => handleParamChange(p.id, p.type === 'number' ? Number(e.target.value) : e.target.value)}
                                                 className={`
                                                     w-full bg-nexus-900 border px-4 py-3 text-sm transition-all outline-none font-mono rounded-md
-                                                    ${isHex && val.length > 0 && !isValidHex ? 'border-red-500/50' : 'border-white/5 focus:border-nexus-purple/50 focus:ring-1 focus:ring-nexus-purple/20'}
+                                                    ${isHex && val.length > 0 && !isValidHex ? 'border-red-500/50' : 'border-white/5 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20'}
                                                     ${isHex ? 'text-nexus-cyan' : 'text-slate-200'}
                                                 `}
                                             />
@@ -221,7 +221,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                             <Button
                                 onClick={handleGenerate}
                                 size="lg"
-                                className="bg-nexus-purple hover:bg-purple-600 text-white font-black uppercase tracking-[0.15em] text-xs h-12 px-8 shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-[0.15em] text-xs h-12 px-8 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
                                 icon={<ArrowRight className="w-4 h-4" />}
                             >
                                 Initialize Pipeline

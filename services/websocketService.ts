@@ -61,6 +61,9 @@ class WebSocketService extends EventEmitter {
     connect(url?: string) {
         if (url) this.url = url;
 
+        /** Manual reconnect should get a full retry budget (avoids “stuck offline” after max auto-retries). */
+        this.reconnectAttempts = 0;
+
         if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
             return;
         }
