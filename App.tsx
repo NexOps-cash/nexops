@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
 import { Project, ChainType } from './types';
@@ -18,8 +18,6 @@ import { BYOKSettings } from './types';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
-const IMPORT_PROJECT_QUERY_KEY = 'importProject';
-const PENDING_IMPORT_STORAGE_KEY = 'nexops_pending_import_project';
 
 // Helper component to enforce authentication
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -162,7 +160,6 @@ const App: React.FC = () => {
     }
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const hasShownPendingImportLoginPrompt = useRef(false);
 
   // Subdomain Detection
   const getPersona = () => {
@@ -269,72 +266,49 @@ const App: React.FC = () => {
     else window.location.href = `https://app.nexops.cash/workspace/${projectId}`;
   };
 
-  const handleCreateProject = (project: Project) => {
+  const handleCreateProject = async (project: Project) => {
     try {
       localStorage.setItem('nexops_last_project_id', project.id);
     } catch {
       /* ignore */
     }
-    setProjects(prev => [project, ...prev]);
+    setProjects(prev => [project, ...prev.filter(p => p.id !== project.id)]);
     setActiveProjectId(project.id);
+
+    // Ownership-based cross-subdomain flow:
+    // persist first under current auth user, then redirect by project id only.
+    if (persona !== 'app') {
+      if (!user) {
+        toast.error('Please sign in before creating a workspace.');
+        return;
+      }
+      try {
+        const { error } = await supabase.from('projects').upsert({
+          id: project.id,
+          user_id: user.id,
+          name: project.name,
+          chain: project.chain,
+          contract_code: project.contractCode,
+          files: project.files,
+          versions: project.versions,
+          audit_report: project.auditReport,
+          deployed_address: project.deployedAddress,
+          last_modified: Date.now()
+        });
+        if (error) throw error;
+        window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+        return;
+      } catch (e: any) {
+        console.error('Failed to create cross-subdomain workspace record', e);
+        toast.error(`Could not create workspace: ${e?.message || 'server error'}`);
+        return;
+      }
+    }
+
     if (persona === 'app') {
       navigate(`/workspace/${project.id}`);
-    } else {
-      // Cross-subdomain handoff: include project payload so app subdomain can import then route.
-      const payload = encodeURIComponent(
-        btoa(unescape(encodeURIComponent(JSON.stringify(project))))
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=+$/, '')
-      );
-      window.location.href = `https://app.nexops.cash/?${IMPORT_PROJECT_QUERY_KEY}=${payload}`;
     }
   };
-
-  useEffect(() => {
-    if (persona !== 'app' || isAuthLoading) return;
-
-    const qs = new URLSearchParams(window.location.search);
-    const encodedFromUrl = qs.get(IMPORT_PROJECT_QUERY_KEY);
-    if (encodedFromUrl) {
-      sessionStorage.setItem(PENDING_IMPORT_STORAGE_KEY, encodedFromUrl);
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || ''}`);
-    }
-
-    const pending = sessionStorage.getItem(PENDING_IMPORT_STORAGE_KEY);
-    if (!pending) return;
-
-    if (!user) {
-      if (!hasShownPendingImportLoginPrompt.current) {
-        toast('Sign in to import this workspace.');
-        hasShownPendingImportLoginPrompt.current = true;
-      }
-      return;
-    }
-
-    hasShownPendingImportLoginPrompt.current = false;
-
-    try {
-      const b64 = pending.replace(/-/g, '+').replace(/_/g, '/');
-      const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
-      const decoded = decodeURIComponent(escape(atob(b64 + pad)));
-      const imported = JSON.parse(decoded) as Project;
-      if (!imported?.id || !Array.isArray(imported?.files)) {
-        throw new Error('Invalid project payload');
-      }
-      setProjects((prev) => {
-        const without = prev.filter((p) => p.id !== imported.id);
-        return [imported, ...without];
-      });
-      setActiveProjectId(imported.id);
-      sessionStorage.removeItem(PENDING_IMPORT_STORAGE_KEY);
-      navigate(`/workspace/${imported.id}`, { replace: true });
-    } catch (e) {
-      console.error('Failed to import wizard project from URL', e);
-      sessionStorage.removeItem(PENDING_IMPORT_STORAGE_KEY);
-      navigate('/', { replace: true });
-    }
-  }, [persona, navigate, user, isAuthLoading]);
 
   const handleNavigate = (view: string) => {
     const subdomainMap: Record<string, string> = {
