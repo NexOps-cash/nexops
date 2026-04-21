@@ -10,9 +10,10 @@ import {
   normalizeValue,
   validateAllFields,
 } from './schema';
-import { collectBlockParams, dedupeParams } from './blocks';
+import { dedupeParams } from './blocks';
 
-function fieldToParam(field: FieldDef): string {
+function fieldToParam(field: FieldDef): string | null {
+  if (field.buildOnly) return null;
   switch (field.type) {
     case 'pubkey':
       return `pubkey ${field.id}`;
@@ -21,6 +22,8 @@ function fieldToParam(field: FieldDef): string {
     case 'blockHeight':
     case 'unixTime':
       return `int ${field.id}`;
+    case 'bytes':
+      return `bytes ${field.id}`;
     case 'bytes20':
       return `bytes20 ${field.id}`;
     case 'bytes32':
@@ -35,7 +38,8 @@ function fieldToParam(field: FieldDef): string {
 }
 
 function renderParams(fields: FieldDef[], extra: string[] = []): string {
-  const ordered = dedupeParams([...fields.map(fieldToParam), ...extra]);
+  const mapped = fields.map(fieldToParam).filter((p): p is string => !!p);
+  const ordered = dedupeParams([...mapped, ...extra]);
   return ordered.join(',\n    ');
 }
 
@@ -92,10 +96,10 @@ export function generate(kind: ContractKind, opts: BuildOptions): GenerateResult
   const normalized: Record<string, string | number | boolean> = {};
   for (const def of visibleFields) normalized[def.id] = normalizeValue(def, fields[def.id]);
 
-  const features = selected.map((f) => f.id);
+  const _features = selected.map((f) => f.id);
+  void _features;
   const built = kind.build({ fields: normalized, enabled });
-  const blockParams = collectBlockParams(features);
-  const params = renderParams(visibleFields, blockParams);
+  const params = renderParams(visibleFields);
   const source = [
     'pragma cashscript ^0.13.0;',
     '',

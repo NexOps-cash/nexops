@@ -1,52 +1,85 @@
-import { collectBlockFunctions, collectBlockGuards } from '../blocks';
 import { ContractKind } from '../schema';
 
 export const covenantKind: ContractKind = {
   id: 'covenant',
   name: 'PolicyCovenant',
-  summary: 'Owner spend with output policy controls.',
+  summary: 'Owner-signed spend with per-tx value cap and optional output whitelist / freeze.',
   fields: [
     { id: 'ownerPk', label: 'Owner pubkey', type: 'pubkey', description: 'Primary signing key.' },
-    { id: 'maxSpend', label: 'Max spend (sats)', type: 'int', description: 'Per-transaction spend cap.', defaultValue: 250000 },
+    {
+      id: 'maxSpend',
+      label: 'Per-tx cap (sats)',
+      type: 'int',
+      description: 'Maximum value of tx.outputs[0] on any spend.',
+      defaultValue: 250000,
+    },
   ],
   features: [
     {
       id: 'recipientWhitelist',
       label: 'Recipient whitelist',
       group: 'Outputs',
-      description: 'Lock first output to a whitelisted locking bytecode.',
-      fields: [{ id: 'recipientLockingBytecode', label: 'Recipient locking bytecode', type: 'bytes32', description: 'Output script hash/identifier.' }],
+      description: 'Force output 0 to be paid to a fixed locking bytecode (as raw bytes).',
+      fields: [
+        {
+          id: 'recipientLockingBytecode',
+          label: 'Recipient lockingBytecode (hex)',
+          type: 'bytes',
+          description: 'Raw locking bytecode bytes of the allowed recipient.',
+        },
+      ],
     },
     {
-      id: 'dailyCap',
-      label: 'Daily cap guard',
+      id: 'tighterCap',
+      label: 'Tighter spend cap',
       group: 'Policy',
-      description: 'Adds simple daily cap style guard (value cap placeholder).',
-      fields: [{ id: 'dailyCapSats', label: 'Daily cap (sats)', type: 'int', description: 'Daily budget cap.', defaultValue: 500000 }],
+      description: 'Adds an additional, tighter per-tx cap that applies on top of the base cap.',
+      fields: [
+        {
+          id: 'tightCapSats',
+          label: 'Tighter cap (sats)',
+          type: 'int',
+          description: 'Second value cap; typically smaller than maxSpend.',
+          defaultValue: 100000,
+        },
+      ],
     },
     {
       id: 'emergencyKey',
       label: 'Emergency freeze',
       group: 'Policy',
-      description: 'Emergency freeze function signed by separate key.',
-      fields: [{ id: 'emergencyKey', label: 'Emergency key', type: 'pubkey', description: 'Freeze signer key.' }],
+      description: 'Adds an emergency branch that returns funds to the covenant bytecode.',
+      fields: [{ id: 'emergencyKey', label: 'Emergency key', type: 'pubkey', description: 'Emergency signer.' }],
     },
   ],
   build: (opts) => {
-    const blocks = ['amountCap'];
-    if (opts.enabled.recipientWhitelist) blocks.push('recipientWhitelist');
-    if (opts.enabled.dailyCap) blocks.push('dailyCap');
-    if (opts.enabled.emergencyKey) blocks.push('emergencyKey');
-    const guards = collectBlockGuards(blocks);
-    const functions = collectBlockFunctions(blocks);
-    const source = [
-      '    function spend(sig ownerSig) {',
+    const spendBody: string[] = [
       '        require(checkSig(ownerSig, ownerPk));',
-      ...guards.map((g) => `        ${g}`),
+      '        require(tx.outputs[0].value <= maxSpend);',
+    ];
+    if (opts.enabled.tighterCap) {
+      spendBody.push('        require(tx.outputs[0].value <= tightCapSats);');
+    }
+    if (opts.enabled.recipientWhitelist) {
+      spendBody.push('        require(tx.outputs[0].lockingBytecode == recipientLockingBytecode);');
+    }
+
+    const lines: string[] = [
+      '    function spend(sig ownerSig) {',
+      ...spendBody,
       '    }',
-      '',
-      ...functions,
-    ].join('\n');
-    return { source, hash: '', warnings: [] };
+    ];
+
+    if (opts.enabled.emergencyKey) {
+      lines.push('');
+      lines.push('    function emergencyFreeze(sig emergencySig) {');
+      lines.push('        require(checkSig(emergencySig, emergencyKey));');
+      lines.push(
+        '        require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
+      );
+      lines.push('    }');
+    }
+
+    return { source: lines.join('\n'), hash: '', warnings: [] };
   },
 };

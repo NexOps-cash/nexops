@@ -3,6 +3,7 @@ export type FieldType =
   | 'int'
   | 'blockHeight'
   | 'unixTime'
+  | 'bytes'
   | 'bytes20'
   | 'bytes32'
   | 'tokenCategory'
@@ -23,6 +24,8 @@ export interface FieldDef {
   placeholder?: string;
   defaultValue?: string | number | boolean;
   options?: FieldOption[];
+  /** When true this field is used only to drive code generation and is NOT rendered as a constructor parameter. */
+  buildOnly?: boolean;
 }
 
 export type FeatureGroup = 'Auth' | 'Timing' | 'Outputs' | 'Tokens' | 'Policy' | 'Info';
@@ -35,6 +38,8 @@ export interface FeatureFlag {
   requires?: string[];
   conflicts?: string[];
   fields?: FieldDef[];
+  /** When this feature is enabled, drop these base-kind fields from the generated constructor. */
+  removesFields?: string[];
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -69,6 +74,7 @@ export type FieldValidator = (value: unknown, field: FieldDef) => ValidationResu
 const pubkeyRegex = /^(02|03)[0-9a-fA-F]{64}$|^04[0-9a-fA-F]{128}$/;
 const bytes20Regex = /^[0-9a-fA-F]{40}$/;
 const bytes32Regex = /^[0-9a-fA-F]{64}$/;
+const evenHexRegex = /^[0-9a-fA-F]*$/;
 const cashAddressRegex = /^(bitcoincash:)?(q|p)[a-z0-9]{41}$/i;
 
 const isIntegerLike = (v: unknown): boolean => {
@@ -107,6 +113,14 @@ export const fieldValidators: Record<FieldType, FieldValidator> = {
     return toNumber(value) > 0
       ? { valid: true }
       : { valid: false, reason: 'Unix time must be > 0.' };
+  },
+  bytes(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return { valid: false, reason: 'Required hex bytes (even length).' };
+    if (text.length % 2 !== 0) return { valid: false, reason: 'Hex string must have even length.' };
+    return evenHexRegex.test(text)
+      ? { valid: true }
+      : { valid: false, reason: 'Expected hex characters only.' };
   },
   bytes20(value) {
     const text = String(value ?? '').trim();
@@ -170,10 +184,11 @@ export function normalizeValue(field: FieldDef, value: unknown): string | number
 }
 
 export function collectFieldDefs(kind: ContractKind, enabled: Record<string, boolean>): FieldDef[] {
-  const fromFeatures = kind.features
-    .filter((f) => enabled[f.id])
-    .flatMap((f) => f.fields ?? []);
-  return [...kind.fields, ...fromFeatures];
+  const activeFeatures = kind.features.filter((f) => enabled[f.id]);
+  const removed = new Set<string>(activeFeatures.flatMap((f) => f.removesFields ?? []));
+  const fromFeatures = activeFeatures.flatMap((f) => f.fields ?? []);
+  const baseKept = kind.fields.filter((f) => !removed.has(f.id));
+  return [...baseKept, ...fromFeatures];
 }
 
 export function validateAllFields(

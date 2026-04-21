@@ -1,53 +1,54 @@
-import { collectBlockFunctions, collectBlockGuards } from '../blocks';
 import { ContractKind } from '../schema';
 
 export const cashTokenKind: ContractKind = {
   id: 'cashToken',
   name: 'CashTokenPolicy',
-  summary: 'Token-aware policy skeleton for category/mint/burn controls.',
+  summary: 'Category-bound CashToken mint path signed by a minting authority, with optional fungible cap.',
   fields: [
-    { id: 'category', label: 'Token category', type: 'tokenCategory', description: 'CashToken category (32-byte hex).' },
-    { id: 'mintingPk', label: 'Minting authority key', type: 'pubkey', description: 'Key that authorizes mint path.' },
+    {
+      id: 'category',
+      label: 'Token category',
+      type: 'tokenCategory',
+      description: '32-byte CashToken category (hex). Enforced on input 0.',
+    },
+    {
+      id: 'mintingPk',
+      label: 'Minting authority key',
+      type: 'pubkey',
+      description: 'Key authorised to mint or release tokens under this policy.',
+    },
   ],
   features: [
     {
       id: 'fungible',
-      label: 'Fungible token mode',
+      label: 'Fungible cap',
       group: 'Tokens',
-      description: 'Enable fungible amount rule checks.',
-      fields: [{ id: 'maxMintPerTx', label: 'Max mint per tx', type: 'int', description: 'Upper mint amount guard.', defaultValue: 1000 }],
-    },
-    {
-      id: 'nftWithCommitment',
-      label: 'NFT commitment mode',
-      group: 'Tokens',
-      description: 'Enable NFT commitment branch checks.',
-      disabled: true,
-      disabledReason: 'Coming soon',
-    },
-    {
-      id: 'burnToClaim',
-      label: 'Burn-to-claim path',
-      group: 'Tokens',
-      description: 'Require token burn before redemption.',
-      disabled: true,
-      disabledReason: 'Coming soon',
+      description: 'Cap the fungible token amount on output 0 for each mint transaction.',
+      fields: [
+        {
+          id: 'maxMintPerTx',
+          label: 'Max mint per tx',
+          type: 'int',
+          description: 'Upper bound on tx.outputs[0].tokenAmount.',
+          defaultValue: 1000,
+        },
+      ],
     },
   ],
   build: (opts) => {
-    const blocks = ['mintingNft'];
-    if (opts.enabled.burnToClaim) blocks.push('burnToClaim');
-    const guards = collectBlockGuards(blocks);
-    const functions = collectBlockFunctions(blocks);
-    const source = [
-      '    function mint(sig authoritySig, int mintAmount) {',
+    const body: string[] = [
       '        require(checkSig(authoritySig, mintingPk));',
-      ...(opts.enabled.fungible ? ['        require(mintAmount <= maxMintPerTx);'] : []),
-      ...guards.map((g) => `        ${g}`),
+      '        require(tx.inputs[0].tokenCategory == category);',
+    ];
+    if (opts.enabled.fungible) {
+      body.push('        require(tx.outputs[0].tokenAmount <= maxMintPerTx);');
+    }
+
+    const lines = [
+      '    function mint(sig authoritySig) {',
+      ...body,
       '    }',
-      '',
-      ...functions,
-    ].join('\n');
-    return { source, hash: '', warnings: [] };
+    ];
+    return { source: lines.join('\n'), hash: '', warnings: [] };
   },
 };

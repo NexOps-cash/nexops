@@ -1,50 +1,60 @@
-import { collectBlockFunctions, collectBlockGuards } from '../blocks';
 import { ContractKind } from '../schema';
 
 export const htlcKind: ContractKind = {
   id: 'htlc',
   name: 'HashTimeLock',
-  summary: 'Receiver can claim with secret; sender can refund after timeout.',
+  summary: 'Receiver claims with a preimage before timeout; sender refunds after relative timeout.',
   fields: [
     { id: 'senderPk', label: 'Sender pubkey', type: 'pubkey', description: 'Refund path signer.' },
     { id: 'receiverPk', label: 'Receiver pubkey', type: 'pubkey', description: 'Claim path signer.' },
-    { id: 'digest160', label: 'Hash160 digest', type: 'bytes20', description: 'Expected hash160(secret).' },
-    { id: 'timeoutHeight', label: 'Timeout height', type: 'blockHeight', description: 'Refund unlock block height.', defaultValue: 2000000 },
+    {
+      id: 'digest160',
+      label: 'Hash160 digest',
+      type: 'bytes20',
+      description: 'hash160(preimage). Override with SHA-256 feature if you prefer sha256.',
+    },
+    {
+      id: 'timeoutHeight',
+      label: 'Timeout (blocks)',
+      type: 'blockHeight',
+      description: 'Relative timelock in blocks (nSequence) before refund becomes available.',
+      defaultValue: 144,
+    },
   ],
   features: [
     {
-      id: 'hashSha256',
+      id: 'useSha256',
       label: 'Use SHA-256 digest',
       group: 'Tokens',
-      description: 'Switch hash check to sha256(secret) with bytes32 digest.',
-      conflicts: ['digest160Mode'],
-      fields: [{ id: 'digest256', label: 'SHA-256 digest', type: 'bytes32', description: 'Expected sha256(secret).' }],
+      description: 'Switch hash check from hash160 to sha256. Replaces the bytes20 digest with a bytes32 digest.',
+      removesFields: ['digest160'],
+      fields: [
+        {
+          id: 'digest256',
+          label: 'SHA-256 digest',
+          type: 'bytes32',
+          description: 'sha256(preimage).',
+        },
+      ],
     },
-    {
-      id: 'digest160Mode',
-      label: 'Use HASH160 digest',
-      group: 'Tokens',
-      description: 'Keep hash160(secret) digest flow.',
-      defaultValue: true as any,
-    } as any,
   ],
   build: (opts) => {
-    const hashBlock = opts.enabled.hashSha256 ? 'htlcSha256' : 'htlcHash160';
-    const guards = collectBlockGuards([hashBlock, 'timelockRelative']);
-    const functions = collectBlockFunctions([hashBlock]);
-    const source = [
+    const useSha = !!opts.enabled.useSha256;
+    const hashCheck = useSha
+      ? 'require(sha256(secretPreimage) == digest256);'
+      : 'require(hash160(secretPreimage) == digest160);';
+
+    const lines = [
       '    function claim(sig receiverSig, bytes secretPreimage) {',
       '        require(checkSig(receiverSig, receiverPk));',
-      ...guards.filter((g) => !g.includes('tx.age')).map((g) => `        ${g}`),
+      `        ${hashCheck}`,
       '    }',
       '',
       '    function refund(sig senderSig) {',
       '        require(checkSig(senderSig, senderPk));',
-      '        require(tx.age >= timeoutHeight);',
+      '        require(this.age >= timeoutHeight);',
       '    }',
-      '',
-      ...functions,
-    ].join('\n');
-    return { source, hash: '', warnings: [] };
+    ];
+    return { source: lines.join('\n'), hash: '', warnings: [] };
   },
 };
