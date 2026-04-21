@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import { ProjectWorkspace } from './pages/ProjectWorkspace';
 import { Project, ChainType } from './types';
@@ -19,6 +19,7 @@ import { BYOKSettings } from './types';
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
 const IMPORT_PROJECT_QUERY_KEY = 'importProject';
+const PENDING_IMPORT_STORAGE_KEY = 'nexops_pending_import_project';
 
 // Helper component to enforce authentication
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -161,6 +162,7 @@ const App: React.FC = () => {
     }
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const hasShownPendingImportLoginPrompt = useRef(false);
 
   // Subdomain Detection
   const getPersona = () => {
@@ -290,12 +292,30 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (persona !== 'app') return;
+    if (persona !== 'app' || isAuthLoading) return;
+
     const qs = new URLSearchParams(window.location.search);
-    const encoded = qs.get(IMPORT_PROJECT_QUERY_KEY);
-    if (!encoded) return;
+    const encodedFromUrl = qs.get(IMPORT_PROJECT_QUERY_KEY);
+    if (encodedFromUrl) {
+      sessionStorage.setItem(PENDING_IMPORT_STORAGE_KEY, encodedFromUrl);
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || ''}`);
+    }
+
+    const pending = sessionStorage.getItem(PENDING_IMPORT_STORAGE_KEY);
+    if (!pending) return;
+
+    if (!user) {
+      if (!hasShownPendingImportLoginPrompt.current) {
+        toast('Sign in to import this workspace.');
+        hasShownPendingImportLoginPrompt.current = true;
+      }
+      return;
+    }
+
+    hasShownPendingImportLoginPrompt.current = false;
+
     try {
-      const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const b64 = pending.replace(/-/g, '+').replace(/_/g, '/');
       const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
       const decoded = decodeURIComponent(escape(atob(b64 + pad)));
       const imported = JSON.parse(decoded) as Project;
@@ -307,12 +327,14 @@ const App: React.FC = () => {
         return [imported, ...without];
       });
       setActiveProjectId(imported.id);
+      sessionStorage.removeItem(PENDING_IMPORT_STORAGE_KEY);
       navigate(`/workspace/${imported.id}`, { replace: true });
     } catch (e) {
       console.error('Failed to import wizard project from URL', e);
+      sessionStorage.removeItem(PENDING_IMPORT_STORAGE_KEY);
       navigate('/', { replace: true });
     }
-  }, [persona, navigate]);
+  }, [persona, navigate, user, isAuthLoading]);
 
   const handleNavigate = (view: string) => {
     const subdomainMap: Record<string, string> = {
