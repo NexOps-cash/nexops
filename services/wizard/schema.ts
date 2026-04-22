@@ -1,3 +1,5 @@
+import type { FunctionRole, InvariantId } from './invariants';
+
 export type FieldType =
   | 'pubkey'
   | 'int'
@@ -55,13 +57,49 @@ export interface GeneratedContract {
   warnings: string[];
 }
 
+export interface FunctionSpec {
+  name: string;
+  role: FunctionRole;
+  /** Constructor-free function parameter list, e.g. `['sig s1','sig s2']`. */
+  params: string[];
+  /** Business-logic require lines without leading indentation. */
+  body: string[];
+  /** Invariants to add on top of ROLE_INVARIANTS[role]. */
+  extraInvariants?: InvariantId[];
+  /** Parameters consumed by specific invariants. Unused fields are ignored. */
+  invariantParams?: {
+    boundRecipient?: { lockingBytecodeParam: string };
+    /** Max outputs (clamp). Defaults: 2 for bound-payout / owner-spend / owner-escape / token-mint. Set to 1 for strict single-output. */
+    outputCountClamp?: number;
+    /** Min outputs (guard). Defaults: 1. */
+    outputCountGuard?: number;
+    distinctPubkeys?: string[];
+    tokenCategoryContinuity?: { categoryParam: string };
+  };
+}
+
+export interface BuildOutput {
+  functions: FunctionSpec[];
+  warnings?: string[];
+}
+
+export type CrossFieldValidator = (
+  kind: ContractKind,
+  enabled: Record<string, boolean>,
+  values: Record<string, unknown>
+) => Record<string, string>;
+
 export interface ContractKind {
   id: string;
   name: string;
   summary: string;
   fields: FieldDef[];
   features: FeatureFlag[];
-  build: (opts: BuildOptions) => GeneratedContract;
+  /** The only FunctionRole values allowed in this kind's FunctionSpec list. Generator throws on mismatch. */
+  allowedRoles: FunctionRole[];
+  /** Optional kind-level validators that operate across multiple fields (e.g. distinct pubkey checks). */
+  crossFieldValidators?: CrossFieldValidator[];
+  build: (opts: BuildOptions) => BuildOutput;
 }
 
 export interface ValidationResult {
@@ -200,6 +238,12 @@ export function validateAllFields(
   for (const field of collectFieldDefs(kind, enabled)) {
     const out = validateFieldValue(field, values[field.id]);
     if (!out.valid) errors[field.id] = out.reason || 'Invalid value.';
+  }
+  for (const validator of kind.crossFieldValidators ?? []) {
+    const extra = validator(kind, enabled, values);
+    for (const [id, message] of Object.entries(extra)) {
+      if (!errors[id]) errors[id] = message;
+    }
   }
   return errors;
 }
