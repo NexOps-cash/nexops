@@ -1,9 +1,11 @@
-import { ContractKind } from '../schema';
+import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
+import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 
 export const htlcKind: ContractKind = {
   id: 'htlc',
   name: 'HashTimeLock',
   summary: 'Receiver claims with a preimage before timeout; sender refunds after relative timeout.',
+  allowedRoles: ['owner-escape'],
   fields: [
     { id: 'senderPk', label: 'Sender pubkey', type: 'pubkey', description: 'Refund path signer.' },
     { id: 'receiverPk', label: 'Receiver pubkey', type: 'pubkey', description: 'Claim path signer.' },
@@ -37,24 +39,50 @@ export const htlcKind: ContractKind = {
         },
       ],
     },
+    {
+      id: 'strictDistinctKeys',
+      label: 'On-chain distinct keys',
+      group: 'Policy',
+      description: 'Enforce senderPk != receiverPk on both claim and refund paths. Adds on-chain cost but blocks self-HTLC griefing.',
+    },
   ],
-  build: (opts) => {
+  crossFieldValidators: [makeDistinctPubkeyValidator(['senderPk', 'receiverPk'])],
+  build: (opts): BuildOutput => {
     const useSha = !!opts.enabled.useSha256;
+    const strict = !!opts.enabled.strictDistinctKeys;
     const hashCheck = useSha
       ? 'require(sha256(secretPreimage) == digest256);'
       : 'require(hash160(secretPreimage) == digest160);';
 
-    const lines = [
-      '    function claim(sig receiverSig, bytes secretPreimage) {',
-      '        require(checkSig(receiverSig, receiverPk));',
-      `        ${hashCheck}`,
-      '    }',
-      '',
-      '    function refund(sig senderSig) {',
-      '        require(checkSig(senderSig, senderPk));',
-      '        require(this.age >= timeoutHeight);',
-      '    }',
-    ];
-    return { source: lines.join('\n'), hash: '', warnings: [] };
+    const extraInvariants = strict ? (['DISTINCT_PUBKEYS'] as const) : [];
+    const invariantParams = strict
+      ? { distinctPubkeys: ['senderPk', 'receiverPk'] }
+      : undefined;
+
+    const claim: FunctionSpec = {
+      name: 'claim',
+      role: 'owner-escape',
+      params: ['sig receiverSig', 'bytes secretPreimage'],
+      body: [
+        'require(checkSig(receiverSig, receiverPk));',
+        hashCheck,
+      ],
+      extraInvariants: [...extraInvariants],
+      invariantParams,
+    };
+
+    const refund: FunctionSpec = {
+      name: 'refund',
+      role: 'owner-escape',
+      params: ['sig senderSig'],
+      body: [
+        'require(checkSig(senderSig, senderPk));',
+        'require(this.age >= timeoutHeight);',
+      ],
+      extraInvariants: [...extraInvariants],
+      invariantParams,
+    };
+
+    return { functions: [claim, refund] };
   },
 };

@@ -1,4 +1,5 @@
-import { ContractKind } from '../schema';
+import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
+import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 
 /** Clamp threshold into the valid range for the fixed 3-pubkey vault. */
 function pickThreshold(raw: unknown): number {
@@ -11,6 +12,7 @@ export const multisigKind: ContractKind = {
   id: 'multisig',
   name: 'MultisigVault',
   summary: 'Threshold-controlled 3-signer vault with optional timelock, oracle, or emergency freeze.',
+  allowedRoles: ['quorum-spend', 'covenant-continuation'],
   fields: [
     {
       id: 'threshold',
@@ -51,11 +53,18 @@ export const multisigKind: ContractKind = {
       id: 'emergencyKey',
       label: 'Emergency freeze',
       group: 'Policy',
-      description: 'Adds an emergency branch: any single holder of emergencyKey can freeze funds back to the vault.',
+      description: 'Adds an emergency branch that returns funds to the covenant bytecode (value-preserving).',
       fields: [{ id: 'emergencyKey', label: 'Emergency key', type: 'pubkey', description: 'Emergency signer pubkey.' }],
     },
+    {
+      id: 'strictDistinctKeys',
+      label: 'On-chain distinct keys',
+      group: 'Policy',
+      description: 'Enforce pk1 != pk2 != pk3 inside the spend path. Adds on-chain cost but blocks collusion via duplicated keys.',
+    },
   ],
-  build: (opts) => {
+  crossFieldValidators: [makeDistinctPubkeyValidator(['pk1', 'pk2', 'pk3'])],
+  build: (opts): BuildOutput => {
     const threshold = pickThreshold(opts.fields.threshold);
     const sigParams = Array.from({ length: threshold }, (_, i) => `sig s${i + 1}`);
     const sigArrayElements = Array.from({ length: threshold }, (_, i) => `s${i + 1}`);
@@ -70,26 +79,30 @@ export const multisigKind: ContractKind = {
       spendArgs.push('datasig oracleSig', 'bytes oracleMessage');
       spendBody.push('require(checkDataSig(oracleSig, oracleMessage, oraclePk));');
     }
-    spendBody.push(
-      `require(checkMultiSig([${sigArrayElements.join(', ')}], [pk1, pk2, pk3]));`,
-    );
+    spendBody.push(`require(checkMultiSig([${sigArrayElements.join(', ')}], [pk1, pk2, pk3]));`);
 
-    const lines: string[] = [];
-    lines.push(`    function spend(${spendArgs.join(', ')}) {`);
-    for (const s of spendBody) lines.push(`        ${s}`);
-    lines.push('    }');
+    const spend: FunctionSpec = {
+      name: 'spend',
+      role: 'quorum-spend',
+      params: spendArgs,
+      body: spendBody,
+      extraInvariants: opts.enabled.strictDistinctKeys ? ['DISTINCT_PUBKEYS'] : [],
+      invariantParams: opts.enabled.strictDistinctKeys
+        ? { distinctPubkeys: ['pk1', 'pk2', 'pk3'] }
+        : undefined,
+    };
+
+    const functions: FunctionSpec[] = [spend];
 
     if (opts.enabled.emergencyKey) {
-      lines.push('');
-      lines.push('    function emergencyFreeze(sig emergencySig) {');
-      lines.push('        require(checkSig(emergencySig, emergencyKey));');
-      // Covenant: freeze = same locking bytecode must be preserved on output 0.
-      lines.push(
-        '        require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
-      );
-      lines.push('    }');
+      functions.push({
+        name: 'emergencyFreeze',
+        role: 'covenant-continuation',
+        params: ['sig emergencySig'],
+        body: ['require(checkSig(emergencySig, emergencyKey));'],
+      });
     }
 
-    return { source: lines.join('\n'), hash: '', warnings: [] };
+    return { functions };
   },
 };

@@ -1,13 +1,27 @@
-import { ContractKind } from '../schema';
+import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
+import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 
 export const escrowKind: ContractKind = {
   id: 'escrow',
   name: 'ArbitrationEscrow',
-  summary: 'Two-party escrow with arbiter fallback and relative-time refund.',
+  summary: 'Two-party escrow with arbiter fallback, relative-time refund, and bytecode-anchored payouts.',
+  allowedRoles: ['quorum-spend', 'bound-payout', 'owner-escape'],
   fields: [
     { id: 'buyerPk', label: 'Buyer pubkey', type: 'pubkey', description: 'Buyer signing key.' },
     { id: 'sellerPk', label: 'Seller pubkey', type: 'pubkey', description: 'Seller signing key.' },
     { id: 'arbiterPk', label: 'Arbiter pubkey', type: 'pubkey', description: 'Dispute resolver key.' },
+    {
+      id: 'buyerLockingBytecode',
+      label: 'Buyer lockingBytecode (hex)',
+      type: 'bytes',
+      description: 'Raw locking bytecode bytes for the buyer payout destination (used on arbitrateToBuyer / refund).',
+    },
+    {
+      id: 'sellerLockingBytecode',
+      label: 'Seller lockingBytecode (hex)',
+      type: 'bytes',
+      description: 'Raw locking bytecode bytes for the seller payout destination (used on arbitrateToSeller and partial release).',
+    },
     {
       id: 'timeoutHeight',
       label: 'Timeout (blocks)',
@@ -21,7 +35,7 @@ export const escrowKind: ContractKind = {
       id: 'partialRelease',
       label: 'Release cap',
       group: 'Outputs',
-      description: 'Cap the first output value (seller payout) for staged / partial releases.',
+      description: 'Cap the seller payout for staged / partial releases. When enabled, complete() binds output 0 to the seller.',
       fields: [
         {
           id: 'releaseCapSats',
@@ -39,53 +53,87 @@ export const escrowKind: ContractKind = {
       description: 'Require a signed oracle message for arbiter-assisted resolution branches.',
       fields: [{ id: 'oraclePk', label: 'Oracle pubkey', type: 'pubkey', description: 'Oracle signing key.' }],
     },
+    {
+      id: 'strictDistinctKeys',
+      label: 'On-chain distinct keys',
+      group: 'Policy',
+      description: 'Enforce buyerPk != sellerPk != arbiterPk inside complete(). Adds on-chain cost but prevents collusion by key reuse.',
+    },
   ],
-  build: (opts) => {
+  crossFieldValidators: [makeDistinctPubkeyValidator(['buyerPk', 'sellerPk', 'arbiterPk'])],
+  build: (opts): BuildOutput => {
     const wantCap = !!opts.enabled.partialRelease;
     const wantOracle = !!opts.enabled.oracleDataSig;
+    const strict = !!opts.enabled.strictDistinctKeys;
 
-    const completeLines = [
-      '    function complete(sig buyerSig, sig sellerSig) {',
-      '        require(checkSig(buyerSig, buyerPk));',
-      '        require(checkSig(sellerSig, sellerPk));',
+    const completeBody: string[] = [
+      'require(checkSig(buyerSig, buyerPk));',
+      'require(checkSig(sellerSig, sellerPk));',
     ];
-    if (wantCap) completeLines.push('        require(tx.outputs[0].value <= releaseCapSats);');
-    completeLines.push('    }');
+    if (wantCap) completeBody.push('require(tx.outputs[0].value <= releaseCapSats);');
 
-    /** Build one arbitration branch that keeps arbiterPk AND the participant key in use. */
-    const arbitrate = (fnName: string, partySigName: string, partyPk: string): string[] => {
-      const args = [`sig arbiterSig`, `sig ${partySigName}`];
-      if (wantOracle) args.push('datasig oracleSig', 'bytes oracleMessage');
+    const complete: FunctionSpec = wantCap
+      ? {
+          name: 'complete',
+          role: 'bound-payout',
+          params: ['sig buyerSig', 'sig sellerSig'],
+          body: completeBody,
+          extraInvariants: strict ? ['DISTINCT_PUBKEYS'] : [],
+          invariantParams: {
+            boundRecipient: { lockingBytecodeParam: 'sellerLockingBytecode' },
+            ...(strict ? { distinctPubkeys: ['buyerPk', 'sellerPk', 'arbiterPk'] } : {}),
+          },
+        }
+      : {
+          name: 'complete',
+          role: 'quorum-spend',
+          params: ['sig buyerSig', 'sig sellerSig'],
+          body: completeBody,
+          extraInvariants: strict ? ['DISTINCT_PUBKEYS'] : [],
+          invariantParams: strict
+            ? { distinctPubkeys: ['buyerPk', 'sellerPk', 'arbiterPk'] }
+            : undefined,
+        };
+
+    const arbitrate = (
+      fnName: string,
+      partySigName: string,
+      partyPk: string,
+      lockingBytecodeParam: string,
+      applyCap: boolean,
+    ): FunctionSpec => {
+      const params = ['sig arbiterSig', `sig ${partySigName}`];
+      if (wantOracle) params.push('datasig oracleSig', 'bytes oracleMessage');
       const body: string[] = [
-        `        require(checkSig(arbiterSig, arbiterPk));`,
-        `        require(checkSig(${partySigName}, ${partyPk}));`,
+        'require(checkSig(arbiterSig, arbiterPk));',
+        `require(checkSig(${partySigName}, ${partyPk}));`,
       ];
-      if (wantOracle) body.push('        require(checkDataSig(oracleSig, oracleMessage, oraclePk));');
-      if (wantCap && partyPk === 'sellerPk') {
-        body.push('        require(tx.outputs[0].value <= releaseCapSats);');
-      }
-      return [`    function ${fnName}(${args.join(', ')}) {`, ...body, '    }'];
+      if (wantOracle) body.push('require(checkDataSig(oracleSig, oracleMessage, oraclePk));');
+      if (applyCap) body.push('require(tx.outputs[0].value <= releaseCapSats);');
+      return {
+        name: fnName,
+        role: 'bound-payout',
+        params,
+        body,
+        invariantParams: {
+          boundRecipient: { lockingBytecodeParam },
+        },
+      };
     };
 
-    const arbBuyer = arbitrate('arbitrateToBuyer', 'buyerSig', 'buyerPk');
-    const arbSeller = arbitrate('arbitrateToSeller', 'sellerSig', 'sellerPk');
+    const arbBuyer = arbitrate('arbitrateToBuyer', 'buyerSig', 'buyerPk', 'buyerLockingBytecode', false);
+    const arbSeller = arbitrate('arbitrateToSeller', 'sellerSig', 'sellerPk', 'sellerLockingBytecode', wantCap);
 
-    const refundLines = [
-      '    function timeoutRefund(sig buyerSig) {',
-      '        require(this.age >= timeoutHeight);',
-      '        require(checkSig(buyerSig, buyerPk));',
-      '    }',
-    ];
+    const timeoutRefund: FunctionSpec = {
+      name: 'timeoutRefund',
+      role: 'owner-escape',
+      params: ['sig buyerSig'],
+      body: [
+        'require(this.age >= timeoutHeight);',
+        'require(checkSig(buyerSig, buyerPk));',
+      ],
+    };
 
-    const source = [
-      ...completeLines,
-      '',
-      ...arbBuyer,
-      '',
-      ...arbSeller,
-      '',
-      ...refundLines,
-    ].join('\n');
-    return { source, hash: '', warnings: [] };
+    return { functions: [complete, arbBuyer, arbSeller, timeoutRefund] };
   },
 };

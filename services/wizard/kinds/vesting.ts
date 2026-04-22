@@ -1,9 +1,10 @@
-import { ContractKind } from '../schema';
+import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 
 export const vestingKind: ContractKind = {
   id: 'vesting',
   name: 'LinearVesting',
   summary: 'Beneficiary can claim only between cliff and end time, with a per-claim cap.',
+  allowedRoles: ['owner-spend', 'owner-escape'],
   fields: [
     { id: 'beneficiaryPk', label: 'Beneficiary pubkey', type: 'pubkey', description: 'Claim signer.' },
     {
@@ -37,27 +38,36 @@ export const vestingKind: ContractKind = {
       fields: [{ id: 'adminPk', label: 'Admin pubkey', type: 'pubkey', description: 'Admin revocation key.' }],
     },
   ],
-  build: (opts) => {
-    const lines: string[] = [];
-    lines.push('    function claim(sig beneficiarySig) {');
-    lines.push('        require(checkSig(beneficiarySig, beneficiaryPk));');
-    lines.push('        require(tx.time >= cliffTime);');
-    // CashScript only allows tx.time on the LHS of >= for timelocks. We cannot encode
-    // "tx.time <= endTime" directly; we keep endTime as a sanity bound and rely on the
-    // revoke() path (if enabled) to sweep unused funds after endTime.
-    lines.push('        require(endTime > cliffTime);');
-    lines.push('        require(tx.outputs[0].value <= totalAmount);');
-    lines.push('    }');
+  build: (opts): BuildOutput => {
+    const claim: FunctionSpec = {
+      name: 'claim',
+      role: 'owner-spend',
+      params: ['sig beneficiarySig'],
+      body: [
+        'require(checkSig(beneficiarySig, beneficiaryPk));',
+        'require(tx.time >= cliffTime);',
+        // CashScript only allows tx.time on the LHS of >= for timelocks. The endTime > cliffTime
+        // sanity bound is kept here so the field is not dropped as unused; the revoke() path is
+        // the documented way to sweep funds after the vesting window ends.
+        'require(endTime > cliffTime);',
+        'require(tx.outputs[0].value <= totalAmount);',
+      ],
+    };
+
+    const functions: FunctionSpec[] = [claim];
 
     if (opts.enabled.revocable) {
-      lines.push('');
-      lines.push('    function revoke(sig adminSig) {');
-      lines.push('        require(checkSig(adminSig, adminPk));');
-      // Admin path is gated by time: only after vesting window ends.
-      lines.push('        require(tx.time >= endTime);');
-      lines.push('    }');
+      functions.push({
+        name: 'revoke',
+        role: 'owner-escape',
+        params: ['sig adminSig'],
+        body: [
+          'require(checkSig(adminSig, adminPk));',
+          'require(tx.time >= endTime);',
+        ],
+      });
     }
 
-    return { source: lines.join('\n'), hash: '', warnings: [] };
+    return { functions };
   },
 };

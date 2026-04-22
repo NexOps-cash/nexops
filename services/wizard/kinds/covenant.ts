@@ -1,9 +1,10 @@
-import { ContractKind } from '../schema';
+import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 
 export const covenantKind: ContractKind = {
   id: 'covenant',
   name: 'PolicyCovenant',
   summary: 'Owner-signed spend with per-tx value cap and optional output whitelist / freeze.',
+  allowedRoles: ['owner-spend', 'bound-payout', 'covenant-continuation'],
   fields: [
     { id: 'ownerPk', label: 'Owner pubkey', type: 'pubkey', description: 'Primary signing key.' },
     {
@@ -48,38 +49,48 @@ export const covenantKind: ContractKind = {
       id: 'emergencyKey',
       label: 'Emergency freeze',
       group: 'Policy',
-      description: 'Adds an emergency branch that returns funds to the covenant bytecode.',
+      description: 'Adds an emergency branch that returns funds to the covenant bytecode (value-preserving).',
       fields: [{ id: 'emergencyKey', label: 'Emergency key', type: 'pubkey', description: 'Emergency signer.' }],
     },
   ],
-  build: (opts) => {
+  build: (opts): BuildOutput => {
+    const useWhitelist = !!opts.enabled.recipientWhitelist;
     const spendBody: string[] = [
-      '        require(checkSig(ownerSig, ownerPk));',
-      '        require(tx.outputs[0].value <= maxSpend);',
+      'require(checkSig(ownerSig, ownerPk));',
+      'require(tx.outputs[0].value <= maxSpend);',
     ];
     if (opts.enabled.tighterCap) {
-      spendBody.push('        require(tx.outputs[0].value <= tightCapSats);');
-    }
-    if (opts.enabled.recipientWhitelist) {
-      spendBody.push('        require(tx.outputs[0].lockingBytecode == recipientLockingBytecode);');
+      spendBody.push('require(tx.outputs[0].value <= tightCapSats);');
     }
 
-    const lines: string[] = [
-      '    function spend(sig ownerSig) {',
-      ...spendBody,
-      '    }',
-    ];
+    const spend: FunctionSpec = useWhitelist
+      ? {
+          name: 'spend',
+          role: 'bound-payout',
+          params: ['sig ownerSig'],
+          body: spendBody,
+          invariantParams: {
+            boundRecipient: { lockingBytecodeParam: 'recipientLockingBytecode' },
+          },
+        }
+      : {
+          name: 'spend',
+          role: 'owner-spend',
+          params: ['sig ownerSig'],
+          body: spendBody,
+        };
+
+    const functions: FunctionSpec[] = [spend];
 
     if (opts.enabled.emergencyKey) {
-      lines.push('');
-      lines.push('    function emergencyFreeze(sig emergencySig) {');
-      lines.push('        require(checkSig(emergencySig, emergencyKey));');
-      lines.push(
-        '        require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
-      );
-      lines.push('    }');
+      functions.push({
+        name: 'emergencyFreeze',
+        role: 'covenant-continuation',
+        params: ['sig emergencySig'],
+        body: ['require(checkSig(emergencySig, emergencyKey));'],
+      });
     }
 
-    return { source: lines.join('\n'), hash: '', warnings: [] };
+    return { functions };
   },
 };
