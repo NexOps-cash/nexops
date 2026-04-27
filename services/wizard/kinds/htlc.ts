@@ -4,17 +4,11 @@ import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 export const htlcKind: ContractKind = {
   id: 'htlc',
   name: 'HashTimeLock',
-  summary: 'Receiver claims with a preimage before timeout; sender refunds after relative timeout.',
-  allowedRoles: ['owner-escape'],
+  summary: 'Secure single-template HTLC with hash-mode switch, strict one-output control, and value preservation.',
+  allowedRoles: ['quorum-spend'],
   fields: [
     { id: 'senderPk', label: 'Sender pubkey', type: 'pubkey', description: 'Refund path signer.' },
     { id: 'receiverPk', label: 'Receiver pubkey', type: 'pubkey', description: 'Claim path signer.' },
-    {
-      id: 'digest160',
-      label: 'Hash160 digest',
-      type: 'bytes20',
-      description: 'hash160(preimage). Override with SHA-256 feature if you prefer sha256.',
-    },
     {
       id: 'timeoutHeight',
       label: 'Timeout (blocks)',
@@ -22,65 +16,69 @@ export const htlcKind: ContractKind = {
       description: 'Relative timelock in blocks (nSequence) before refund becomes available.',
       defaultValue: 144,
     },
+    {
+      id: 'digest20',
+      label: 'HASH160 digest (bytes20)',
+      type: 'bytes20',
+      description: '20-byte hash160(preimage), used when hashMode == 0.',
+    },
+    {
+      id: 'digest32',
+      label: 'SHA256 digest (bytes32)',
+      type: 'bytes32',
+      description: '32-byte sha256(preimage), used when hashMode == 1.',
+    },
+    {
+      id: 'hashMode',
+      label: 'Hash mode',
+      type: 'int',
+      description: '0 = HASH160, 1 = SHA256.',
+      defaultValue: 0,
+    },
   ],
   features: [
-    {
-      id: 'useSha256',
-      label: 'Use SHA-256 digest',
-      group: 'Tokens',
-      description: 'Switch hash check from hash160 to sha256. Replaces the bytes20 digest with a bytes32 digest.',
-      removesFields: ['digest160'],
-      fields: [
-        {
-          id: 'digest256',
-          label: 'SHA-256 digest',
-          type: 'bytes32',
-          description: 'sha256(preimage).',
-        },
-      ],
-    },
     {
       id: 'strictDistinctKeys',
       label: 'On-chain distinct keys',
       group: 'Policy',
-      description: 'Enforce senderPk != receiverPk on both claim and refund paths. Adds on-chain cost but blocks self-HTLC griefing.',
+      description: 'Add require(senderPk != receiverPk); inside both claim() and refund().',
     },
   ],
   crossFieldValidators: [makeDistinctPubkeyValidator(['senderPk', 'receiverPk'])],
   build: (opts): BuildOutput => {
-    const useSha = !!opts.enabled.useSha256;
     const strict = !!opts.enabled.strictDistinctKeys;
-    const hashCheck = useSha
-      ? 'require(sha256(secretPreimage) == digest256);'
-      : 'require(hash160(secretPreimage) == digest160);';
-
-    const extraInvariants = strict ? (['DISTINCT_PUBKEYS'] as const) : [];
-    const invariantParams = strict
-      ? { distinctPubkeys: ['senderPk', 'receiverPk'] }
-      : undefined;
 
     const claim: FunctionSpec = {
       name: 'claim',
-      role: 'owner-escape',
-      params: ['sig receiverSig', 'bytes secretPreimage'],
+      role: 'quorum-spend',
+      params: ['sig receiverSig', 'bytes preimage'],
       body: [
         'require(checkSig(receiverSig, receiverPk));',
-        hashCheck,
+        ...(strict ? ['require(senderPk != receiverPk);'] : []),
+        '',
+        'if (hashMode == 0) {',
+        '    require(hash160(preimage) == digest20);',
+        '} else {',
+        '    require(sha256(preimage) == digest32);',
+        '}',
+        '',
+        'require(tx.outputs.length == 1);',
+        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
       ],
-      extraInvariants: [...extraInvariants],
-      invariantParams,
     };
 
     const refund: FunctionSpec = {
       name: 'refund',
-      role: 'owner-escape',
+      role: 'quorum-spend',
       params: ['sig senderSig'],
       body: [
         'require(checkSig(senderSig, senderPk));',
+        ...(strict ? ['require(senderPk != receiverPk);'] : []),
         'require(this.age >= timeoutHeight);',
+        '',
+        'require(tx.outputs.length == 1);',
+        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
       ],
-      extraInvariants: [...extraInvariants],
-      invariantParams,
     };
 
     return { functions: [claim, refund] };
