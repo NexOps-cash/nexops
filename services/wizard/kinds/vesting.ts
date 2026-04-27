@@ -56,6 +56,10 @@ export const vestingKind: ContractKind = {
       role: 'quorum-spend',
       params: ['sig beneficiarySig'],
       body: [
+        '// NOTE:',
+        '// This is NOT full linear vesting due to CashScript limitations.',
+        '// It enforces bounded release + state continuation.',
+        '',
         'require(checkSig(beneficiarySig, beneficiaryPk));',
         '',
         'require(endTime > cliffTime);',
