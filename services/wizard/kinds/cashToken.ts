@@ -3,7 +3,7 @@ import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 export const cashTokenKind: ContractKind = {
   id: 'cashToken',
   name: 'CashTokenPolicy',
-  summary: 'Category-bound CashToken mint path signed by a minting authority, with optional fungible cap.',
+  summary: 'Secure CashToken policy with full output category coverage and optional total mint cap.',
   allowedRoles: ['token-mint'],
   fields: [
     {
@@ -18,32 +18,40 @@ export const cashTokenKind: ContractKind = {
       type: 'pubkey',
       description: 'Key authorised to mint or release tokens under this policy.',
     },
-  ],
-  features: [
     {
-      id: 'fungible',
-      label: 'Fungible cap',
-      group: 'Tokens',
-      description: 'Cap the fungible token amount on output 0 for each mint transaction.',
-      fields: [
-        {
-          id: 'maxMintPerTx',
-          label: 'Max mint per tx',
-          type: 'int',
-          description: 'Upper bound on tx.outputs[0].tokenAmount.',
-          defaultValue: 1000,
-        },
-      ],
+      id: 'maxMintPerTx',
+      label: 'Max mint per tx',
+      type: 'int',
+      description: 'Set to 0 for unlimited minting, or non-zero to cap total minted amount across all outputs.',
+      defaultValue: 0,
     },
   ],
+  features: [],
   build: (opts): BuildOutput => {
     const body: string[] = [
       'require(checkSig(authoritySig, mintingPk));',
-      'require(tx.inputs[0].tokenCategory == category);',
+      '',
+      'require(tx.outputs.length == 1 || tx.outputs.length == 2);',
+      '',
+      'int totalMinted = tx.outputs[0].tokenAmount;',
+      '',
+      'require(tx.outputs[0].tokenCategory == category);',
+      'if (tx.outputs.length == 2) {',
+      '    require(tx.outputs[1].tokenCategory == category);',
+      '    totalMinted = totalMinted + tx.outputs[1].tokenAmount;',
+      '}',
+      '',
+      'if (maxMintPerTx != 0) {',
+      '    require(totalMinted <= maxMintPerTx);',
+      '}',
+      '',
+      'bool hasAuthority = tx.inputs[0].tokenCategory == category;',
+      'if (!hasAuthority && tx.inputs.length > 1) {',
+      '    hasAuthority = tx.inputs[1].tokenCategory == category;',
+      '}',
+      '',
+      'require(hasAuthority);',
     ];
-    if (opts.enabled.fungible) {
-      body.push('require(tx.outputs[0].tokenAmount <= maxMintPerTx);');
-    }
 
     const mint: FunctionSpec = {
       name: 'mint',
