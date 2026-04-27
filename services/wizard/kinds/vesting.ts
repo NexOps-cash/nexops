@@ -35,22 +35,33 @@ export const vestingKind: ContractKind = {
       description: 'Total amount that linearly unlocks across the schedule.',
       defaultValue: 1000000,
     },
+  ],
+  features: [
     {
-      id: 'adminPk',
-      label: 'Admin pubkey',
-      type: 'pubkey',
-      description: 'Admin key used for revoke path when admin revocation is enabled.',
-    },
-    {
-      id: 'adminEnabled',
-      label: 'Admin revocation enabled',
-      type: 'int',
-      description: 'Set to 0 to disable revoke authorization, non-zero to enable admin revocation.',
-      defaultValue: 0,
+      id: 'adminRevocation',
+      label: 'Admin revocation path',
+      group: 'Auth',
+      description: 'Adds an admin-signed revoke function that sweeps remaining funds after endTime.',
+      fields: [
+        {
+          id: 'adminPk',
+          label: 'Admin pubkey',
+          type: 'pubkey',
+          description: 'Admin key used for revoke path when admin revocation is enabled.',
+        },
+        {
+          id: 'adminEnabled',
+          label: 'Admin revocation enabled',
+          type: 'int',
+          description: 'Set to 0 to disable revoke authorization, non-zero to enable admin revocation.',
+          defaultValue: 1,
+        },
+      ],
     },
   ],
-  features: [],
   build: (opts): BuildOutput => {
+    const adminEnabled = !!opts.enabled.adminRevocation;
+
     const claim: FunctionSpec = {
       name: 'claim',
       role: 'quorum-spend',
@@ -81,21 +92,25 @@ export const vestingKind: ContractKind = {
       ],
     };
 
-    const revoke: FunctionSpec = {
-      name: 'revoke',
-      role: 'quorum-spend',
-      params: ['sig adminSig'],
-      body: [
-        'require(adminEnabled != 0);',
-        'require(checkSig(adminSig, adminPk));',
-        '',
-        'require(tx.time >= endTime);',
-        '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-      ],
-    };
+    const functions: FunctionSpec[] = [claim];
 
-    return { functions: [claim, revoke] };
+    if (adminEnabled) {
+      functions.push({
+        name: 'revoke',
+        role: 'quorum-spend',
+        params: ['sig adminSig'],
+        body: [
+          'require(adminEnabled != 0);',
+          'require(checkSig(adminSig, adminPk));',
+          '',
+          'require(tx.time >= endTime);',
+          '',
+          'require(tx.outputs.length == 1);',
+          'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
+        ],
+      });
+    }
+
+    return { functions };
   },
 };

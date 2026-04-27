@@ -18,16 +18,27 @@ export const cashTokenKind: ContractKind = {
       type: 'pubkey',
       description: 'Key authorised to mint or release tokens under this policy.',
     },
+  ],
+  features: [
     {
-      id: 'maxMintPerTx',
-      label: 'Max mint per tx',
-      type: 'int',
-      description: 'Set to 0 for unlimited minting, or non-zero to cap total minted amount across all outputs.',
-      defaultValue: 0,
+      id: 'mintCap',
+      label: 'Per-tx mint cap',
+      group: 'Policy',
+      description: 'Adds a per-transaction mint cap that limits total tokens minted across all outputs.',
+      fields: [
+        {
+          id: 'maxMintPerTx',
+          label: 'Max mint per tx',
+          type: 'int',
+          description: 'Set to 0 for unlimited minting, or non-zero to cap total minted amount across all outputs.',
+          defaultValue: 0,
+        },
+      ],
     },
   ],
-  features: [],
   build: (opts): BuildOutput => {
+    const mintCapEnabled = !!opts.enabled.mintCap;
+
     const body: string[] = [
       'require(checkSig(authoritySig, mintingPk));',
       '',
@@ -40,10 +51,14 @@ export const cashTokenKind: ContractKind = {
       '    require(tx.outputs[1].tokenCategory == category);',
       '    totalMinted = totalMinted + tx.outputs[1].tokenAmount;',
       '}',
-      '',
-      'if (maxMintPerTx != 0) {',
-      '    require(totalMinted <= maxMintPerTx);',
-      '}',
+      ...(mintCapEnabled
+        ? [
+            '',
+            'if (maxMintPerTx != 0) {',
+            '    require(totalMinted <= maxMintPerTx);',
+            '}',
+          ]
+        : []),
       '',
       'require(tx.inputs.length <= 3);',
       '',

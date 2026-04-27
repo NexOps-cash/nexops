@@ -23,34 +23,50 @@ export const escrowKind: ContractKind = {
       description: 'Raw locking bytecode bytes for the seller payout destination (used on arbitrateToSeller and partial release).',
     },
     {
-      id: 'timeoutHeight',
-      label: 'Timeout (blocks)',
-      type: 'blockHeight',
-      description: 'Relative timeout (nSequence) before buyer can unilaterally refund.',
-      defaultValue: 1008,
-    },
-    {
       id: 'releaseCapSats',
       label: 'Release cap (sats)',
       type: 'int',
       description: 'Set to 0 for full value preservation; non-zero caps seller payout paths.',
       defaultValue: 0,
     },
-    {
-      id: 'oraclePk',
-      label: 'Oracle pubkey',
-      type: 'pubkey',
-      description: 'Oracle key used when oracle checks are enabled.',
-    },
-    {
-      id: 'oracleEnabled',
-      label: 'Oracle enabled',
-      type: 'int',
-      description: 'Set to 0 to disable oracle checks, non-zero to require checkDataSig over tx-bound hash.',
-      defaultValue: 0,
-    },
   ],
   features: [
+    {
+      id: 'oraclePath',
+      label: 'Oracle verification path',
+      group: 'Auth',
+      description: 'Adds oracle checkDataSig branch to arbitration functions and related constructor fields.',
+      fields: [
+        {
+          id: 'oraclePk',
+          label: 'Oracle pubkey',
+          type: 'pubkey',
+          description: 'Oracle key used when oracle checks are enabled.',
+        },
+        {
+          id: 'oracleEnabled',
+          label: 'Oracle enabled',
+          type: 'int',
+          description: 'Set to 0 to disable oracle checks, non-zero to require checkDataSig over tx-bound hash.',
+          defaultValue: 1,
+        },
+      ],
+    },
+    {
+      id: 'timeoutRefund',
+      label: 'Timeout refund path',
+      group: 'Timing',
+      description: 'Adds a buyer-unilateral refund function gated on a relative block timeout.',
+      fields: [
+        {
+          id: 'timeoutHeight',
+          label: 'Timeout (blocks)',
+          type: 'blockHeight',
+          description: 'Relative timeout (nSequence) before buyer can unilaterally refund.',
+          defaultValue: 1008,
+        },
+      ],
+    },
     {
       id: 'strictDistinctKeys',
       label: 'On-chain distinct keys',
@@ -61,6 +77,9 @@ export const escrowKind: ContractKind = {
   crossFieldValidators: [makeDistinctPubkeyValidator(['buyerPk', 'sellerPk', 'arbiterPk'])],
   build: (opts): BuildOutput => {
     const strict = !!opts.enabled.strictDistinctKeys;
+    const oracleEnabled = !!opts.enabled.oraclePath;
+    const timeoutEnabled = !!opts.enabled.timeoutRefund;
+
     const distinctChecks = strict
       ? [
           'require(buyerPk != sellerPk);',
@@ -68,6 +87,17 @@ export const escrowKind: ContractKind = {
           'require(sellerPk != arbiterPk);',
         ]
       : [];
+
+    const oracleBlock = [
+      'if (oracleEnabled != 0) {',
+      '    bytes32 txHash = hash256(',
+      '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
+      '        + bytes8(tx.outputs[0].value)',
+      '        + tx.outputs[0].lockingBytecode',
+      '    );',
+      '    require(checkDataSig(oracleSig, txHash, oraclePk));',
+      '}',
+    ];
 
     const complete: FunctionSpec = {
       name: 'complete',
@@ -92,7 +122,9 @@ export const escrowKind: ContractKind = {
     const arbitrateToBuyer: FunctionSpec = {
       name: 'arbitrateToBuyer',
       role: 'quorum-spend',
-      params: ['sig arbiterSig', 'sig buyerSig', 'datasig oracleSig'],
+      params: oracleEnabled
+        ? ['sig arbiterSig', 'sig buyerSig', 'datasig oracleSig']
+        : ['sig arbiterSig', 'sig buyerSig'],
       body: [
         'require(checkSig(arbiterSig, arbiterPk));',
         'require(checkSig(buyerSig, buyerPk));',
@@ -100,16 +132,7 @@ export const escrowKind: ContractKind = {
         '',
         'require(tx.outputs.length == 1);',
         'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-        '',
-        'if (oracleEnabled != 0) {',
-        '    bytes32 txHash = hash256(',
-        '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
-        '        + bytes8(tx.outputs[0].value)',
-        '        + tx.outputs[0].lockingBytecode',
-        '    );',
-        '    require(checkDataSig(oracleSig, txHash, oraclePk));',
-        '}',
-        '',
+        ...(oracleEnabled ? ['', ...oracleBlock, ''] : ['']),
         'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
       ],
     };
@@ -117,7 +140,9 @@ export const escrowKind: ContractKind = {
     const arbitrateToSeller: FunctionSpec = {
       name: 'arbitrateToSeller',
       role: 'quorum-spend',
-      params: ['sig arbiterSig', 'sig sellerSig', 'datasig oracleSig'],
+      params: oracleEnabled
+        ? ['sig arbiterSig', 'sig sellerSig', 'datasig oracleSig']
+        : ['sig arbiterSig', 'sig sellerSig'],
       body: [
         'require(checkSig(arbiterSig, arbiterPk));',
         'require(checkSig(sellerSig, sellerPk));',
@@ -129,35 +154,30 @@ export const escrowKind: ContractKind = {
         '} else {',
         '    require(tx.outputs[0].value <= releaseCapSats);',
         '}',
-        '',
-        'if (oracleEnabled != 0) {',
-        '    bytes32 txHash = hash256(',
-        '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
-        '        + bytes8(tx.outputs[0].value)',
-        '        + tx.outputs[0].lockingBytecode',
-        '    );',
-        '    require(checkDataSig(oracleSig, txHash, oraclePk));',
-        '}',
-        '',
+        ...(oracleEnabled ? ['', ...oracleBlock, ''] : ['']),
         'require(tx.outputs[0].lockingBytecode == sellerLockingBytecode);',
       ],
     };
 
-    const timeoutRefund: FunctionSpec = {
-      name: 'timeoutRefund',
-      role: 'quorum-spend',
-      params: ['sig buyerSig'],
-      body: [
-        'require(checkSig(buyerSig, buyerPk));',
-        ...distinctChecks,
-        'require(this.age >= timeoutHeight);',
-        '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-      ],
-    };
+    const functions: FunctionSpec[] = [complete, arbitrateToBuyer, arbitrateToSeller];
 
-    return { functions: [complete, arbitrateToBuyer, arbitrateToSeller, timeoutRefund] };
+    if (timeoutEnabled) {
+      functions.push({
+        name: 'timeoutRefund',
+        role: 'quorum-spend',
+        params: ['sig buyerSig'],
+        body: [
+          'require(checkSig(buyerSig, buyerPk));',
+          ...distinctChecks,
+          'require(this.age >= timeoutHeight);',
+          '',
+          'require(tx.outputs.length == 1);',
+          'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
+          'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
+        ],
+      });
+    }
+
+    return { functions };
   },
 };
