@@ -14,7 +14,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({ code, hash, warnings }
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="h-[300px] min-h-[300px] border border-white/10 rounded-md overflow-hidden">
+      <div className="h-[600px] min-h-[600px] border border-white/10 rounded-md overflow-hidden">
         <MonacoEditorWrapper
           code={code}
           onChange={() => {}}
