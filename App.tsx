@@ -82,9 +82,12 @@ const WorkspaceSync: React.FC<{
   setActiveProjectId: (id: string | null) => void;
   projects: Project[];
   projectsLoaded: boolean;
+  userId?: string;
+  onHydrateProject: (project: Project) => void;
   children: React.ReactNode;
-}> = ({ setActiveProjectId, projects, projectsLoaded, children }) => {
+}> = ({ setActiveProjectId, projects, projectsLoaded, userId, onHydrateProject, children }) => {
   const { projectId } = useParams();
+  const [accessState, setAccessState] = useState<'checking' | 'granted' | 'denied'>('checking');
 
   const currentProject = projects.find(p => p.id === projectId);
 
@@ -92,29 +95,75 @@ const WorkspaceSync: React.FC<{
     if (projectId) setActiveProjectId(projectId);
   }, [projectId, setActiveProjectId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function verifyOwnership() {
+      if (!projectId || !projectsLoaded || !userId) return;
+      if (currentProject) {
+        if (!cancelled) setAccessState('granted');
+        return;
+      }
+      if (!cancelled) setAccessState('checking');
+      try {
+        const { data, error } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('id', projectId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error || !data) {
+          setAccessState('denied');
+          return;
+        }
+        const hydrated: Project = {
+          id: data.id,
+          name: data.name,
+          chain: data.chain,
+          contractCode: data.contract_code,
+          files: data.files || [],
+          versions: data.versions || [],
+          auditReport: data.audit_report,
+          deployedAddress: data.deployed_address,
+          lastModified: typeof data.last_modified === 'string'
+            ? new Date(data.last_modified).getTime()
+            : data.last_modified
+        };
+        onHydrateProject(hydrated);
+        setAccessState('granted');
+      } catch {
+        if (!cancelled) setAccessState('denied');
+      }
+    }
+    verifyOwnership();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, projectsLoaded, userId, currentProject, onHydrateProject]);
+
   // While projects are still loading from Supabase, show a spinner instead of
   // a false 'Project Not Found' error.
-  if (!projectsLoaded) {
+  if (!projectsLoaded || accessState === 'checking') {
     return (
       <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
         <div className="text-center space-y-4">
           <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
-          <p className="opacity-50 text-sm">Loading your workspace...</p>
+          <p className="opacity-50 text-sm">Checking workspace access...</p>
         </div>
       </div>
     );
   }
 
-  // Projects are loaded — if still not found, it genuinely doesn't exist for this user.
-  if (!currentProject) {
+  // If denied after ownership check, explicitly report no access.
+  if (!currentProject || accessState === 'denied') {
     return (
       <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
         <div className="text-center space-y-4 max-w-md p-8 bg-white/5 rounded-3xl border border-white/10">
           <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
           </div>
-          <h2 className="text-xl font-black italic">Project Not Found</h2>
-          <p className="opacity-50 text-sm">This workspace does not exist or you don't have access to it.</p>
+          <h2 className="text-xl font-black italic">No Access</h2>
+          <p className="opacity-50 text-sm">You do not have permission to open this workspace.</p>
           <button onClick={() => window.location.href = '/'} className="px-6 py-2 bg-white/5 border border-white/10 rounded-lg text-xs hover:bg-white/10 transition-all">Return Home</button>
         </div>
       </div>
@@ -244,6 +293,12 @@ const App: React.FC = () => {
   }, [projects, user, activeProjectId]);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
+  const handleHydrateProject = React.useCallback((project: Project) => {
+    setProjects((prev) => {
+      const without = prev.filter((p) => p.id !== project.id);
+      return [project, ...without];
+    });
+  }, []);
 
   const handleUpdateProject = (updatedProject: Project) => {
     setProjects(prev => {
@@ -266,16 +321,48 @@ const App: React.FC = () => {
     else window.location.href = `https://app.nexops.cash/workspace/${projectId}`;
   };
 
-  const handleCreateProject = (project: Project) => {
+  const handleCreateProject = async (project: Project) => {
     try {
       localStorage.setItem('nexops_last_project_id', project.id);
     } catch {
       /* ignore */
     }
-    setProjects(prev => [project, ...prev]);
+    setProjects(prev => [project, ...prev.filter(p => p.id !== project.id)]);
     setActiveProjectId(project.id);
-    if (persona === 'app') navigate(`/workspace/${project.id}`);
-    else window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+
+    // Ownership-based cross-subdomain flow:
+    // persist first under current auth user, then redirect by project id only.
+    if (persona !== 'app') {
+      if (!user) {
+        toast.error('Please sign in before creating a workspace.');
+        return;
+      }
+      try {
+        const { error } = await supabase.from('projects').upsert({
+          id: project.id,
+          user_id: user.id,
+          name: project.name,
+          chain: project.chain,
+          contract_code: project.contractCode,
+          files: project.files,
+          versions: project.versions,
+          audit_report: project.auditReport,
+          deployed_address: project.deployedAddress,
+          last_modified: Date.now()
+        });
+        if (error) throw error;
+        window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+        return;
+      } catch (e: any) {
+        console.error('Failed to create cross-subdomain workspace record', e);
+        toast.error(`Could not create workspace: ${e?.message || 'server error'}`);
+        return;
+      }
+    }
+
+    if (persona === 'app') {
+      navigate(`/workspace/${project.id}`);
+    }
   };
 
   const handleNavigate = (view: string) => {
@@ -347,7 +434,13 @@ const App: React.FC = () => {
 
           <Route path="/workspace/:projectId" element={
             <RequireAuth>
-              <WorkspaceSync setActiveProjectId={setActiveProjectId} projects={projects} projectsLoaded={projectsLoaded}>
+              <WorkspaceSync
+                setActiveProjectId={setActiveProjectId}
+                projects={projects}
+                projectsLoaded={projectsLoaded}
+                userId={user?.id}
+                onHydrateProject={handleHydrateProject}
+              >
                 {activeProject ? (
                   <ProjectWorkspace project={activeProject} onUpdateProject={handleUpdateProject} walletConnected={walletConnected} onConnectWallet={() => setWalletConnected(!walletConnected)} onNavigateHome={() => handleNavigate('home')} onPublish={() => setIsPublishModalOpen(true)} byokSettings={byokSettings} />
                 ) : (
