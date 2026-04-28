@@ -243,8 +243,8 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
 
                 <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden">
                     <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
-                    <div className="grid grid-cols-1 lg:grid-cols-[360px,1fr] min-h-[700px]">
-                        <div className="border-r border-white/10">
+                    <div className="grid grid-cols-1 lg:grid-cols-[360px,1fr] h-[820px]">
+                        <div className="border-r border-white/10 h-full overflow-hidden">
                             <FeaturePanel
                                 kind={activeKind}
                                 values={wizardState.fields}

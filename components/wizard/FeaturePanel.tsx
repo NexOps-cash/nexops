@@ -386,77 +386,79 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
   };
 
   return (
-    <div className="p-4 overflow-auto custom-scrollbar space-y-5">
-      <div className="rounded-md border border-emerald-500/20 bg-emerald-950/20 p-3 space-y-2">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300 font-black">
-          Test identities (Chipnet only - not for real funds)
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void handleCreateTestIdentities(1)}
-            className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
-          >
-            Create test identity
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleCreateTestIdentities(3)}
-            className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
-          >
-            Create 3 test identities
-          </button>
-          <button
-            type="button"
-            onClick={() => void fillNextEmptyCompatibleField()}
-            disabled={!selectedWallet}
-            className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Fill next empty (selected identity)
-          </button>
-        </div>
-        {wallets.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {wallets.map((wallet) => (
-              <button
-                key={wallet.id}
-                type="button"
-                onClick={() => setSelectedWalletId(wallet.id)}
-                className={`px-2.5 py-1 rounded text-[10px] border ${
-                  selectedWalletId === wallet.id
-                    ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
-                    : 'border-white/15 text-slate-300'
-                }`}
-              >
-                {wallet.name}
-              </button>
-            ))}
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <div className="p-4 border-b border-white/10 bg-[#050a08]">
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-950/20 p-3 space-y-2">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300 font-black">
+            Test identities (Chipnet only - not for real funds)
           </div>
-        ) : (
-          <div className="text-[10px] text-slate-400">No test identities yet.</div>
-        )}
-        {walletPresets.length > 0 && (
-          <div className="pt-1 border-t border-white/10">
-            <div className="text-[10px] text-slate-400 mb-2 flex items-center gap-1">
-              <Wallet size={12} /> Bulk presets
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCreateTestIdentities(1)}
+              className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
+            >
+              Create test identity
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreateTestIdentities(3)}
+              className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
+            >
+              Create 3 test identities
+            </button>
+            <button
+              type="button"
+              onClick={() => void fillNextEmptyCompatibleField()}
+              disabled={!selectedWallet}
+              className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Fill next empty (selected identity)
+            </button>
+          </div>
+          {wallets.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {walletPresets.map((preset) => (
+              {wallets.map((wallet) => (
                 <button
-                  key={preset.id}
+                  key={wallet.id}
                   type="button"
-                  onClick={() => void applyBulkPreset(preset)}
-                  className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
+                  onClick={() => setSelectedWalletId(wallet.id)}
+                  className={`px-2.5 py-1 rounded text-[10px] border ${
+                    selectedWalletId === wallet.id
+                      ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-100'
+                      : 'border-white/15 text-slate-300'
+                  }`}
                 >
-                  {preset.label}
+                  {wallet.name}
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="text-[10px] text-slate-400">No test identities yet.</div>
+          )}
+          {walletPresets.length > 0 && (
+            <div className="pt-1 border-t border-white/10">
+              <div className="text-[10px] text-slate-400 mb-2 flex items-center gap-1">
+                <Wallet size={12} /> Bulk presets
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {walletPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => void applyBulkPreset(preset)}
+                    className="px-2.5 py-1 text-[10px] rounded border border-white/15 text-slate-200 hover:border-emerald-400/40"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-
-      <div>
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-4 space-y-5">
+        <div>
         <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-black">Base fields</div>
         <div className="mt-3 space-y-3">
           {kind.fields.map((field) => renderFieldWithWalletActions(field))}
@@ -501,6 +503,7 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
           </div>
         </div>
       ))}
+      </div>
       {confirmDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-xl border border-emerald-500/30 bg-[#07130f] shadow-2xl shadow-emerald-950/60">
