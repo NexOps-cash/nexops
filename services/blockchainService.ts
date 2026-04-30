@@ -55,6 +55,11 @@ const FALLBACK_SERVERS = [
     'electrum.imaginary.cash' // Some standard servers have testnet ports but we prefer explicit ones
 ];
 
+/** Public list for UI transparency (same order as fallback attempts). */
+export const ELECTRUM_FALLBACK_SERVERS: readonly string[] = FALLBACK_SERVERS;
+
+export type ElectrumConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
 /**
  * Singleton Connection Manager
  * Manges the single Electrum connection for the application with fallback support.
@@ -63,6 +68,29 @@ class ElectrumManager {
     private static instance: ElectrumClient<any> | null = null;
     private static connectionPromise: Promise<ElectrumClient<any>> | null = null;
     private static currentServerIndex = 0;
+    private static activeHost: string | null = null;
+    private static connectionStatus: ElectrumConnectionStatus = 'idle';
+    private static statusListeners = new Set<() => void>();
+
+    private static emitStatus() {
+        this.statusListeners.forEach((fn) => {
+            try {
+                fn();
+            } catch {
+                /* ignore */
+            }
+        });
+    }
+
+    /** Subscribe to host / status changes (connect, disconnect, rotation). */
+    static subscribeStatus(listener: () => void): () => void {
+        this.statusListeners.add(listener);
+        return () => this.statusListeners.delete(listener);
+    }
+
+    static getStatusSnapshot(): { host: string | null; status: ElectrumConnectionStatus } {
+        return { host: this.activeHost, status: this.connectionStatus };
+    }
 
     /**
      * Get the singleton Electrum client.
@@ -83,6 +111,9 @@ class ElectrumManager {
             while (attempts < maxAttempts) {
                 const server = FALLBACK_SERVERS[this.currentServerIndex];
                 try {
+                    this.connectionStatus = 'connecting';
+                    this.activeHost = null;
+                    this.emitStatus();
                     console.log(`[ElectrumManager] Initializing connection to Chipnet via ${server}...`);
 
                     const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', server);
@@ -91,12 +122,18 @@ class ElectrumManager {
                     console.log(`[ElectrumManager] Connected successfully to ${server}.`);
 
                     this.instance = client;
+                    this.activeHost = server;
+                    this.connectionStatus = 'connected';
+                    this.emitStatus();
 
                     // Cleanup on disconnect
                     client.on('disconnected', () => {
                         console.warn(`[ElectrumManager] Disconnected from ${server}. Clearing instance.`);
                         this.instance = null;
                         this.connectionPromise = null;
+                        this.activeHost = null;
+                        this.connectionStatus = 'idle';
+                        this.emitStatus();
                         // Rotate server on disconnect
                         this.currentServerIndex = (this.currentServerIndex + 1) % FALLBACK_SERVERS.length;
                     });
@@ -110,6 +147,9 @@ class ElectrumManager {
             }
 
             this.connectionPromise = null;
+            this.activeHost = null;
+            this.connectionStatus = 'error';
+            this.emitStatus();
             throw new Error("[ElectrumManager] Critical Failure. All fallback servers exhausted.");
         })();
 
@@ -142,6 +182,30 @@ class ElectrumManager {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
+    }
+}
+
+/** UI / health: current Electrum host and connection state. */
+export function getElectrumConnectionSnapshot(): {
+    host: string | null;
+    status: ElectrumConnectionStatus;
+} {
+    return ElectrumManager.getStatusSnapshot();
+}
+
+export function subscribeElectrumConnection(listener: () => void): () => void {
+    return ElectrumManager.subscribeStatus(listener);
+}
+
+/**
+ * Warm Electrum connection and verify RPC (for health probes).
+ */
+export async function probeElectrumConnection(): Promise<boolean> {
+    try {
+        await ElectrumManager.request('blockchain.headers.subscribe');
+        return true;
+    } catch {
+        return false;
     }
 }
 

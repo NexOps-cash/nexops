@@ -21,13 +21,11 @@ interface WorkbenchLayoutProps {
 const ActivityBarItem = ({
     icon: Icon,
     label,
-    shortcut,
     isActive,
     onClick
 }: {
     icon: any,
     label: string,
-    shortcut?: string,
     isActive: boolean,
     onClick: () => void
 }) => (
@@ -45,7 +43,6 @@ const ActivityBarItem = ({
         {/* Custom Tooltip */}
         <div className="absolute left-14 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded shadow-xl whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex items-center space-x-2 border border-slate-700">
             <span>{label}</span>
-            {shortcut && <span className="text-[9px] text-slate-400 bg-black/40 px-1 rounded border border-white/10">{shortcut}</span>}
         </div>
     </div>
 );
@@ -79,14 +76,12 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         <ActivityBarItem
                             icon={Files}
                             label="Files"
-                            shortcut="Ctrl+E"
                             isActive={activeView === 'EXPLORER'}
                             onClick={() => onViewChange('EXPLORER')}
                         />
                         <ActivityBarItem
                             icon={ShieldCheck}
                             label="AI Agent"
-                            shortcut="Ctrl+K"
                             isActive={activeView === 'AUDITOR'}
                             onClick={() => onViewChange('AUDITOR')}
                         />
