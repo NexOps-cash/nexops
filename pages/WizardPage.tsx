@@ -1,9 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import toast from 'react-hot-toast';
 import { Button } from '../components/UI';
 import { Wand2 } from 'lucide-react';
 import { Project, ChainType } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  consumeWizardPendingAction,
+  persistAuthReturnIfAbsent,
+  resetHasHandledAuthBeforeLoginRedirect,
+  setWizardPendingAction,
+} from '../lib/authRouting';
 import { KINDS, KINDS_BY_ID } from '../services/wizard/kinds';
 import {
   BuildOptions,
@@ -152,6 +160,8 @@ function stripNexopsSessionQuery(): void {
 }
 
 export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreateProject }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const defaultKind = KINDS[0];
   const lastAppliedNormalizedRef = useRef<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -221,6 +231,110 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
   );
   const canAct = Object.keys(fieldErrors).length === 0 && generated.constraintErrors.length === 0;
 
+  const createProjectFromCode = useCallback(
+    (code: string) => {
+      const name = `${activeKind.name} Instance`;
+      const artifact = compileCashScript(code);
+      const files: Project['files'] = [
+        { name: 'contract.cash', content: code, language: 'cashscript' },
+        {
+          name: 'artifact.json',
+          content: JSON.stringify(
+            artifact.success ? artifact.artifact : { errors: artifact.errors },
+            null,
+            2
+          ),
+          language: 'json',
+        },
+      ];
+      const project: Project = {
+        id: crypto.randomUUID(),
+        name,
+        chain: ChainType.BCH_TESTNET,
+        contractCode: code,
+        files,
+        versions: [
+          {
+            id: 'init',
+            timestamp: Date.now(),
+            fileName: 'contract.cash',
+            code,
+            description: `Generated from ${activeKind.name} composer`,
+            author: 'SYSTEM',
+          },
+        ],
+        lastModified: Date.now(),
+      };
+      onCreateProject(project);
+    },
+    [activeKind.name, onCreateProject]
+  );
+
+  const runDownloadZip = useCallback(async () => {
+    const zip = new JSZip();
+    zip.file('contract.cash', generated.source);
+    zip.file(
+      'metadata.json',
+      JSON.stringify(
+        {
+          kindId: activeKind.id,
+          fields: wizardState.fields,
+          enabled: wizardState.enabled,
+          hash: generated.hash,
+          warnings: generated.warnings,
+        },
+        null,
+        2
+      )
+    );
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeKind.id}-wizard.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [
+    activeKind.id,
+    generated.hash,
+    generated.source,
+    generated.warnings,
+    wizardState.enabled,
+    wizardState.fields,
+  ]);
+
+  const redirectToLoginForWizardExport = useCallback(
+    (pending: 'download' | 'open_workspace') => {
+      persistAuthReturnIfAbsent(window.location.href);
+      resetHasHandledAuthBeforeLoginRedirect();
+      setWizardPendingAction(pending);
+      navigate(`/login?return=${encodeURIComponent(window.location.href)}`);
+    },
+    [navigate]
+  );
+
+  const ensureLoggedInForExport = useCallback(
+    (pending: 'download' | 'open_workspace'): boolean => {
+      if (user) return true;
+      redirectToLoginForWizardExport(pending);
+      return false;
+    },
+    [user, redirectToLoginForWizardExport]
+  );
+
+  // Resume post-login: depend only on user + canAct so composer is valid and we never re-fire on generated churn.
+  useEffect(() => {
+    if (!user || !canAct) return;
+    const action = consumeWizardPendingAction();
+    if (!action) return;
+    if (action === 'download') {
+      void runDownloadZip();
+    } else if (action === 'open_workspace') {
+      createProjectFromCode(generated.source);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot resume when user && canAct; avoid re-fire on generated/source updates
+  }, [user, canAct]);
+
   const handleSelectKind = (kindId: string) => {
     const kind = KINDS_BY_ID[kindId];
     if (!kind) return;
@@ -252,71 +366,14 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
     }));
   };
 
-  const createProjectFromCode = (code: string) => {
-    const name = `${activeKind.name} Instance`;
-    const artifact = compileCashScript(code);
-    const files: Project['files'] = [
-      { name: 'contract.cash', content: code, language: 'cashscript' },
-      {
-        name: 'artifact.json',
-        content: JSON.stringify(
-          artifact.success ? artifact.artifact : { errors: artifact.errors },
-          null,
-          2
-        ),
-        language: 'json',
-      },
-    ];
-    const project: Project = {
-      id: crypto.randomUUID(),
-      name,
-      chain: ChainType.BCH_TESTNET,
-      contractCode: code,
-      files,
-      versions: [
-        {
-          id: 'init',
-          timestamp: Date.now(),
-          fileName: 'contract.cash',
-          code,
-          description: `Generated from ${activeKind.name} composer`,
-          author: 'SYSTEM',
-        },
-      ],
-      lastModified: Date.now(),
-    };
-    onCreateProject(project);
-  };
-
   const onCopy = async () => {
     await navigator.clipboard.writeText(generated.source);
     toast.success('Source copied');
   };
 
   const onDownload = async () => {
-    const zip = new JSZip();
-    zip.file('contract.cash', generated.source);
-    zip.file(
-      'metadata.json',
-      JSON.stringify(
-        {
-          kindId: activeKind.id,
-          fields: wizardState.fields,
-          enabled: wizardState.enabled,
-          hash: generated.hash,
-          warnings: generated.warnings,
-        },
-        null,
-        2
-      )
-    );
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeKind.id}-wizard.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!ensureLoggedInForExport('download')) return;
+    await runDownloadZip();
   };
 
   const onShare = async () => {
@@ -351,7 +408,10 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
     }
   };
 
-  const onOpenWorkspace = () => createProjectFromCode(generated.source);
+  const onOpenWorkspace = () => {
+    if (!ensureLoggedInForExport('open_workspace')) return;
+    createProjectFromCode(generated.source);
+  };
 
   return (
     <div className="h-full w-full bg-[#050a08] overflow-auto p-6">

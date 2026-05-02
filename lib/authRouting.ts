@@ -159,6 +159,48 @@ export function resetHasHandledAuthBeforeLoginRedirect(): void {
   resetOAuthResumeHandled();
 }
 
+export const WIZARD_PENDING_ACTION_KEY = 'wizard_pending_action';
+
+/** Drop stale queued actions if the user returns long after redirect-to-login (OAuth-safe window). */
+export const WIZARD_PENDING_ACTION_MAX_AGE_MS = 30 * 60 * 1000;
+
+export type WizardPendingAction = 'download' | 'open_workspace';
+
+interface WizardPendingPayload {
+  action: WizardPendingAction;
+  ts: number;
+}
+
+export function setWizardPendingAction(action: WizardPendingAction): void {
+  if (typeof sessionStorage === 'undefined') return;
+  const payload: WizardPendingPayload = { action, ts: Date.now() };
+  sessionStorage.setItem(WIZARD_PENDING_ACTION_KEY, JSON.stringify(payload));
+}
+
+/**
+ * One-time read: removes the key immediately so re-renders cannot replay download/workspace.
+ * Returns a validated action string, or null if missing / expired / malformed.
+ */
+export function consumeWizardPendingAction(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  const raw = sessionStorage.getItem(WIZARD_PENDING_ACTION_KEY);
+  sessionStorage.removeItem(WIZARD_PENDING_ACTION_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<WizardPendingPayload>;
+    const act = parsed.action;
+    const ts = parsed.ts;
+    if (act !== 'download' && act !== 'open_workspace') return null;
+    if (typeof ts !== 'number' || Number.isNaN(ts)) return null;
+    if (Date.now() - ts > WIZARD_PENDING_ACTION_MAX_AGE_MS) return null;
+    return act;
+  } catch {
+    // Legacy plain string (pre-TTL); accept without age check.
+    if (raw === 'download' || raw === 'open_workspace') return raw;
+    return null;
+  }
+}
+
 export function setOAuthPendingReturn(url: string): void {
   if (typeof sessionStorage === 'undefined') return;
   const safe = sanitizeReturnUrl(url);

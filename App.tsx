@@ -412,11 +412,15 @@ const App: React.FC = () => {
                 />
               ) : (
                 <LandingPage
-                  projects={projects}
+                  isLoggedIn={!!user}
+                  projects={user ? projects : []}
                   onSelectProject={handleSelectProject}
                   onNavigateCreator={() => navigate('/creator')}
                   onNavigateWizard={() => handleNavigate('wizard')}
                   onNavigateRegistry={() => handleNavigate('registry')}
+                  onRequestSignIn={() =>
+                    navigate(`/login?return=${encodeURIComponent(window.location.origin + '/')}`)
+                  }
                 />
               )
             }
@@ -469,12 +473,10 @@ const App: React.FC = () => {
           <Route
             path="/wizard"
             element={
-              <RequireAuth>
-                <WizardPage
-                  onNavigateHome={() => handleNavigate('home')}
-                  onCreateProject={handleCreateProject}
-                />
-              </RequireAuth>
+              <WizardPage
+                onNavigateHome={() => handleNavigate('home')}
+                onCreateProject={handleCreateProject}
+              />
             }
           />
           <Route
