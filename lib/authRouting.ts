@@ -44,13 +44,15 @@ export function isAllowedReturn(url: string): boolean {
 
 /**
  * Resolve return URLs relative to the current origin, validate host/protocol,
- * and preserve hash (wizard `#nxw=`). Returns absolute `u.href` (never prepend another origin).
+ * and preserve hash (wizard `#nxw=`). Returns a single absolute `href` so callers
+ * never concatenate another origin in front.
  */
 export function sanitizeReturnUrl(raw: string): string {
   const fallback = defaultAppUrl();
   if (!raw || raw.length > MAX_RETURN_URL_LENGTH) return fallback;
   let trimmed = raw.trim();
 
+  // Hash-only wizard payload would otherwise resolve to origin "/" + hash only
   if (trimmed.startsWith('#') && trimmed.includes('nxw=')) {
     trimmed = '/wizard' + trimmed;
   }

@@ -1,27 +1,39 @@
-import React, { useMemo } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { defaultAppUrl, sanitizeReturnUrl, setOAuthPendingReturn } from '../lib/authRouting';
+import {
+  AUTH_RETURN_KEY,
+  clearAuthRedirected,
+  defaultAppUrl,
+  isAllowedReturn,
+  MAX_RETURN_URL_LENGTH,
+  sanitizeReturnUrl,
+  setOAuthPendingReturn,
+} from '../lib/authRouting';
 
-function sameOriginPath(targetHref: string): string {
-  try {
-    const u = new URL(targetHref);
-    if (u.origin !== window.location.origin) return '/';
-    return `${u.pathname}${u.search}${u.hash}` || '/';
-  } catch {
-    return '/';
+function resolveReturnCandidate(stored: string | null, queryReturn: string): string {
+  let candidate: string;
+  if (stored && queryReturn && stored !== queryReturn) {
+    const queryOk =
+      queryReturn.length > 0 &&
+      queryReturn.length <= MAX_RETURN_URL_LENGTH &&
+      isAllowedReturn(queryReturn);
+    const storedOk =
+      stored.length <= MAX_RETURN_URL_LENGTH && isAllowedReturn(stored);
+    if (queryOk) candidate = queryReturn;
+    else if (storedOk) candidate = stored;
+    else candidate = defaultAppUrl();
+  } else {
+    candidate = stored || queryReturn || defaultAppUrl();
+    if (candidate.length > MAX_RETURN_URL_LENGTH || !isAllowedReturn(candidate)) {
+      candidate = defaultAppUrl();
+    }
   }
+  return sanitizeReturnUrl(candidate);
 }
 
 export const LoginPage: React.FC = () => {
-  const [params] = useSearchParams();
-  const returnRaw = params.get('return') ?? '';
-  const safeReturn = useMemo(
-    () => sanitizeReturnUrl(returnRaw || defaultAppUrl()),
-    [returnRaw]
-  );
-  const clientRedirect = useMemo(() => sameOriginPath(safeReturn), [safeReturn]);
-
+  const [searchParams] = useSearchParams();
   const {
     user,
     isLoading,
@@ -34,32 +46,53 @@ export const LoginPage: React.FC = () => {
     authLoadingSlow,
   } = useAuth();
 
+  const queryReturn = useMemo(() => searchParams.get('return') ?? '', [searchParams]);
+
+  useEffect(() => {
+    const oauthError = searchParams.get('error');
+    if (!user && oauthError) {
+      clearAuthRedirected();
+    }
+  }, [searchParams, user]);
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+
+    const stored = sessionStorage.getItem(AUTH_RETURN_KEY);
+    sessionStorage.removeItem(AUTH_RETURN_KEY);
+
+    const target = resolveReturnCandidate(stored, queryReturn);
+    window.location.replace(target);
+  }, [isLoading, user, queryReturn]);
+
+  const prepareOAuthReturn = () => {
+    const stored = sessionStorage.getItem(AUTH_RETURN_KEY);
+    sessionStorage.removeItem(AUTH_RETURN_KEY);
+    return resolveReturnCandidate(stored, queryReturn);
+  };
+
   const handleGithub = async () => {
     clearAuthEstablishError();
-    setOAuthPendingReturn(safeReturn);
+    setOAuthPendingReturn(prepareOAuthReturn());
     await signInWithGithub();
   };
 
   const handleGoogle = async () => {
     clearAuthEstablishError();
-    setOAuthPendingReturn(safeReturn);
+    setOAuthPendingReturn(prepareOAuthReturn());
     await signInWithGoogle();
   };
 
-  if (isLoading) {
+  if (isLoading || user) {
     return (
-      <div className="h-full w-full flex items-center justify-center bg-nexus-900">
+      <div className="h-full min-h-[50vh] w-full flex items-center justify-center bg-nexus-900">
         <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  if (user) {
-    return <Navigate to={clientRedirect} replace />;
-  }
-
   return (
-    <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white px-4">
+    <div className="h-full min-h-[50vh] w-full flex items-center justify-center bg-nexus-900 text-white px-4">
       <div className="text-center space-y-6 max-w-sm w-full p-10 bg-white/5 rounded-3xl border border-white/10 shadow-2xl backdrop-blur">
         <div className="w-16 h-16 rounded-2xl bg-nexus-cyan/10 border border-nexus-cyan/20 flex items-center justify-center mx-auto">
           <svg className="w-8 h-8 text-nexus-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
