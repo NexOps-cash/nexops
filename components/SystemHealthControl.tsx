@@ -81,7 +81,8 @@ export const SystemHealthControl: React.FC<SystemHealthControlProps> = ({ varian
     const infra = useInfraHealth();
     const [mcpActive, setMcpActive] = useState(() => websocketService.isConnected());
     const [healthOpen, setHealthOpen] = useState(false);
-    const healthLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Browser timers use numeric IDs (`window.setTimeout`); avoids DOM vs NodeJS.Timeout clash under `@types/node`. */
+    const healthLeaveTimer = useRef<number | null>(null);
 
     useEffect(() => {
         const onConnect = () => setMcpActive(true);

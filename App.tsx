@@ -314,6 +314,21 @@ const App: React.FC = () => {
       }
     }
 
+    // WorkspaceSync loads the row from Supabase immediately; the debounced sync effect
+    // runs ~1.5s later — navigating before upsert causes "not found / access denied".
+    if (user) {
+      try {
+        const { error } = await upsertProjectRow(project, user.id);
+        if (error) throw error;
+      } catch (e: unknown) {
+        console.error('Failed to persist new workspace', e);
+        toast.error(`Could not create workspace: ${e instanceof Error ? e.message : 'server error'}`);
+        setProjects((prev) => prev.filter((p) => p.id !== project.id));
+        setActiveProjectId(null);
+        return;
+      }
+    }
+
     navigate(`/workspace/${project.id}`);
   };
 
