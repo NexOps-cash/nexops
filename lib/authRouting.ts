@@ -42,12 +42,35 @@ export function isAllowedReturn(url: string): boolean {
   }
 }
 
+/**
+ * Resolve return URLs relative to the current origin, validate host/protocol,
+ * and preserve hash (wizard `#nxw=`). Returns a single absolute `href` so callers
+ * never concatenate another origin in front.
+ */
 export function sanitizeReturnUrl(raw: string): string {
   const fallback = defaultAppUrl();
   if (!raw || raw.length > MAX_RETURN_URL_LENGTH) return fallback;
-  const trimmed = raw.trim();
-  if (!isAllowedReturn(trimmed)) return fallback;
-  return trimmed;
+  let trimmed = raw.trim();
+
+  // Hash-only wizard payload would otherwise resolve to origin "/" + hash only
+  if (trimmed.startsWith('#') && trimmed.includes('nxw=')) {
+    trimmed = '/wizard' + trimmed;
+  }
+
+  try {
+    const base =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : APP_AUTH_ORIGIN;
+    const u = new URL(trimmed, base);
+    if (u.protocol === 'javascript:' || u.protocol === 'data:') return fallback;
+    const href = u.href;
+    if (href.length > MAX_RETURN_URL_LENGTH) return fallback;
+    if (!isAllowedReturn(href)) return fallback;
+    return href;
+  } catch {
+    return fallback;
+  }
 }
 
 export interface AuthRedirectedPayload {
@@ -87,7 +110,11 @@ export function clearAuthRedirectedOnAppLoad(): void {
 
 export function normalizeUrlForCompare(url: string): string {
   try {
-    const u = new URL(url);
+    const base =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : APP_AUTH_ORIGIN;
+    const u = new URL(url, base);
     const queryKeys = [...u.searchParams.keys()].sort().join(',');
     const hashPart = u.hash.includes('nxw=') ? u.hash : '';
     return (
@@ -127,4 +154,10 @@ export function markOAuthResumeHandled(): void {
 /** Reset before navigating to /login so the next OAuth completion runs resume once. */
 export function resetHasHandledAuthBeforeLoginRedirect(): void {
   resetOAuthResumeHandled();
+}
+
+export function setOAuthPendingReturn(url: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  const safe = sanitizeReturnUrl(url);
+  sessionStorage.setItem(OAUTH_PENDING_RETURN_KEY, safe);
 }

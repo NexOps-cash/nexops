@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import {
+  AUTH_RETURN_KEY,
   clearAuthRedirected,
   hasOAuthResumeAlreadyHandled,
   markOAuthResumeHandled,
@@ -43,16 +44,27 @@ async function waitForSessionAfterOAuth(): Promise<void> {
   }
 }
 
+/** After OAuth: oauth_pending_return (explicit) beats auth_return (RequireAuth fallback). */
 function tryResumeOAuthRedirect(): void {
   if (typeof window === 'undefined') return;
   if (hasOAuthResumeAlreadyHandled()) return;
 
   const pendingRaw = sessionStorage.getItem(OAUTH_PENDING_RETURN_KEY);
-  if (!pendingRaw) return;
+  const authReturnRaw = sessionStorage.getItem(AUTH_RETURN_KEY);
+
+  let raw: string | null = null;
+  if (pendingRaw) {
+    raw = pendingRaw;
+    sessionStorage.removeItem(OAUTH_PENDING_RETURN_KEY);
+  } else if (authReturnRaw) {
+    raw = authReturnRaw;
+    sessionStorage.removeItem(AUTH_RETURN_KEY);
+  }
+
+  if (!raw) return;
 
   markOAuthResumeHandled();
-  const url = sanitizeReturnUrl(pendingRaw);
-  sessionStorage.removeItem(OAUTH_PENDING_RETURN_KEY);
+  const url = sanitizeReturnUrl(raw);
   clearAuthRedirected();
   window.location.replace(url);
 }
@@ -155,9 +167,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       applySession(sess);
 
       const pending = sessionStorage.getItem(OAUTH_PENDING_RETURN_KEY);
+      const authRet = sessionStorage.getItem(AUTH_RETURN_KEY);
       const shouldTryResume =
         !!sess &&
-        !!pending &&
+        (!!pending || !!authRet) &&
         !hasOAuthResumeAlreadyHandled() &&
         (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
 
@@ -170,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             err instanceof Error ? err.message : 'Session could not be established.'
           );
           sessionStorage.removeItem(OAUTH_PENDING_RETURN_KEY);
+          sessionStorage.removeItem(AUTH_RETURN_KEY);
           resetOAuthResumeHandled();
         }
       }
