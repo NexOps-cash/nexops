@@ -22,7 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-cashlabs-ide-main
+ide-main
 promo
 react-dapp-v2
 

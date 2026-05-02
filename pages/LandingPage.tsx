@@ -9,11 +9,14 @@ const RECENT_INITIAL = 3;
 const RECENT_PAGE = 5;
 
 interface LandingPageProps {
+    /** When false, recent projects are hidden and export actions require sign-in. */
+    isLoggedIn: boolean;
     projects: Project[];
     onSelectProject: (projectId: string) => void;
     onNavigateCreator: () => void;
     onNavigateWizard: () => void;
     onNavigateRegistry: () => void;
+    onRequestSignIn: () => void;
 }
 
 /** Relative time for screen readers and compact UI */
@@ -30,11 +33,13 @@ function formatRelativeTime(ts: number): string {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
+    isLoggedIn,
     projects = [],
     onSelectProject,
     onNavigateCreator,
     onNavigateWizard,
-    onNavigateRegistry
+    onNavigateRegistry,
+    onRequestSignIn,
 }) => {
     const sortedProjects = useMemo(() => {
         return [...(projects ?? [])].sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
@@ -113,20 +118,29 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                                 Recent workspaces
                             </h2>
                             <p id="recent-workspaces-desc" className="text-slate-400 text-sm max-w-lg leading-relaxed">
-                                Pick up where you left off — open a project below.
+                                {isLoggedIn
+                                    ? 'Pick up where you left off — open a project below.'
+                                    : 'Your saved workspaces appear here after you sign in.'}
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 shrink-0">
-                            {orderedForRecent.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => onSelectProject(orderedForRecent[0].id)}
-                                    className="min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold shadow-lg shadow-emerald-950/50 hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050a08] transition-colors"
-                                    aria-label={`Continue with most recent workspace, ${orderedForRecent[0].name?.trim() || 'Untitled project'}`}
-                                >
-                                    Continue last
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                disabled={!isLoggedIn || orderedForRecent.length === 0}
+                                onClick={() => {
+                                    if (!isLoggedIn || orderedForRecent.length === 0) return;
+                                    onSelectProject(orderedForRecent[0].id);
+                                }}
+                                title={!isLoggedIn ? 'Sign in to continue your last workspace' : undefined}
+                                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold shadow-lg shadow-emerald-950/50 hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050a08] transition-colors disabled:opacity-40 disabled:pointer-events-none disabled:hover:bg-emerald-600"
+                                aria-label={
+                                    !isLoggedIn
+                                        ? 'Continue last — sign in required'
+                                        : `Continue with most recent workspace, ${orderedForRecent[0]?.name?.trim() || 'Untitled project'}`
+                                }
+                            >
+                                Continue last
+                            </button>
                             <button
                                 type="button"
                                 onClick={onNavigateCreator}
@@ -138,7 +152,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                         </div>
                     </div>
 
-                    {orderedForRecent.length === 0 ? (
+                    {!isLoggedIn ? (
+                        <div
+                            className="rounded-2xl border border-emerald-500/15 bg-emerald-950/20 px-4 py-12 text-center shadow-xl shadow-black/30 ring-1 ring-white/5"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <Folder className="w-12 h-12 text-emerald-700/80 mx-auto mb-3" aria-hidden />
+                            <p className="text-slate-300 font-medium">Sign in to view your projects</p>
+                            <p className="text-slate-500 text-sm mt-1 mb-6 max-w-md mx-auto">
+                                Recent workspaces are tied to your account. Sign in to see history and open saved work.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={onRequestSignIn}
+                                className="min-h-[44px] px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050a08]"
+                            >
+                                Sign in
+                            </button>
+                        </div>
+                    ) : orderedForRecent.length === 0 ? (
                         <div
                             className="rounded-2xl border border-emerald-500/15 bg-emerald-950/20 px-4 py-12 text-center shadow-xl shadow-black/30 ring-1 ring-white/5"
                             role="status"
