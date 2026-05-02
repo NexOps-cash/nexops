@@ -10,7 +10,7 @@ interface TopNavProps {
 }
 
 export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncing, syncError }) => {
-    const { user, signInWithGithub, signInWithGoogle, signOut } = useAuth();
+    const { user, signInWithGithub, signOut } = useAuth();
     const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
 
     const navItems = [

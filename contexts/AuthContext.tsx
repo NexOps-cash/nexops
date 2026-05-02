@@ -20,7 +20,6 @@ interface AuthContextType {
   authLoadingSlow: boolean;
   authEstablishError: string | null;
   signInWithGithub: () => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   clearAuthEstablishError: () => void;
   retryInitialSession: () => Promise<void>;
@@ -207,19 +206,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
-    try {
-      await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: oauthRedirectBase(),
-        },
-      });
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-    }
-  };
-
   const signOut = async () => {
     manualLogoutRef.current = true;
     try {
@@ -240,7 +226,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authLoadingSlow,
         authEstablishError,
         signInWithGithub,
-        signInWithGoogle,
         signOut,
         clearAuthEstablishError,
         retryInitialSession,
