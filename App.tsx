@@ -6,7 +6,10 @@ import { TopMenuBar } from './components/TopMenuBar';
 import { useAuth } from './contexts/AuthContext';
 import {
   clearAuthRedirectedOnAppLoad,
+  isDevAuthBypassEnabled,
+  isLocalhostRuntime,
   isWorkspacePath,
+  loginSafeReturnHref,
   persistAuthReturnIfAbsent,
   resetHasHandledAuthBeforeLoginRedirect,
   setAuthRedirected,
@@ -31,20 +34,27 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  /** Loopback dev: open IDE/creator without GitHub (production uses real hostnames only). */
+  const skipAuthGate = isLocalhostRuntime();
 
   useEffect(() => {
+    if (skipAuthGate) return;
     if (isLoading || user) return;
     const pathKey = `${window.location.origin}${window.location.pathname}`;
     const ws = isWorkspacePath(location.pathname);
     if (ws && !shouldRedirectToLogin(pathKey)) return;
 
     resetHasHandledAuthBeforeLoginRedirect();
-    persistAuthReturnIfAbsent(window.location.href);
+    persistAuthReturnIfAbsent(loginSafeReturnHref());
     if (ws && shouldRedirectToLogin(pathKey)) {
       setAuthRedirected(pathKey);
     }
-    navigate(`/login?return=${encodeURIComponent(window.location.href)}`, { replace: true });
-  }, [isLoading, user, navigate, location.pathname]);
+    navigate(`/login?return=${encodeURIComponent(loginSafeReturnHref())}`, { replace: true });
+  }, [skipAuthGate, isLoading, user, navigate, location.pathname]);
+
+  if (skipAuthGate) {
+    return <>{children}</>;
+  }
 
   if (isLoading) {
     const workspaceRoute = location.pathname.startsWith('/workspace');
@@ -81,8 +91,17 @@ const WorkspaceSync: React.FC<{
   userId: string;
   onHydrateProject: (project: Project) => void;
   removeFromLocalCache: (projectId: string) => void;
+  /** Parent `projects` list; on localhost-only mode used to hydrate workspace without hitting Supabase. */
+  workspaceParentProjects: Project[];
   children: React.ReactNode;
-}> = ({ setActiveProjectId, userId, onHydrateProject, removeFromLocalCache, children }) => {
+}> = ({
+  setActiveProjectId,
+  userId,
+  onHydrateProject,
+  removeFromLocalCache,
+  workspaceParentProjects,
+  children,
+}) => {
   const { projectId } = useParams();
   const { isLoading: authLoading } = useAuth();
   const [phase, setPhase] = useState<'loading' | 'denied' | 'granted'>('loading');
@@ -97,7 +116,39 @@ const WorkspaceSync: React.FC<{
   }, [projectId]);
 
   useEffect(() => {
-    if (!projectId || authLoading || !userId) return;
+    if (!projectId) return;
+
+    // Local dev: never verify against DB — use in-memory + localStorage mirror only.
+    if (isLocalhostRuntime()) {
+      const local = workspaceParentProjects.find((p) => p.id === projectId);
+      if (local) {
+        onHydrateProject(local);
+        setPhase('granted');
+        return;
+      }
+      removeFromLocalCache(projectId);
+      setActiveProjectId(null);
+      setPhase('denied');
+      return;
+    }
+
+    if (authLoading) return;
+
+    const bypass = isDevAuthBypassEnabled();
+    if ((!userId || userId.trim() === '') && bypass) {
+      const local = workspaceParentProjects.find((p) => p.id === projectId);
+      if (local) {
+        onHydrateProject(local);
+        setPhase('granted');
+        return;
+      }
+      removeFromLocalCache(projectId);
+      setActiveProjectId(null);
+      setPhase('denied');
+      return;
+    }
+
+    if (!userId) return;
 
     const ac = new AbortController();
     const myId = ++requestIdRef.current;
@@ -106,6 +157,14 @@ const WorkspaceSync: React.FC<{
     loadProjectByIdForUser(projectId, ac.signal).then(({ project, error }) => {
       if (myId !== requestIdRef.current) return;
       if (error || !project) {
+        if (bypass) {
+          const localFallback = workspaceParentProjects.find((p) => p.id === projectId);
+          if (localFallback) {
+            onHydrateProject(localFallback);
+            setPhase('granted');
+            return;
+          }
+        }
         removeFromLocalCache(projectId);
         setActiveProjectId(null);
         setPhase('denied');
@@ -116,9 +175,17 @@ const WorkspaceSync: React.FC<{
     });
 
     return () => ac.abort();
-  }, [projectId, authLoading, userId, onHydrateProject, removeFromLocalCache, setActiveProjectId]);
+  }, [
+    projectId,
+    authLoading,
+    userId,
+    onHydrateProject,
+    removeFromLocalCache,
+    setActiveProjectId,
+    workspaceParentProjects,
+  ]);
 
-  if (authLoading) {
+  if (!isLocalhostRuntime() && authLoading) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-nexus-900 text-white font-mono gap-3">
         <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full" />
@@ -215,7 +282,7 @@ const App: React.FC = () => {
     }
 
     async function loadProjects() {
-      if (!user) return;
+      if (!user || isLocalhostRuntime()) return;
       try {
         const mappedProjects = await loadProjectsForUser(user.id);
         if (mappedProjects.length > 0) {
@@ -238,7 +305,7 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
     async function syncToSupabase() {
-      if (!user || projects.length === 0 || isSyncing) return;
+      if (!user || projects.length === 0 || isSyncing || isLocalhostRuntime()) return;
       const p = projects.find((row) => row.id === activeProjectId);
       if (!p || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id)) return;
 
@@ -314,9 +381,8 @@ const App: React.FC = () => {
       }
     }
 
-    // WorkspaceSync loads the row from Supabase immediately; the debounced sync effect
-    // runs ~1.5s later — navigating before upsert causes "not found / access denied".
-    if (user) {
+    // Production / non-localhost: persist before navigate so WorkspaceSync can load by id from Supabase.
+    if (!isLocalhostRuntime() && user) {
       try {
         const { error } = await upsertProjectRow(project, user.id);
         if (error) throw error;
@@ -407,6 +473,9 @@ const App: React.FC = () => {
               navigate('/creator');
             } else if (a === 'Settings') setIsSettingsModalOpen(true);
             else if (a === 'Documentation') window.open('https://docs.nexops.cash', '_blank');
+            else if (a === 'Publish to Registry') {
+              window.dispatchEvent(new CustomEvent('nexops-open-publish-registry'));
+            }
           }}
         />
       )}
@@ -450,6 +519,7 @@ const App: React.FC = () => {
                   userId={user?.id ?? ''}
                   onHydrateProject={handleHydrateProject}
                   removeFromLocalCache={removeFromLocalCache}
+                  workspaceParentProjects={projects}
                 >
                   {activeProject ? (
                     <ProjectWorkspace

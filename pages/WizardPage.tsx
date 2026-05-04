@@ -8,6 +8,8 @@ import { Project, ChainType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import {
   consumeWizardPendingAction,
+  isLocalhostRuntime,
+  loginSafeReturnHref,
   persistAuthReturnIfAbsent,
   resetHasHandledAuthBeforeLoginRedirect,
   setWizardPendingAction,
@@ -305,10 +307,10 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
 
   const redirectToLoginForWizardExport = useCallback(
     (pending: 'download' | 'open_workspace') => {
-      persistAuthReturnIfAbsent(window.location.href);
+      persistAuthReturnIfAbsent(loginSafeReturnHref());
       resetHasHandledAuthBeforeLoginRedirect();
       setWizardPendingAction(pending);
-      navigate(`/login?return=${encodeURIComponent(window.location.href)}`);
+      navigate(`/login?return=${encodeURIComponent(loginSafeReturnHref())}`);
     },
     [navigate]
   );
@@ -316,6 +318,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
   const ensureLoggedInForExport = useCallback(
     (pending: 'download' | 'open_workspace'): boolean => {
       if (user) return true;
+      if (isLocalhostRuntime()) return true;
       redirectToLoginForWizardExport(pending);
       return false;
     },

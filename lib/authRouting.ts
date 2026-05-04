@@ -24,6 +24,21 @@ export function defaultAppUrl(): string {
   return APP_AUTH_ORIGIN + '/';
 }
 
+/**
+ * Post-login/OAuth return target when redirecting to `/login`.
+ * Never points at `/login` itself (avoids nested `return=` loops in the query string).
+ */
+export function loginSafeReturnHref(): string {
+  if (typeof window === 'undefined') return `${APP_AUTH_ORIGIN}/`;
+  try {
+    const { origin, pathname, search, hash } = window.location;
+    if (pathname.startsWith('/login')) return `${origin}/`;
+    return `${origin}${pathname}${search}${hash}`;
+  } catch {
+    return `${APP_AUTH_ORIGIN}/`;
+  }
+}
+
 export function isWorkspacePath(pathname: string): boolean {
   return /^\/workspace\/[^/]+\/?$/.test(pathname);
 }
@@ -67,6 +82,12 @@ export function sanitizeReturnUrl(raw: string): string {
     const href = u.href;
     if (href.length > MAX_RETURN_URL_LENGTH) return fallback;
     if (!isAllowedReturn(href)) return fallback;
+    try {
+      const pathOnly = new URL(href);
+      if (pathOnly.pathname.startsWith('/login')) return fallback;
+    } catch {
+      return fallback;
+    }
     return href;
   } catch {
     return fallback;
@@ -128,14 +149,14 @@ export function normalizeUrlForCompare(url: string): string {
   }
 }
 
-/** Persist full href (incl. hash) before navigating to login — only if absent. */
+/** Persist validated post-login target — never stores `/login` URLs. */
 export function persistAuthReturnIfAbsent(href?: string): void {
   if (typeof sessionStorage === 'undefined') return;
   if (!sessionStorage.getItem(AUTH_RETURN_KEY)) {
-    const target =
+    const raw =
       href ??
       (typeof window !== 'undefined' ? window.location.href : defaultAppUrl());
-    sessionStorage.setItem(AUTH_RETURN_KEY, target);
+    sessionStorage.setItem(AUTH_RETURN_KEY, sanitizeReturnUrl(raw));
   }
 }
 
@@ -205,4 +226,31 @@ export function setOAuthPendingReturn(url: string): void {
   if (typeof sessionStorage === 'undefined') return;
   const safe = sanitizeReturnUrl(url);
   sessionStorage.setItem(OAUTH_PENDING_RETURN_KEY, safe);
+}
+
+/** Local dev only: skip RequireAuth / DB workspace sync when no Supabase session (uses in-memory projects fallback). */
+export function isDevAuthBypassEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const v = import.meta.env?.VITE_DEV_AUTH_BYPASS;
+    if (v !== 'true' && v !== '1') return false;
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Loopback dev server only (`localhost` / `127.0.0.1`). Production deployments never match.
+ * Used to skip Supabase project load/sync — localStorage (`nexops_protocol_v2`) is the source of truth.
+ */
+export function isLocalhostRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1';
+  } catch {
+    return false;
+  }
 }

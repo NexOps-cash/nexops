@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, Button, Input } from './UI';
 import { ShieldCheck, Info } from 'lucide-react';
 
@@ -20,6 +20,13 @@ export const PublishModal: React.FC<PublishModalProps> = ({
     const [title, setTitle] = useState(initialTitle);
     const [description, setDescription] = useState('');
     const [tagsStr, setTagsStr] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setTitle(initialTitle);
+        setDescription('');
+        setTagsStr('');
+    }, [isOpen, initialTitle]);
 
     const handlePublish = () => {
         const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t !== "");

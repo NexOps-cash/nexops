@@ -35,6 +35,8 @@ import { FlowBuilder, FlowPalette } from '../components/flow/FlowBuilder';
 import { FlowGraph } from '../components/flow/FlowGraph';
 import { ExecutionPreview } from '../components/flow/ExecutionPreview';
 import { extractFlow } from '../components/flow/FlowExtractor';
+import { PublishModal } from '../components/PublishModal';
+import { supabase } from '../lib/supabase';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -151,6 +153,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [blockHeight, setBlockHeight] = useState<number | null>(null);
     const [showBuilder, setShowBuilder] = useState(false);
 
+    const [publishModalOpen, setPublishModalOpen] = useState(false);
+    const [isPublishingRegistry, setIsPublishingRegistry] = useState(false);
+
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
     const mainContractFile = useMemo(() => {
@@ -209,6 +214,12 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         fetchHeight();
         const interval = setInterval(fetchHeight, 60000); // Every minute is enough for UI
         return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        const openRegistryPublish = () => setPublishModalOpen(true);
+        window.addEventListener('nexops-open-publish-registry', openRegistryPublish);
+        return () => window.removeEventListener('nexops-open-publish-registry', openRegistryPublish);
     }, []);
 
     // Rehydration Logic: Restore deployment state when project changes or on mount
@@ -576,6 +587,77 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+    };
+
+    const openPublishFlow = () => {
+        if (onPublish) {
+            onPublish();
+            return;
+        }
+        setPublishModalOpen(true);
+    };
+
+    const handleRegistryPublishSubmit = async (details: { title: string; description: string; tags: string[] }) => {
+        const cashSource =
+            mainContractFile?.content?.trim() ||
+            project.contractCode?.trim() ||
+            '';
+        if (!cashSource) {
+            toast.error('No .cash source to publish.');
+            return;
+        }
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+            toast.error('Sign in with GitHub to publish.');
+            return;
+        }
+
+        const network =
+            project.chain?.toLowerCase().includes('chip') ||
+            project.chain?.toLowerCase().includes('test')
+                ? 'chipnet'
+                : 'mainnet';
+
+        setIsPublishingRegistry(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('publish-contract', {
+                body: {
+                    title: details.title.trim(),
+                    description: details.description.trim(),
+                    source_code: cashSource,
+                    tags: details.tags,
+                    network,
+                    compiler_version: '^0.13.0',
+                },
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (error) {
+                let detail = error.message || 'Publish failed';
+                const ctx = (error as { context?: Response }).context;
+                if (ctx && typeof ctx.json === 'function') {
+                    try {
+                        const body = await ctx.json();
+                        if (body?.error) detail = String(body.error);
+                    } catch {
+                        /* ignore */
+                    }
+                }
+                throw new Error(detail);
+            }
+            if (data && typeof data === 'object' && 'error' in data && (data as { error: unknown }).error) {
+                throw new Error(String((data as { error: unknown }).error));
+            }
+            toast.success('Published to registry');
+            setPublishModalOpen(false);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Publish failed');
+        } finally {
+            setIsPublishingRegistry(false);
+        }
     };
 
     const handleCloseFile = (fileName: string, e: React.MouseEvent) => {
@@ -1851,16 +1933,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                 <Download size={14} className="group-active:scale-90 transition-transform" />
                                 <span>Download</span>
                             </button>
-                            {onPublish && (
-                                <button
-                                    onClick={onPublish}
-                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/30 rounded-md transition-all text-xs font-bold uppercase tracking-wider group ml-2"
-                                    title="Publish to Registry"
-                                >
-                                    <ShieldCheck size={14} className="group-active:scale-90 transition-transform" />
-                                    <span>Publish</span>
-                                </button>
-                            )}
+                            <button
+                                onClick={openPublishFlow}
+                                className="flex items-center space-x-1.5 px-3 py-1.5 bg-nexus-cyan/10 hover:bg-nexus-cyan/20 text-nexus-cyan border border-nexus-cyan/30 rounded-md transition-all text-xs font-bold uppercase tracking-wider group ml-2"
+                                title="Publish to Registry"
+                            >
+                                <ShieldCheck size={14} className="group-active:scale-90 transition-transform" />
+                                <span>Publish</span>
+                            </button>
                             <div className="flex-1" />
                             <button
                                 onClick={() => {
@@ -2106,6 +2186,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     </div>
                 </div>
             </Modal>
+
+            <PublishModal
+                isOpen={publishModalOpen}
+                onClose={() => setPublishModalOpen(false)}
+                onPublish={handleRegistryPublishSubmit}
+                initialTitle={project.name?.trim() || 'Untitled contract'}
+                isPublishing={isPublishingRegistry}
+            />
 
             {/* MODAL: Contract is Live */}
             <Modal
