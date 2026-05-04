@@ -106,6 +106,9 @@ const WorkspaceSync: React.FC<{
   const { isLoading: authLoading } = useAuth();
   const [phase, setPhase] = useState<'loading' | 'denied' | 'granted'>('loading');
   const requestIdRef = useRef(0);
+  /** Latest parent list without listing it as an effect dep — avoids reload loop after onHydrateProject updates `projects`. */
+  const workspaceProjectsRef = useRef(workspaceParentProjects);
+  workspaceProjectsRef.current = workspaceParentProjects;
 
   useEffect(() => {
     if (projectId) setActiveProjectId(projectId);
@@ -116,11 +119,14 @@ const WorkspaceSync: React.FC<{
   }, [projectId]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setPhase('denied');
+      return;
+    }
 
     // Local dev: never verify against DB — use in-memory + localStorage mirror only.
     if (isLocalhostRuntime()) {
-      const local = workspaceParentProjects.find((p) => p.id === projectId);
+      const local = workspaceProjectsRef.current.find((p) => p.id === projectId);
       if (local) {
         onHydrateProject(local);
         setPhase('granted');
@@ -136,7 +142,7 @@ const WorkspaceSync: React.FC<{
 
     const bypass = isDevAuthBypassEnabled();
     if ((!userId || userId.trim() === '') && bypass) {
-      const local = workspaceParentProjects.find((p) => p.id === projectId);
+      const local = workspaceProjectsRef.current.find((p) => p.id === projectId);
       if (local) {
         onHydrateProject(local);
         setPhase('granted');
@@ -148,7 +154,10 @@ const WorkspaceSync: React.FC<{
       return;
     }
 
-    if (!userId) return;
+    if (!userId || userId.trim() === '') {
+      setPhase('denied');
+      return;
+    }
 
     const ac = new AbortController();
     const myId = ++requestIdRef.current;
@@ -158,7 +167,7 @@ const WorkspaceSync: React.FC<{
       if (myId !== requestIdRef.current) return;
       if (error || !project) {
         if (bypass) {
-          const localFallback = workspaceParentProjects.find((p) => p.id === projectId);
+          const localFallback = workspaceProjectsRef.current.find((p) => p.id === projectId);
           if (localFallback) {
             onHydrateProject(localFallback);
             setPhase('granted');
@@ -182,7 +191,6 @@ const WorkspaceSync: React.FC<{
     onHydrateProject,
     removeFromLocalCache,
     setActiveProjectId,
-    workspaceParentProjects,
   ]);
 
   if (!isLocalhostRuntime() && authLoading) {
