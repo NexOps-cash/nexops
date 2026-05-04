@@ -20,6 +20,8 @@ interface AuthContextType {
   authLoadingSlow: boolean;
   authEstablishError: string | null;
   signInWithGithub: () => Promise<void>;
+  /** Supabase email + password (configure demo user in Dashboard → Authentication). */
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   clearAuthEstablishError: () => void;
   retryInitialSession: () => Promise<void>;
@@ -206,6 +208,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithPassword = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
+      clearAuthEstablishError();
+      setAuthError(null);
+      const trimmed = email.trim();
+      if (!trimmed || !password) {
+        return { error: 'Enter email and password.' };
+      }
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: trimmed,
+          password,
+        });
+        if (error) return { error: error.message };
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Sign in failed.' };
+      }
+    },
+    [clearAuthEstablishError]
+  );
+
   const signOut = async () => {
     manualLogoutRef.current = true;
     try {
@@ -226,6 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authLoadingSlow,
         authEstablishError,
         signInWithGithub,
+        signInWithPassword,
         signOut,
         clearAuthEstablishError,
         retryInitialSession,

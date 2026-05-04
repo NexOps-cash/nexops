@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ChevronDown, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { Input } from '../components/UI';
 import {
   AUTH_RETURN_KEY,
   clearAuthRedirected,
@@ -38,6 +40,7 @@ export const LoginPage: React.FC = () => {
     user,
     isLoading,
     signInWithGithub,
+    signInWithPassword,
     authEstablishError,
     clearAuthEstablishError,
     authError,
@@ -46,6 +49,13 @@ export const LoginPage: React.FC = () => {
   } = useAuth();
 
   const queryReturn = useMemo(() => searchParams.get('return') ?? '', [searchParams]);
+
+  const [adminOpen, setAdminOpen] = useState(false);
+  const defaultDemoEmail = import.meta.env.VITE_DEMO_LOGIN_EMAIL?.trim() ?? '';
+  const [adminEmail, setAdminEmail] = useState(defaultDemoEmail);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminFormError, setAdminFormError] = useState<string | null>(null);
 
   useEffect(() => {
     const oauthError = searchParams.get('error');
@@ -72,8 +82,26 @@ export const LoginPage: React.FC = () => {
 
   const handleGithub = async () => {
     clearAuthEstablishError();
+    setAdminFormError(null);
     setOAuthPendingReturn(prepareOAuthReturn());
     await signInWithGithub();
+  };
+
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearAuthEstablishError();
+    setAdminFormError(null);
+    setAdminBusy(true);
+    try {
+      const { error } = await signInWithPassword(adminEmail, adminPassword);
+      if (error) {
+        setAdminFormError(error);
+        return;
+      }
+      setAdminPassword('');
+    } finally {
+      setAdminBusy(false);
+    }
   };
 
   if (isLoading || user) {
@@ -128,6 +156,74 @@ export const LoginPage: React.FC = () => {
           </svg>
           Continue with GitHub
         </button>
+
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-white/10" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-[#0f172a]/90 px-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/30">or</span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden text-left">
+          <button
+            type="button"
+            onClick={() => {
+              setAdminOpen((o) => !o);
+              setAdminFormError(null);
+            }}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.04] transition-colors"
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-white/90">
+              <Shield className="w-4 h-4 text-amber-400/90 shrink-0" aria-hidden />
+              Demo / admin sign-in
+            </span>
+            <ChevronDown
+              className={`w-4 h-4 text-white/40 shrink-0 transition-transform ${adminOpen ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
+          {adminOpen && (
+            <form onSubmit={(e) => void handleAdminSubmit(e)} className="px-4 pb-4 pt-0 space-y-3 border-t border-white/5">
+              <p className="text-[11px] text-white/35 leading-relaxed pt-3">
+                Uses email + password from your Supabase Auth user (enable Email provider in the dashboard).
+              </p>
+              {adminFormError && (
+                <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{adminFormError}</p>
+              )}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-white/50 uppercase tracking-wider">Email</label>
+                <Input
+                  type="email"
+                  autoComplete="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="demo@nexops.cash"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-nexus-cyan/40"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black text-white/50 uppercase tracking-wider">Password</label>
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-nexus-cyan/40"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={adminBusy || !adminEmail.trim() || !adminPassword}
+                className="w-full py-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-100 text-xs font-black uppercase tracking-widest disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              >
+                {adminBusy ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+          )}
+        </div>
 
         <p className="text-white/20 text-xs">Your workspace data stays private and encrypted.</p>
       </div>
