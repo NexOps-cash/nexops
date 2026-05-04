@@ -93,18 +93,25 @@ const WorkspaceSync: React.FC<{
   removeFromLocalCache: (projectId: string) => void;
   /** Parent `projects` list; on localhost-only mode used to hydrate workspace without hitting Supabase. */
   workspaceParentProjects: Project[];
-  children: React.ReactNode;
+  onUpdateProject: (project: Project) => void;
+  children: (
+    project: Project,
+    updateWorkspaceProject: (project: Project) => void,
+  ) => React.ReactNode;
 }> = ({
   setActiveProjectId,
   userId,
   onHydrateProject,
   removeFromLocalCache,
   workspaceParentProjects,
+  onUpdateProject,
   children,
 }) => {
   const { projectId } = useParams();
   const { isLoading: authLoading } = useAuth();
   const [phase, setPhase] = useState<'loading' | 'denied' | 'granted'>('loading');
+  /** Same render as `phase === 'granted'` — avoids a prod-only flicker where parent `projects.find(activeProjectId)` is briefly null. */
+  const [grantedProject, setGrantedProject] = useState<Project | null>(null);
   const requestIdRef = useRef(0);
   /** Latest parent list without listing it as an effect dep — avoids reload loop after onHydrateProject updates `projects`. */
   const workspaceProjectsRef = useRef(workspaceParentProjects);
@@ -115,11 +122,30 @@ const WorkspaceSync: React.FC<{
   }, [projectId, setActiveProjectId]);
 
   useEffect(() => {
+    setGrantedProject(null);
     setPhase('loading');
   }, [projectId]);
 
+  const pushGranted = useCallback(
+    (project: Project) => {
+      setGrantedProject(project);
+      onHydrateProject(project);
+      setPhase('granted');
+    },
+    [onHydrateProject],
+  );
+
+  const updateWorkspaceProject = useCallback(
+    (project: Project) => {
+      setGrantedProject(project);
+      onUpdateProject(project);
+    },
+    [onUpdateProject],
+  );
+
   useEffect(() => {
     if (!projectId) {
+      setGrantedProject(null);
       setPhase('denied');
       return;
     }
@@ -128,12 +154,12 @@ const WorkspaceSync: React.FC<{
     if (isLocalhostRuntime()) {
       const local = workspaceProjectsRef.current.find((p) => p.id === projectId);
       if (local) {
-        onHydrateProject(local);
-        setPhase('granted');
+        pushGranted(local);
         return;
       }
       removeFromLocalCache(projectId);
       setActiveProjectId(null);
+      setGrantedProject(null);
       setPhase('denied');
       return;
     }
@@ -144,23 +170,25 @@ const WorkspaceSync: React.FC<{
     if ((!userId || userId.trim() === '') && bypass) {
       const local = workspaceProjectsRef.current.find((p) => p.id === projectId);
       if (local) {
-        onHydrateProject(local);
-        setPhase('granted');
+        pushGranted(local);
         return;
       }
       removeFromLocalCache(projectId);
       setActiveProjectId(null);
+      setGrantedProject(null);
       setPhase('denied');
       return;
     }
 
     if (!userId || userId.trim() === '') {
+      setGrantedProject(null);
       setPhase('denied');
       return;
     }
 
     const ac = new AbortController();
     const myId = ++requestIdRef.current;
+    setGrantedProject(null);
     setPhase('loading');
 
     loadProjectByIdForUser(projectId, ac.signal).then(({ project, error }) => {
@@ -169,29 +197,21 @@ const WorkspaceSync: React.FC<{
         if (bypass) {
           const localFallback = workspaceProjectsRef.current.find((p) => p.id === projectId);
           if (localFallback) {
-            onHydrateProject(localFallback);
-            setPhase('granted');
+            pushGranted(localFallback);
             return;
           }
         }
         removeFromLocalCache(projectId);
         setActiveProjectId(null);
+        setGrantedProject(null);
         setPhase('denied');
         return;
       }
-      onHydrateProject(project);
-      setPhase('granted');
+      pushGranted(project);
     });
 
     return () => ac.abort();
-  }, [
-    projectId,
-    authLoading,
-    userId,
-    onHydrateProject,
-    removeFromLocalCache,
-    setActiveProjectId,
-  ]);
+  }, [projectId, authLoading, userId, pushGranted, removeFromLocalCache, setActiveProjectId]);
 
   if (!isLocalhostRuntime() && authLoading) {
     return (
@@ -233,7 +253,18 @@ const WorkspaceSync: React.FC<{
     );
   }
 
-  return <>{children}</>;
+  if (!grantedProject) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
+        <div className="text-center space-y-4">
+          <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
+          <p className="opacity-50">Loading workspace…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children(grantedProject, updateWorkspaceProject)}</>;
 };
 
 const App: React.FC = () => {
@@ -528,23 +559,17 @@ const App: React.FC = () => {
                   onHydrateProject={handleHydrateProject}
                   removeFromLocalCache={removeFromLocalCache}
                   workspaceParentProjects={projects}
+                  onUpdateProject={handleUpdateProject}
                 >
-                  {activeProject ? (
+                  {(workspaceProject, updateWorkspaceProject) => (
                     <ProjectWorkspace
-                      project={activeProject}
-                      onUpdateProject={handleUpdateProject}
+                      project={workspaceProject}
+                      onUpdateProject={updateWorkspaceProject}
                       walletConnected={walletConnected}
                       onConnectWallet={() => setWalletConnected(!walletConnected)}
                       onNavigateHome={() => handleNavigate('home')}
                       byokSettings={byokSettings}
                     />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center bg-nexus-900 text-white font-mono">
-                      <div className="text-center space-y-4">
-                        <div className="animate-spin w-8 h-8 border-2 border-nexus-cyan border-t-transparent rounded-full mx-auto" />
-                        <p className="opacity-50">Loading workspace…</p>
-                      </div>
-                    </div>
                   )}
                 </WorkspaceSync>
               </RequireAuth>
