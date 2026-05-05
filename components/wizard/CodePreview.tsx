@@ -13,14 +13,16 @@ export const CodePreview: React.FC<CodePreviewProps> = ({ code, hash, warnings }
   const approxOps = requires * 3 + 10;
 
   return (
-    <div className="h-full min-h-0 flex flex-col">
-      <div className="h-[600px] min-h-[600px] border border-white/10 rounded-md overflow-hidden">
-        <MonacoEditorWrapper
-          code={code}
-          onChange={() => {}}
-          readOnly={true}
-          minimap={false}
-        />
+    <div className="min-h-0 flex flex-col shrink-0">
+      <div className="h-[min(600px,52vh)] min-h-[240px] border border-white/10 rounded-md overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0">
+          <MonacoEditorWrapper
+            code={code}
+            onChange={() => {}}
+            readOnly={true}
+            minimap={false}
+          />
+        </div>
       </div>
       <div className="mt-3 text-[10px] text-slate-500 space-y-1 font-mono">
         <div>Hash: {hash.slice(0, 24)}...</div>
