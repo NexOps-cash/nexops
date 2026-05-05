@@ -124,3 +124,25 @@ export interface DeploymentRecord {
   constructorArgs: string[];
   timestamp: number;
 }
+
+/** Wizard deploy modal step machine (0–3 and error recovery). */
+export type WizardDeployStep = 0 | 1 | 2 | 3 | 'error';
+
+/** Persisted wizard deployments (localStorage) for history panel. */
+export interface WizardDeployRecord {
+  id: string;
+  kindId: string;
+  kindName: string;
+  contractAddress: string;
+  tokenAddress?: string;
+  constructorArgs: string[];
+  wizardFieldSnapshot: Record<string, string | number | boolean>;
+  /** Feature toggles at deploy time — used to resolve labels in history. */
+  wizardEnabled?: Record<string, boolean>;
+  invariants: string[];
+  fundingTxid: string;
+  fundingAmountSats: number;
+  timestamp: number;
+  network: 'chipnet';
+  artifact: ContractArtifact;
+}

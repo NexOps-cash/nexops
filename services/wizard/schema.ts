@@ -55,6 +55,8 @@ export interface GeneratedContract {
   source: string;
   hash: string;
   warnings: string[];
+  /** Invariant ids emitted across all functions (structural; avoids parsing comments). */
+  invariants?: string[];
 }
 
 export interface FunctionSpec {
