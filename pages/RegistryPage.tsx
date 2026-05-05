@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShieldCheck, Download, Star, Code2, User, FileWarning, Eye, ChevronDown, ChevronUp, Github, Tag, Calendar, Layers, X, Copy, Check, ExternalLink } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { stashPendingRegistryContract } from '../lib/pendingRegistryLoad';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -240,7 +242,12 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                                         <button
                                             onClick={() => {
                                                 if (!user) {
-                                                    signInWithGithub();
+                                                    stashPendingRegistryContract(selectedContract);
+                                                    toast(
+                                                        'After GitHub sign-in, this contract will open in your workspace.',
+                                                        { duration: 5000 },
+                                                    );
+                                                    void signInWithGithub();
                                                     return;
                                                 }
                                                 onLoadContract?.(selectedContract);

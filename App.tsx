@@ -26,6 +26,8 @@ import { Toaster, toast } from 'react-hot-toast';
 import { SettingsModal } from './components/SettingsModal';
 import { BYOKSettings } from './types';
 import { loadProjectByIdForUser, loadProjectsForUser, upsertProjectRow } from './services/projectQueries';
+import { registryRowToProject } from './lib/registryContract';
+import { consumePendingRegistryContract } from './lib/pendingRegistryLoad';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
@@ -289,6 +291,7 @@ const App: React.FC = () => {
   const [walletConnected, setWalletConnected] = useState(false);
   const {
     user,
+    isLoading: authLoading,
     authError,
     authLoadingSlow,
     retryInitialSession,
@@ -437,6 +440,35 @@ const App: React.FC = () => {
     navigate(`/workspace/${project.id}`);
   };
 
+  const handleRegistryContractLoad = (row: unknown) => {
+    const project = registryRowToProject(row);
+    if (!project.contractCode.trim()) {
+      toast.error('This listing has no source code to load.');
+      return;
+    }
+    void handleCreateProject(project);
+  };
+
+  const handleRegistryContractLoadRef = useRef(handleRegistryContractLoad);
+  handleRegistryContractLoadRef.current = handleRegistryContractLoad;
+
+  useEffect(() => {
+    if (!user || authLoading) return;
+    const lockKey = `nexops_registry_resume_lock_${user.id}`;
+    if (sessionStorage.getItem(lockKey)) return;
+    sessionStorage.setItem(lockKey, '1');
+    void (async () => {
+      try {
+        const row = await consumePendingRegistryContract();
+        sessionStorage.removeItem(lockKey);
+        if (!row) return;
+        handleRegistryContractLoadRef.current(row);
+      } catch {
+        sessionStorage.removeItem(lockKey);
+      }
+    })();
+  }, [user, authLoading]);
+
   const handleNavigate = (view: string) => {
     const subdomainMap: Record<string, string> = {
       docs: 'docs',
@@ -528,11 +560,7 @@ const App: React.FC = () => {
               persona === 'docs' ? (
                 <Documentation />
               ) : persona === 'registry' ? (
-                <RegistryPage
-                  onLoadContract={(c: unknown) =>
-                    handleCreateProject({ ...(c as Project), id: crypto.randomUUID() })
-                  }
-                />
+                <RegistryPage onLoadContract={handleRegistryContractLoad} />
               ) : (
                 <LandingPage
                   isLoggedIn={!!user}
@@ -600,11 +628,7 @@ const App: React.FC = () => {
           <Route
             path="/registry"
             element={
-              <RegistryPage
-                onLoadContract={(c: unknown) =>
-                  handleCreateProject({ ...(c as Project), id: crypto.randomUUID() })
-                }
-              />
+              <RegistryPage onLoadContract={handleRegistryContractLoad} />
             }
           />
           <Route path="/docs" element={<Documentation />} />
