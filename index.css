@@ -18,17 +18,24 @@
 }
 
 html,
-body,
-#root {
+body {
     height: 100%;
     margin: 0;
     padding: 0;
+    overflow: hidden;
+}
+
+/* Flex column so App’s flex-1/min-h-0 chain works in prod (not only in dev). */
+#root {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 body {
     background-color: var(--nexus-900);
     color: #F8FAFC;
-    overflow: hidden;
     font-family: 'Inter', sans-serif;
 }
 

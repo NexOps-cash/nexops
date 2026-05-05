@@ -538,7 +538,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-nexus-900">
+    <div className="flex flex-1 flex-col min-h-0 h-full w-full overflow-hidden bg-nexus-900">
       {(authError || authLoadingSlow) && (
         <div className="shrink-0 px-4 py-2 bg-amber-900/40 border-b border-amber-700/50 text-amber-100 text-xs flex items-center justify-between gap-4">
           <span>
@@ -567,7 +567,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {location.pathname.startsWith('/workspace') && activeProject && (
+      {location.pathname.startsWith('/workspace') && (
         <TopMenuBar
           isSyncing={isSyncing}
           activeProject={activeProject}
@@ -587,7 +587,7 @@ const App: React.FC = () => {
       <div
         className={
           location.pathname.startsWith('/workspace')
-            ? 'flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col'
+            ? 'flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col overscroll-none'
             : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden'
         }
       >
@@ -619,28 +619,30 @@ const App: React.FC = () => {
           <Route
             path="/workspace/:projectId"
             element={
-              <RequireAuth>
-                <WorkspaceSync
-                  setActiveProjectId={setActiveProjectId}
-                  userId={user?.id ?? ''}
-                  onHydrateProject={handleHydrateProject}
-                  removeFromLocalCache={removeFromLocalCache}
-                  workspaceParentProjects={projects}
-                  onUpdateProject={handleUpdateProject}
-                >
-                  {(workspaceProject, updateWorkspaceProject) => (
-                    <ProjectWorkspace
-                      project={workspaceProject}
-                      onUpdateProject={updateWorkspaceProject}
-                      onPersistToDb={(p) => void enqueuePersistRemote(p)}
-                      walletConnected={walletConnected}
-                      onConnectWallet={() => setWalletConnected(!walletConnected)}
-                      onNavigateHome={() => handleNavigate('home')}
-                      byokSettings={byokSettings}
-                    />
-                  )}
-                </WorkspaceSync>
-              </RequireAuth>
+              <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden w-full">
+                <RequireAuth>
+                  <WorkspaceSync
+                    setActiveProjectId={setActiveProjectId}
+                    userId={user?.id ?? ''}
+                    onHydrateProject={handleHydrateProject}
+                    removeFromLocalCache={removeFromLocalCache}
+                    workspaceParentProjects={projects}
+                    onUpdateProject={handleUpdateProject}
+                  >
+                    {(workspaceProject, updateWorkspaceProject) => (
+                      <ProjectWorkspace
+                        project={workspaceProject}
+                        onUpdateProject={updateWorkspaceProject}
+                        onPersistToDb={(p) => void enqueuePersistRemote(p)}
+                        walletConnected={walletConnected}
+                        onConnectWallet={() => setWalletConnected(!walletConnected)}
+                        onNavigateHome={() => handleNavigate('home')}
+                        byokSettings={byokSettings}
+                      />
+                    )}
+                  </WorkspaceSync>
+                </RequireAuth>
+              </div>
             }
           />
           <Route
