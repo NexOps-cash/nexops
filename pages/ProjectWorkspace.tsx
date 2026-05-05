@@ -630,9 +630,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             toast.error('No .cash source to publish.');
             return;
         }
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+        if (!supabaseUrl?.trim()) {
+            toast.error('Publishing is not configured (missing VITE_SUPABASE_URL).');
+            return;
+        }
+
         const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) {
+        if (!sessionData.session?.access_token) {
             toast.error('Sign in with GitHub to publish.');
             return;
         }
@@ -645,6 +650,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
         setIsPublishingRegistry(true);
         try {
+            const token = sessionData.session.access_token;
             const { data, error } = await supabase.functions.invoke('publish-contract', {
                 body: {
                     title: details.title.trim(),
@@ -669,6 +675,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     } catch {
                         /* ignore */
                     }
+                }
+                if (/failed to send/i.test(detail)) {
+                    detail =
+                        'Could not reach the publish API. Redeploy the publish-contract Edge Function (CORS must allow POST), verify VITE_SUPABASE_URL matches your project, and check the browser Network tab.';
                 }
                 throw new Error(detail);
             }
