@@ -59,6 +59,8 @@ import { useWallet } from '../contexts/WalletContext';
 interface ProjectWorkspaceProps {
     project: Project;
     onUpdateProject: (p: Project) => void;
+    /** Immediate Supabase upsert (e.g. user clicked Save); debounced autosync still applies between saves. */
+    onPersistToDb?: (p: Project) => void;
     walletConnected: boolean;
     onConnectWallet: () => void;
     onNavigateHome: () => void;
@@ -69,6 +71,7 @@ interface ProjectWorkspaceProps {
 export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     project,
     onUpdateProject,
+    onPersistToDb,
     walletConnected,
     onConnectWallet,
     onNavigateHome,
@@ -550,11 +553,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             author: 'USER'
         };
 
-        onUpdateProject({
+        const savedProject = {
             ...project,
             versions: [newVersion, ...project.versions],
-            lastModified: Date.now()
-        });
+            lastModified: Date.now(),
+        };
+
+        onUpdateProject(savedProject);
+        onPersistToDb?.(savedProject);
         setUnsavedChanges(false);
         return newVersion;
     };

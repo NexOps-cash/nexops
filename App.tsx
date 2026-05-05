@@ -312,7 +312,6 @@ const App: React.FC = () => {
     retryInitialSession,
   } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
 
   const [byokSettings, setByokSettings] = useState<BYOKSettings>(() => {
     const saved = localStorage.getItem(BYOK_STORAGE_KEY);
@@ -359,24 +358,42 @@ const App: React.FC = () => {
     loadProjects();
   }, [user]);
 
+  /** Supabase project upsert — debounced while editing; Save triggers immediate enqueue via same path. */
+  const SYNC_DEBOUNCE_MS = 10_000;
+  const persistTailRef = useRef(Promise.resolve());
+
+  const enqueuePersistRemote = useCallback((p: Project) => {
+    persistTailRef.current = persistTailRef.current
+      .then(async () => {
+        if (!user || isLocalhostRuntime()) return;
+        const normalized = ensureContractCodeAsCashFile(p);
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized.id))
+          return;
+
+        setIsSyncing(true);
+        try {
+          const { error } = await upsertProjectRow(normalized, user.id);
+          if (error) console.error('Sync error', error);
+        } finally {
+          setIsSyncing(false);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    async function syncToSupabase() {
-      if (!user || projects.length === 0 || isSyncing || isLocalhostRuntime()) return;
-      const p = projects.find((row) => row.id === activeProjectId);
-      if (!p || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id)) return;
+    const onWorkspace = location.pathname.startsWith('/workspace');
+    if (!onWorkspace || !user || projects.length === 0) return;
 
-      setIsSyncing(true);
-      try {
-        const { error } = await upsertProjectRow(p, user.id);
-        if (error) console.error('Sync error', error);
-      } finally {
-        setIsSyncing(false);
-      }
-    }
-    const timeout = setTimeout(syncToSupabase, 1500);
-    return () => clearTimeout(timeout);
-  }, [projects, user, activeProjectId, isSyncing]);
+    const p = projects.find((row) => row.id === activeProjectId);
+    if (!p) return;
+
+    const timeout = window.setTimeout(() => {
+      enqueuePersistRemote(p);
+    }, SYNC_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [projects, user, activeProjectId, location.pathname, enqueuePersistRemote]);
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || null;
 
@@ -541,8 +558,6 @@ const App: React.FC = () => {
 
       {!location.pathname.startsWith('/workspace') && (
         <TopNav
-          isSyncing={isSyncing}
-          syncError={syncError}
           activeView={
             location.pathname === '/' || location.pathname === ''
               ? 'workspace'
@@ -611,6 +626,7 @@ const App: React.FC = () => {
                     <ProjectWorkspace
                       project={workspaceProject}
                       onUpdateProject={updateWorkspaceProject}
+                      onPersistToDb={(p) => void enqueuePersistRemote(p)}
                       walletConnected={walletConnected}
                       onConnectWallet={() => setWalletConnected(!walletConnected)}
                       onNavigateHome={() => handleNavigate('home')}

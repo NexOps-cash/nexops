@@ -1,15 +1,13 @@
 import React from 'react';
-import { Github, User as UserIcon, ShieldCheck, Box, Zap, FileCode, StickyNote, Home, FileWarning } from 'lucide-react';
+import { Github, User as UserIcon, ShieldCheck, Box, Zap, FileCode, StickyNote, Home } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface TopNavProps {
     activeView: string;
     onNavigate: (view: any) => void;
-    isSyncing?: boolean;
-    syncError?: string | null;
 }
 
-export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncing, syncError }) => {
+export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate }) => {
     const { user, signInWithGithub, signOut } = useAuth();
     const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
 
@@ -50,18 +48,6 @@ export const TopNav: React.FC<TopNavProps> = ({ activeView, onNavigate, isSyncin
 
             {/* Right: Auth */}
             <div className="flex items-center space-x-6">
-                {isSyncing && (
-                    <div className="flex items-center space-x-2 text-nexus-cyan/60 animate-pulse">
-                        <div className="w-1.5 h-1.5 rounded-full bg-nexus-cyan animate-bounce"></div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Syncing...</span>
-                    </div>
-                )}
-                {syncError && (
-                    <div className="flex items-center space-x-2 text-red-400">
-                        <FileWarning className="w-3.5 h-3.5" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">{syncError}</span>
-                    </div>
-                )}
                 {!user ? (
                     <button
                         onClick={signInWithGithub}
