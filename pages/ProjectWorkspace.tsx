@@ -37,6 +37,7 @@ import { ExecutionPreview } from '../components/flow/ExecutionPreview';
 import { extractFlow } from '../components/flow/FlowExtractor';
 import { PublishModal } from '../components/PublishModal';
 import { supabase } from '../lib/supabase';
+import { ensureContractCodeAsCashFile } from '../lib/projectNormalize';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -156,12 +157,29 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [publishModalOpen, setPublishModalOpen] = useState(false);
     const [isPublishingRegistry, setIsPublishingRegistry] = useState(false);
 
+    // Legacy projects / DB rows: contract lives on `contractCode` only — editor expects `*.cash` in `files`.
+    useEffect(() => {
+        const normalized = ensureContractCodeAsCashFile(project);
+        if (normalized === project) return;
+        onUpdateProject(normalized);
+    }, [project, onUpdateProject]);
+
     // Derived State
     const activeFile = project.files.find(f => f.name === activeFileName);
-    const mainContractFile = useMemo(() => {
+    const mainContractFile = useMemo((): ProjectFile | undefined => {
         if (activeFile?.name.endsWith('.cash')) return activeFile;
-        return project.files.find(f => f.name.endsWith('.cash'));
-    }, [project.files, activeFile]);
+        const fromFiles = project.files.find((f) => f.name.endsWith('.cash'));
+        if (fromFiles) return fromFiles;
+        const code = project.contractCode?.trim();
+        if (!code) return undefined;
+        const stem =
+            (project.name || 'contract')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 64) || 'contract';
+        return { name: `${stem}.cash`, content: code, language: 'cashscript' };
+    }, [project.files, project.contractCode, project.name, activeFile]);
 
     // Fix: Deduplicate files reliably for UI rendering
     const allUniqueFiles = useMemo(() => {

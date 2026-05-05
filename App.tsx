@@ -28,9 +28,13 @@ import { BYOKSettings } from './types';
 import { loadProjectByIdForUser, loadProjectsForUser, upsertProjectRow } from './services/projectQueries';
 import { registryRowToProject } from './lib/registryContract';
 import { consumePendingRegistryContract } from './lib/pendingRegistryLoad';
+import { ensureContractCodeAsCashFile } from './lib/projectNormalize';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
+
+/** Avoid sending workspace URLs to /login while Supabase restores session (cold load / OAuth). */
+const WORKSPACE_AUTH_GRACE_MS = 1500;
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -38,12 +42,21 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   /** Loopback dev: open IDE/creator without GitHub (production uses real hostnames only). */
   const skipAuthGate = isLocalhostRuntime();
+  const workspaceAuthGraceUntilRef = useRef(0);
+
+  useEffect(() => {
+    if (skipAuthGate) return;
+    if (isWorkspacePath(location.pathname)) {
+      workspaceAuthGraceUntilRef.current = Date.now() + WORKSPACE_AUTH_GRACE_MS;
+    }
+  }, [location.pathname, skipAuthGate]);
 
   useEffect(() => {
     if (skipAuthGate) return;
     if (isLoading || user) return;
     const pathKey = `${window.location.origin}${window.location.pathname}`;
     const ws = isWorkspacePath(location.pathname);
+    if (ws && Date.now() < workspaceAuthGraceUntilRef.current) return;
     if (ws && !shouldRedirectToLogin(pathKey)) return;
 
     resetHasHandledAuthBeforeLoginRedirect();
@@ -130,8 +143,9 @@ const WorkspaceSync: React.FC<{
 
   const pushGranted = useCallback(
     (project: Project) => {
-      setGrantedProject(project);
-      onHydrateProject(project);
+      const normalized = ensureContractCodeAsCashFile(project);
+      setGrantedProject(normalized);
+      onHydrateProject(normalized);
       setPhase('granted');
     },
     [onHydrateProject],
@@ -139,8 +153,9 @@ const WorkspaceSync: React.FC<{
 
   const updateWorkspaceProject = useCallback(
     (project: Project) => {
-      setGrantedProject(project);
-      onUpdateProject(project);
+      const normalized = ensureContractCodeAsCashFile(project);
+      setGrantedProject(normalized);
+      onUpdateProject(normalized);
     },
     [onUpdateProject],
   );
@@ -366,9 +381,10 @@ const App: React.FC = () => {
   const activeProject = projects.find((p) => p.id === activeProjectId) || null;
 
   const handleHydrateProject = React.useCallback((project: Project) => {
+    const normalized = ensureContractCodeAsCashFile(project);
     setProjects((prev) => {
-      const without = prev.filter((p) => p.id !== project.id);
-      return [project, ...without];
+      const without = prev.filter((p) => p.id !== normalized.id);
+      return [normalized, ...without];
     });
   }, []);
 
@@ -376,15 +392,16 @@ const App: React.FC = () => {
     setProjects((prev) => prev.filter((p) => p.id !== projectId));
   }, []);
 
-  const handleUpdateProject = (updatedProject: Project) => {
+  const handleUpdateProject = useCallback((updatedProject: Project) => {
+    const normalized = ensureContractCodeAsCashFile(updatedProject);
     setProjects((prev) => {
-      const index = prev.findIndex((p) => p.id === updatedProject.id);
-      if (index === -1) return [updatedProject, ...prev];
+      const index = prev.findIndex((p) => p.id === normalized.id);
+      if (index === -1) return [normalized, ...prev];
       const newProjects = [...prev];
-      newProjects[index] = { ...updatedProject, lastModified: Date.now() };
+      newProjects[index] = { ...normalized, lastModified: Date.now() };
       return newProjects;
     });
-  };
+  }, []);
 
   const handleSelectProject = (projectId: string) => {
     try {
@@ -398,13 +415,14 @@ const App: React.FC = () => {
   };
 
   const handleCreateProject = async (project: Project) => {
+    const p = ensureContractCodeAsCashFile(project);
     try {
-      localStorage.setItem('nexops_last_project_id', project.id);
+      localStorage.setItem('nexops_last_project_id', p.id);
     } catch {
       /* ignore */
     }
-    setProjects((prev) => [project, ...prev.filter((p) => p.id !== project.id)]);
-    setActiveProjectId(project.id);
+    setProjects((prev) => [p, ...prev.filter((row) => row.id !== p.id)]);
+    setActiveProjectId(p.id);
 
     if (persona !== 'app') {
       if (!user) {
@@ -412,9 +430,9 @@ const App: React.FC = () => {
         return;
       }
       try {
-        const { error } = await upsertProjectRow(project, user.id);
+        const { error } = await upsertProjectRow(p, user.id);
         if (error) throw error;
-        window.location.href = `https://app.nexops.cash/workspace/${project.id}`;
+        window.location.href = `https://app.nexops.cash/workspace/${p.id}`;
         return;
       } catch (e: unknown) {
         console.error('Failed to create cross-subdomain workspace record', e);
@@ -426,18 +444,18 @@ const App: React.FC = () => {
     // Production / non-localhost: persist before navigate so WorkspaceSync can load by id from Supabase.
     if (!isLocalhostRuntime() && user) {
       try {
-        const { error } = await upsertProjectRow(project, user.id);
+        const { error } = await upsertProjectRow(p, user.id);
         if (error) throw error;
       } catch (e: unknown) {
         console.error('Failed to persist new workspace', e);
         toast.error(`Could not create workspace: ${e instanceof Error ? e.message : 'server error'}`);
-        setProjects((prev) => prev.filter((p) => p.id !== project.id));
+        setProjects((prev) => prev.filter((row) => row.id !== p.id));
         setActiveProjectId(null);
         return;
       }
     }
 
-    navigate(`/workspace/${project.id}`);
+    navigate(`/workspace/${p.id}`);
   };
 
   const handleRegistryContractLoad = (row: unknown) => {

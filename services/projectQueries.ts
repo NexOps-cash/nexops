@@ -1,12 +1,13 @@
 import type { Project } from '../types';
 import { supabase } from '../lib/supabase';
+import { ensureContractCodeAsCashFile } from '../lib/projectNormalize';
 
 function mapRowToProject(row: Record<string, unknown>): Project {
-  return {
+  const raw: Project = {
     id: row.id as string,
     name: row.name as string,
     chain: row.chain as Project['chain'],
-    contractCode: row.contract_code as string,
+    contractCode: typeof row.contract_code === 'string' ? row.contract_code : String(row.contract_code ?? ''),
     files: (row.files as Project['files']) || [],
     versions: (row.versions as Project['versions']) || [],
     auditReport: row.audit_report as Project['auditReport'] | undefined,
@@ -16,6 +17,7 @@ function mapRowToProject(row: Record<string, unknown>): Project {
         ? new Date(row.last_modified as string).getTime()
         : (row.last_modified as number),
   };
+  return ensureContractCodeAsCashFile(raw);
 }
 
 /** Fetch one project — RLS must enforce owner-only visibility. */
