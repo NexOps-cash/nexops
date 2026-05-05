@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import toast from 'react-hot-toast';
 import { Button } from '../components/UI';
 import { Wand2 } from 'lucide-react';
-import { Project, ChainType } from '../types';
+import { Project, ChainType, WizardDeployRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import {
   consumeWizardPendingAction,
@@ -31,6 +31,9 @@ import { KindTabs } from '../components/wizard/KindTabs';
 import { FeaturePanel } from '../components/wizard/FeaturePanel';
 import { CodePreview } from '../components/wizard/CodePreview';
 import { ActionsBar } from '../components/wizard/ActionsBar';
+import { WizardDeployPanel } from '../components/wizard/WizardDeployPanel';
+import { DeployHistoryPanel } from '../components/wizard/DeployHistoryPanel';
+import { getWizardDeploys } from '../lib/wizardDeployStore';
 
 interface WizardPageProps {
   onNavigateHome: () => void;
@@ -176,12 +179,23 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
   });
   const [compileOutput, setCompileOutput] = useState<string>('Compile output will appear here.');
   const [isCompiling, setIsCompiling] = useState(false);
+  const [deployModalOpen, setDeployModalOpen] = useState(false);
+  const [wizardDeployRecords, setWizardDeployRecords] = useState<WizardDeployRecord[]>(() => getWizardDeploys());
   const [debouncedBuild, setDebouncedBuild] = useState<BuildOptions>({
     fields: wizardState.fields,
     enabled: wizardState.enabled,
   });
 
   const activeKind = KINDS_BY_ID[wizardState.kindId] ?? defaultKind;
+
+  const refreshWizardDeploys = useCallback(() => {
+    setWizardDeployRecords(getWizardDeploys());
+  }, []);
+
+  const fieldDefsVisible = useMemo(
+    () => collectFieldDefs(activeKind, wizardState.enabled),
+    [activeKind, wizardState.enabled]
+  );
 
   const applyHashFromLocation = useCallback(() => {
     const encoded = readNxwEncodedFromHash();
@@ -417,8 +431,8 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
   };
 
   return (
-    <div className="h-full w-full bg-[#050a08] overflow-auto p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="h-full min-h-0 w-full bg-[#050a08] overflow-hidden flex flex-col p-6">
+      <div className="max-w-7xl mx-auto flex flex-col flex-1 min-h-0 w-full">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
@@ -434,10 +448,10 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
           </Button>
         </div>
 
-        <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden">
+        <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden flex flex-col flex-1 min-h-0">
           <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
-          <div className="grid grid-cols-1 lg:grid-cols-[360px,1fr] h-[820px]">
-            <div className="border-r border-white/10 h-full min-h-0 overflow-hidden">
+          <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:min-h-[560px] xl:h-[min(820px,70vh)] xl:max-h-[820px]">
+            <div className="flex flex-col min-h-0 h-[min(420px,45vh)] w-full xl:h-full xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden">
               <FeaturePanel
                 kind={activeKind}
                 values={wizardState.fields}
@@ -447,37 +461,54 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
                 onFieldChange={handleFieldChange}
               />
             </div>
-            <div className="p-4 space-y-4 min-h-0 overflow-y-auto">
-              {generated.constraintErrors.length > 0 && (
-                <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
-                  {generated.constraintErrors.map((e) => (
-                    <div key={e}>- {e}</div>
-                  ))}
+            <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
+              <div className="p-4 space-y-4 flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                {generated.constraintErrors.length > 0 && (
+                  <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
+                    {generated.constraintErrors.map((e) => (
+                      <div key={e}>- {e}</div>
+                    ))}
+                  </div>
+                )}
+                <ActionsBar
+                  copyDisabled={false}
+                  compileDisabled={isCompiling}
+                  deployDisabled={!canAct}
+                  downloadDisabled={!canAct}
+                  shareDisabled={!canAct}
+                  openDisabled={!canAct}
+                  onCopy={onCopy}
+                  onDownload={onDownload}
+                  onShare={onShare}
+                  onCompile={onCompile}
+                  onDeploy={() => setDeployModalOpen(true)}
+                  onOpenWorkspace={onOpenWorkspace}
+                />
+                <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
+                <div className="rounded-md border border-white/10 bg-black/20 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
+                    Compile Output {isCompiling ? '(running...)' : ''}
+                  </div>
+                  <pre className="text-xs text-slate-300 whitespace-pre-wrap">{compileOutput}</pre>
                 </div>
-              )}
-              <ActionsBar
-                copyDisabled={false}
-                compileDisabled={isCompiling}
-                downloadDisabled={!canAct}
-                shareDisabled={!canAct}
-                openDisabled={!canAct}
-                onCopy={onCopy}
-                onDownload={onDownload}
-                onShare={onShare}
-                onCompile={onCompile}
-                onOpenWorkspace={onOpenWorkspace}
-              />
-              <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
-              <div className="rounded-md border border-white/10 bg-black/20 p-3">
-                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
-                  Compile Output {isCompiling ? '(running...)' : ''}
-                </div>
-                <pre className="text-xs text-slate-300 whitespace-pre-wrap">{compileOutput}</pre>
               </div>
             </div>
+            <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
           </div>
         </div>
       </div>
+      <WizardDeployPanel
+        isOpen={deployModalOpen}
+        onClose={() => setDeployModalOpen(false)}
+        source={generated.source}
+        generatedInvariants={generated.invariants ?? []}
+        kindId={activeKind.id}
+        kindName={activeKind.name}
+        fieldDefs={fieldDefsVisible}
+        wizardFields={wizardState.fields}
+        wizardEnabled={wizardState.enabled}
+        onRecordSaved={refreshWizardDeploys}
+      />
     </div>
   );
 };

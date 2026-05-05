@@ -457,7 +457,7 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
           )}
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar p-4 space-y-5 [-webkit-overflow-scrolling:touch]">
         <div>
         <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-black">Base fields</div>
         <div className="mt-3 space-y-3">
