@@ -63,7 +63,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
         <div className="flex flex-col h-full w-full bg-[#050507] text-slate-300 overflow-hidden font-sans">
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 {/* Activity Bar (Leftmost Strip) - Darkest Layer */}
-                <div className="w-12 h-full max-h-screen flex-shrink-0 flex flex-col border-r border-white/5 bg-[#050507] z-50">
+                <div className="w-12 h-full flex-shrink-0 flex flex-col border-r border-white/5 bg-[#050507] z-50">
                     <div className="flex-shrink-0 pt-2 pb-2 border-b border-white/5">
                         <ActivityBarItem
                             icon={Home}

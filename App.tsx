@@ -584,7 +584,13 @@ const App: React.FC = () => {
         />
       )}
 
-      <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+      <div
+        className={
+          location.pathname.startsWith('/workspace')
+            ? 'flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col'
+            : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden'
+        }
+      >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route

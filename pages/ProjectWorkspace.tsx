@@ -2147,7 +2147,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     );
 
     return (
-        <div className="h-screen w-screen overflow-hidden animate-in fade-in duration-700 ease-out fill-mode-forwards opacity-0" style={{ animation: 'fadeIn 0.8s ease-out forwards' }}>
+        <div className="flex flex-1 flex-col min-h-0 w-full overflow-hidden animate-in fade-in duration-700 ease-out fill-mode-forwards opacity-0" style={{ animation: 'fadeIn 0.8s ease-out forwards' }}>
             <style dangerouslySetInnerHTML={{
                 __html: `
                 @keyframes fadeIn {
