@@ -25,8 +25,10 @@ import {
 } from '../services/wizard/schema';
 import { generate } from '../services/wizard/generator';
 import { compileCashScript } from '../services/compilerService';
+import { useWallet } from '../contexts/WalletContext';
 import { KindTabs } from '../components/wizard/KindTabs';
 import { FeaturePanel } from '../components/wizard/FeaturePanel';
+import { WizardTestIdentitiesSection } from '../components/wizard/WizardTestIdentitiesSection';
 import { CodePreview } from '../components/wizard/CodePreview';
 import { ActionsBar } from '../components/wizard/ActionsBar';
 import { WizardDeployPanel } from '../components/wizard/WizardDeployPanel';
@@ -164,6 +166,8 @@ function stripNexopsSessionQuery(): void {
 export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { wallets, activeWallet } = useWallet();
+  const [wizardIdentityId, setWizardIdentityId] = useState<string | null>(null);
   const defaultKind = KINDS[0];
   const lastAppliedNormalizedRef = useRef<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -219,6 +223,15 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   useEffect(() => {
     stripNexopsSessionQuery();
   }, []);
+
+  useEffect(() => {
+    if (!wallets.length) {
+      setWizardIdentityId(null);
+      return;
+    }
+    if (wizardIdentityId && wallets.some((w) => w.id === wizardIdentityId)) return;
+    setWizardIdentityId(activeWallet?.id ?? wallets[0]?.id ?? null);
+  }, [wallets, activeWallet, wizardIdentityId]);
 
   useEffect(() => {
     applyHashFromLocation();
@@ -433,15 +446,20 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
         <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden flex flex-col flex-1 min-h-0">
           <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
           <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:h-full">
-            <div className="flex flex-col flex-1 min-h-[260px] w-full xl:flex-none xl:h-full xl:min-h-0 xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden">
-              <FeaturePanel
-                kind={activeKind}
-                values={wizardState.fields}
-                enabled={wizardState.enabled}
-                errors={fieldErrors}
-                onToggle={handleToggleFeature}
-                onFieldChange={handleFieldChange}
-              />
+            <div className="flex flex-col flex-1 min-h-[260px] w-full xl:flex-none xl:h-full xl:min-h-0 xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden min-h-0">
+              <div className="shrink-0 p-3 border-b border-white/10 bg-[#050a08]">
+                <WizardTestIdentitiesSection
+                  kindId={activeKind.id}
+                  visibleFields={fieldDefsVisible}
+                  values={wizardState.fields}
+                  onFieldChange={handleFieldChange}
+                  selectedIdentityId={wizardIdentityId}
+                  onSelectedIdentityChange={setWizardIdentityId}
+                />
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
+              </div>
             </div>
             <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
               <div className="p-3 sm:p-4 flex flex-col gap-4 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar min-h-0">
@@ -477,7 +495,18 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
                 </div>
               </div>
             </div>
-            <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
+            <div className="flex flex-col min-w-0 min-h-0 h-full max-h-52 xl:max-h-none shrink-0 xl:flex-none xl:w-72 xl:h-full border-t xl:border-t-0 xl:border-l border-white/10 overflow-hidden">
+              <FeaturePanel
+                kind={activeKind}
+                values={wizardState.fields}
+                enabled={wizardState.enabled}
+                errors={fieldErrors}
+                onToggle={handleToggleFeature}
+                onFieldChange={handleFieldChange}
+                selectedIdentityId={wizardIdentityId}
+                onSelectedIdentityChange={setWizardIdentityId}
+              />
+            </div>
           </div>
         </div>
       </div>

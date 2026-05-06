@@ -38,7 +38,7 @@ export const DeployHistoryPanel: React.FC<DeployHistoryPanelProps> = ({ kindId, 
   const filtered = useMemo(() => records.filter((r) => r.kindId === kindId), [records, kindId]);
 
   return (
-    <div className="flex flex-col border-t xl:border-t-0 xl:border-l border-white/10 bg-black/20 min-w-0 min-h-0 h-full max-h-52 xl:max-h-none shrink-0 xl:w-72 xl:h-full">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 w-full h-full max-h-52 xl:max-h-none bg-black/20">
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
@@ -48,7 +48,7 @@ export const DeployHistoryPanel: React.FC<DeployHistoryPanelProps> = ({ kindId, 
         <span>{collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</span>
       </button>
       {!collapsed && (
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-2 w-72">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain custom-scrollbar p-2 space-y-2 w-full">
           {filtered.length === 0 ? (
             <p className="text-[10px] text-slate-600 px-2">No wizard deployments for this template yet.</p>
           ) : (
