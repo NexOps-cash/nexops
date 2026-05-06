@@ -23,6 +23,7 @@
   "include": [
     "*.ts",
     "*.tsx",
+    "scripts/**/*",
     "components/**/*",
     "contexts/**/*",
     "lib/**/*",
