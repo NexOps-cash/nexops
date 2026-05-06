@@ -302,6 +302,9 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         pollGenRef.current += 1;
       }
       setFundingStatus(status);
+      if (status.status === 'error') {
+        toast.error(status.error ?? 'Electrum check failed');
+      }
       if (status.status === 'confirmed') {
         commitFundingRecord(status, addr);
       }
@@ -603,6 +606,11 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                     </div>
                   </div>
                 </div>
+                {fundingStatus.status === 'monitoring' && fundingStatus.error ? (
+                  <div className="rounded border border-amber-500/35 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-100/95 leading-snug">
+                    {fundingStatus.error}
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
                   <span className="flex items-center gap-2 min-w-0">
                     <Loader2 className="w-4 h-4 animate-spin shrink-0" />

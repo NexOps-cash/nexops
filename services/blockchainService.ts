@@ -47,9 +47,31 @@ function addressToScriptHash(address: string): string {
     const bytecode = lockResult.bytecode;
     const hash = sha256.hash(bytecode);
 
-    // Reverse the hash to match Electrum's expected little-endian format
-    const reversedHash = hash.reverse();
-    return binToHex(reversedHash);
+    // Reverse into a copy — avoid mutating libauth's buffer (can corrupt repeated lookups).
+    const len = hash.length;
+    const reversed = new Uint8Array(len);
+    for (let i = 0; i < len; i += 1) {
+        reversed[i] = hash[len - 1 - i];
+    }
+    return binToHex(reversed);
+}
+
+/** Throws if Electrum fails or returns a non-array — distinguishes “RPC broken” from “zero UTXOs”. */
+async function fetchUTXOsFromElectrum(address: string): Promise<UTXO[]> {
+    const scriptHash = addressToScriptHash(address);
+    const listUnspent = await ElectrumManager.request('blockchain.scripthash.listunspent', scriptHash);
+    if (!Array.isArray(listUnspent)) {
+        throw new Error(
+            `Electrum listunspent returned ${typeof listUnspent}; expected an array. Server may be incompatible or overloaded.`
+        );
+    }
+    return listUnspent.map((u) => ({
+        txid: String(u.tx_hash ?? '').trim(),
+        vout: u.tx_pos,
+        value: u.value || 0,
+        height: normalizeElectrumBlockHeight(u.height),
+        confirmations: normalizeElectrumBlockHeight(u.height) > 0 ? 1 : 0,
+    }));
 }
 
 // --- Singleton Manager ---
@@ -273,23 +295,9 @@ function pickLikelyFundingTxid(utxos: UTXO[]): string | undefined {
  */
 export async function fetchUTXOs(address: string): Promise<UTXO[]> {
     try {
-        const scriptHash = addressToScriptHash(address);
-
-        // Use resilient request wrapper
-        const listUnspent = await ElectrumManager.request('blockchain.scripthash.listunspent', scriptHash) as any[];
-
-        return listUnspent.map((u) => ({
-            txid: String(u.tx_hash ?? '').trim(),
-            vout: u.tx_pos,
-            value: u.value || 0,
-            height: normalizeElectrumBlockHeight(u.height),
-            confirmations: normalizeElectrumBlockHeight(u.height) > 0 ? 1 : 0,
-        }));
-
-    } catch (error: any) {
+        return await fetchUTXOsFromElectrum(address);
+    } catch (error: unknown) {
         console.error('[blockchainService] UTXO fetch error:', error);
-        // If it's a connection error, it might be worth throwing or returning a specific flag
-        // but for now we return empty to avoid crashing UI
         return [];
     }
 }
@@ -298,17 +306,28 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
  * One-shot funding check (same rules as the poller). Use for manual refresh.
  */
 export async function checkFundingNow(address: string, minimumRequiredSats: number): Promise<FundingStatus> {
-    const utxos = await fetchUTXOs(address);
-    const totalValue = totalUtxoValueSats(utxos);
-    if (totalValue >= minimumRequiredSats) {
+    try {
+        const utxos = await fetchUTXOsFromElectrum(address);
+        const totalValue = totalUtxoValueSats(utxos);
+        if (totalValue >= minimumRequiredSats) {
+            return {
+                status: 'confirmed',
+                utxos,
+                totalValue,
+                txid: pickLikelyFundingTxid(utxos),
+            };
+        }
+        return { status: 'monitoring', utxos, totalValue };
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('[blockchainService] checkFundingNow Electrum failure:', e);
         return {
-            status: 'confirmed',
-            utxos,
-            totalValue,
-            txid: pickLikelyFundingTxid(utxos),
+            status: 'error',
+            utxos: [],
+            totalValue: 0,
+            error: `Cannot reach Chipnet Electrum: ${msg}`,
         };
     }
-    return { status: 'monitoring', utxos, totalValue };
 }
 
 /**
@@ -317,6 +336,9 @@ export async function checkFundingNow(address: string, minimumRequiredSats: numb
  */
 class FundingWatcher {
     private active = true;
+    /** RPC failures in a row (was silently swallowed as “zero balance”). */
+    private consecutiveElectrumFailures = 0;
+    private static readonly MAX_ELECTRUM_FAILURES_BEFORE_ABORT = 12;
 
     constructor(
         private address: string,
@@ -344,8 +366,8 @@ class FundingWatcher {
             }
 
             try {
-                // Fetch using singleton
-                const utxos = await fetchUTXOs(this.address);
+                const utxos = await fetchUTXOsFromElectrum(this.address);
+                this.consecutiveElectrumFailures = 0;
 
                 // Sum every UTXO — Electrum marks mempool outputs as height -1, which previously dropped them from totals.
                 const totalValue = totalUtxoValueSats(utxos);
@@ -375,10 +397,32 @@ class FundingWatcher {
                     setTimeout(poll, pollInterval);
                 }
 
-            } catch (error) {
-                // Transient error, just log and retry
-                console.warn('[Watcher] Transient polling error:', error);
-                setTimeout(poll, pollInterval); // Retry
+            } catch (error: unknown) {
+                this.consecutiveElectrumFailures += 1;
+                const msg = error instanceof Error ? error.message : String(error);
+                console.warn(
+                    `[Watcher] Electrum poll failed (${this.consecutiveElectrumFailures}/${FundingWatcher.MAX_ELECTRUM_FAILURES_BEFORE_ABORT}):`,
+                    error
+                );
+
+                if (this.consecutiveElectrumFailures >= FundingWatcher.MAX_ELECTRUM_FAILURES_BEFORE_ABORT) {
+                    this.emit({
+                        status: 'error',
+                        utxos: [],
+                        totalValue: 0,
+                        error: `Chipnet Electrum unavailable after ${FundingWatcher.MAX_ELECTRUM_FAILURES_BEFORE_ABORT} attempts: ${msg}`,
+                    });
+                    return;
+                }
+
+                this.emit({
+                    status: 'monitoring',
+                    utxos: [],
+                    totalValue: 0,
+                    error: `Checking balance… (Electrum issue, retrying: ${msg.slice(0, 120)})`,
+                });
+
+                setTimeout(poll, pollInterval);
             }
         };
 
