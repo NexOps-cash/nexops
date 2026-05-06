@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import toast from 'react-hot-toast';
-import { Button } from '../components/UI';
-import { Wand2 } from 'lucide-react';
 import { Project, ChainType, WizardDeployRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -36,7 +34,6 @@ import { DeployHistoryPanel } from '../components/wizard/DeployHistoryPanel';
 import { getWizardDeploys } from '../lib/wizardDeployStore';
 
 interface WizardPageProps {
-  onNavigateHome: () => void;
   onCreateProject: (project: Project) => void;
 }
 
@@ -164,7 +161,7 @@ function stripNexopsSessionQuery(): void {
   }
 }
 
-export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreateProject }) => {
+export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const defaultKind = KINDS[0];
@@ -431,27 +428,12 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
   };
 
   return (
-    <div className="h-full min-h-0 w-full bg-[#050a08] overflow-hidden flex flex-col p-6">
-      <div className="max-w-7xl mx-auto flex flex-col flex-1 min-h-0 w-full">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
-              <Wand2 className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-white tracking-tight">NexWizard UTXO Composer</h1>
-              <p className="text-slate-500 text-xs">OpenZeppelin-style feature composer for BCH CashScript</p>
-            </div>
-          </div>
-          <Button variant="ghost" onClick={onNavigateHome}>
-            Exit Wizard
-          </Button>
-        </div>
-
+    <div className="h-full min-h-0 w-full bg-[#050a08] overflow-hidden flex flex-col px-2 py-2 sm:px-3 sm:py-2">
+      <div className="flex flex-col flex-1 min-h-0 w-full">
         <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden flex flex-col flex-1 min-h-0">
           <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
-          <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:min-h-[560px] xl:h-[min(820px,70vh)] xl:max-h-[820px]">
-            <div className="flex flex-col min-h-0 h-[min(420px,45vh)] w-full xl:h-full xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden">
+          <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:h-full">
+            <div className="flex flex-col flex-1 min-h-[260px] w-full xl:flex-none xl:h-full xl:min-h-0 xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden">
               <FeaturePanel
                 kind={activeKind}
                 values={wizardState.fields}
@@ -462,30 +444,32 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onNavigateHome, onCreate
               />
             </div>
             <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
-              <div className="p-4 space-y-4 flex-1 overflow-y-auto custom-scrollbar min-h-0">
+              <div className="p-3 sm:p-4 flex flex-col gap-4 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar min-h-0">
                 {generated.constraintErrors.length > 0 && (
-                  <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
+                  <div className="shrink-0 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
                     {generated.constraintErrors.map((e) => (
                       <div key={e}>- {e}</div>
                     ))}
                   </div>
                 )}
-                <ActionsBar
-                  copyDisabled={false}
-                  compileDisabled={isCompiling}
-                  deployDisabled={!canAct}
-                  downloadDisabled={!canAct}
-                  shareDisabled={!canAct}
-                  openDisabled={!canAct}
-                  onCopy={onCopy}
-                  onDownload={onDownload}
-                  onShare={onShare}
-                  onCompile={onCompile}
-                  onDeploy={() => setDeployModalOpen(true)}
-                  onOpenWorkspace={onOpenWorkspace}
-                />
+                <div className="shrink-0">
+                  <ActionsBar
+                    copyDisabled={false}
+                    compileDisabled={isCompiling}
+                    deployDisabled={!canAct}
+                    downloadDisabled={!canAct}
+                    shareDisabled={!canAct}
+                    openDisabled={!canAct}
+                    onCopy={onCopy}
+                    onDownload={onDownload}
+                    onShare={onShare}
+                    onCompile={onCompile}
+                    onDeploy={() => setDeployModalOpen(true)}
+                    onOpenWorkspace={onOpenWorkspace}
+                  />
+                </div>
                 <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
-                <div className="rounded-md border border-white/10 bg-black/20 p-3">
+                <div className="shrink-0 rounded-md border border-white/10 bg-black/20 p-3">
                   <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
                     Compile Output {isCompiling ? '(running...)' : ''}
                   </div>

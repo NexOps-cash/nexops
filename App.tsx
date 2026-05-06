@@ -663,10 +663,7 @@ const App: React.FC = () => {
           <Route
             path="/wizard"
             element={
-              <WizardPage
-                onNavigateHome={() => handleNavigate('home')}
-                onCreateProject={handleCreateProject}
-              />
+              <WizardPage onCreateProject={handleCreateProject} />
             }
           />
           <Route
