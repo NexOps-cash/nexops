@@ -35,7 +35,7 @@ export const escrowKind: ContractKind = {
       id: 'oraclePath',
       label: 'Oracle verification path',
       group: 'Auth',
-      description: 'Adds oracle checkDataSig branch to arbitration functions and related constructor fields.',
+      description: 'Adds oracle data-signature branch on arbitration paths (semantic attestation per payout intent).',
       fields: [
         {
           id: 'oraclePk',
@@ -47,7 +47,7 @@ export const escrowKind: ContractKind = {
           id: 'oracleEnabled',
           label: 'Oracle enabled',
           type: 'int',
-          description: 'Set to 0 to disable oracle checks, non-zero to require checkDataSig over tx-bound hash.',
+          description: 'Set to 0 to disable oracle checks, non-zero to require dataSig over semantic oracle message.',
           defaultValue: 1,
         },
       ],
@@ -88,14 +88,21 @@ export const escrowKind: ContractKind = {
         ]
       : [];
 
-    const oracleBlock = [
+    const oracleBuyerBlock = [
       'if (oracleEnabled != 0) {',
-      '    bytes32 txHash = hash256(',
+      '    bytes oracleMessage =',
       '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
-      '        + bytes8(tx.outputs[0].value)',
-      '        + tx.outputs[0].lockingBytecode',
-      '    );',
-      '    require(checkDataSig(oracleSig, txHash, oraclePk));',
+      '        + bytes("BUYER_RELEASE");',
+      '    require(checkDataSig(oracleSig, oracleMessage, oraclePk));',
+      '}',
+    ];
+
+    const oracleSellerBlock = [
+      'if (oracleEnabled != 0) {',
+      '    bytes oracleMessage =',
+      '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
+      '        + bytes("SELLER_RELEASE");',
+      '    require(checkDataSig(oracleSig, oracleMessage, oraclePk));',
       '}',
     ];
 
@@ -132,7 +139,7 @@ export const escrowKind: ContractKind = {
         '',
         'require(tx.outputs.length == 1);',
         'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-        ...(oracleEnabled ? ['', ...oracleBlock, ''] : ['']),
+        ...(oracleEnabled ? ['', ...oracleBuyerBlock, ''] : ['']),
         'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
       ],
     };
@@ -154,7 +161,7 @@ export const escrowKind: ContractKind = {
         '} else {',
         '    require(tx.outputs[0].value <= releaseCapSats);',
         '}',
-        ...(oracleEnabled ? ['', ...oracleBlock, ''] : ['']),
+        ...(oracleEnabled ? ['', ...oracleSellerBlock, ''] : ['']),
         'require(tx.outputs[0].lockingBytecode == sellerLockingBytecode);',
       ],
     };

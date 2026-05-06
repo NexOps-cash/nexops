@@ -5,7 +5,7 @@ export const multisigKind: ContractKind = {
   id: 'multisig',
   name: 'MultisigVault',
   summary: 'Secure 2-of-3 vault with parameterized timelock, oracle check, and emergency freeze path.',
-  allowedRoles: ['quorum-spend'],
+  allowedRoles: ['quorum-spend', 'covenant-continuation'],
   fields: [
     { id: 'pk1', label: 'Signer 1', type: 'pubkey', description: 'Compressed pubkey for signer 1.' },
     { id: 'pk2', label: 'Signer 2', type: 'pubkey', description: 'Compressed pubkey for signer 2.' },
@@ -23,7 +23,7 @@ export const multisigKind: ContractKind = {
       id: 'oraclePath',
       label: 'Oracle verification path',
       group: 'Auth',
-      description: 'Adds oracle check branch and related constructor fields.',
+      description: 'Adds oracle data-signature branch (semantic attestation: input outpoint + action label) and constructor fields.',
       fields: [
         {
           id: 'oraclePk',
@@ -35,7 +35,7 @@ export const multisigKind: ContractKind = {
           id: 'oracleEnabled',
           label: 'Oracle enabled',
           type: 'int',
-          description: 'Set to 0 to disable oracle check, or non-zero to require checkDataSig over tx-bound hash.',
+          description: 'Set to 0 to disable oracle check, or non-zero to require dataSig over semantic oracle message.',
           defaultValue: 1,
         },
       ],
@@ -88,12 +88,10 @@ export const multisigKind: ContractKind = {
           ? [
               '',
               'if (oracleEnabled != 0) {',
-              '    bytes32 txHash = hash256(',
+              '    bytes oracleMessage =',
               '        tx.inputs[this.activeInputIndex].outpointTransactionHash',
-              '        + bytes8(tx.outputs[0].value)',
-              '        + tx.outputs[0].lockingBytecode',
-              '    );',
-              '    require(checkDataSig(oracleSig, txHash, oraclePk));',
+              '        + bytes("APPROVE_SPEND");',
+              '    require(checkDataSig(oracleSig, oracleMessage, oraclePk));',
               '}',
               '',
             ]
@@ -109,16 +107,12 @@ export const multisigKind: ContractKind = {
     if (emergencyEnabled) {
       functions.push({
         name: 'emergencyFreeze',
-        role: 'quorum-spend',
+        role: 'covenant-continuation',
         params: ['sig emergencySig'],
         body: [
           'require(emergencyEnabled != 0);',
           '',
           'require(checkSig(emergencySig, emergencyKey));',
-          '',
-          'require(tx.outputs.length == 1);',
-          'require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
-          'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
         ],
       });
     }
