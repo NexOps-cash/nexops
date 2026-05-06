@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react';
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
 import toast from 'react-hot-toast';
-import { ChevronDown, Copy, Loader2, User } from 'lucide-react';
+import { ChevronDown, Copy, Loader2, RefreshCw, User } from 'lucide-react';
 import { Modal, Button } from '../UI';
 import { ConstructorForm } from '../ConstructorForm';
 import type { ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../../types';
 import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
 import { deriveContractAddress, coerceConstructorArgs } from '../../services/addressService';
-import { pollForFunding, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
+import { pollForFunding, checkFundingNow, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
 import { useWallet } from '../../contexts/WalletContext';
 import type { ValidationResult } from '../../services/validationService';
@@ -93,6 +93,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   const [fundingStatus, setFundingStatus] = useState<FundingStatus>({ status: 'idle', utxos: [], totalValue: 0 });
   const [txHash, setTxHash] = useState<string | null>(null);
   const [stepBanner, setStepBanner] = useState<string | null>(null);
+  const [fundingCheckBusy, setFundingCheckBusy] = useState(false);
   const pollGenRef = useRef(0);
 
   useEffect(() => {
@@ -119,6 +120,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
       setTxHash(null);
       setStepBanner(null);
+      setFundingCheckBusy(false);
       pollGenRef.current += 1;
       return;
     }
@@ -178,6 +180,46 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     }
   }, [artifact, constructorArgs]);
 
+  const commitFundingRecord = useCallback(
+    (status: FundingStatus, addr: string) => {
+      if (status.status !== 'confirmed' || !artifact) return;
+      setTxHash(status.txid ?? null);
+      setDeployStep(3);
+      const tokenAddress = tryTokenAddress(artifact, constructorArgs);
+      const utxo = status.utxos.find((u) => u.txid === status.txid) ?? status.utxos[0];
+      const record: WizardDeployRecord = {
+        id: crypto.randomUUID(),
+        kindId,
+        kindName,
+        contractAddress: addr,
+        tokenAddress,
+        constructorArgs: [...constructorArgs],
+        wizardFieldSnapshot: { ...wizardFields },
+        wizardEnabled: { ...wizardEnabled },
+        invariants: invariantIds,
+        fundingTxid: status.txid ?? utxo?.txid ?? '',
+        fundingAmountSats: fundingAmount,
+        timestamp: Date.now(),
+        network: 'chipnet',
+        artifact,
+      };
+      addWizardDeploy(record);
+      onRecordSaved();
+      toast.success('Contract funded on Chipnet.');
+    },
+    [
+      artifact,
+      constructorArgs,
+      fundingAmount,
+      invariantIds,
+      kindId,
+      kindName,
+      onRecordSaved,
+      wizardEnabled,
+      wizardFields,
+    ]
+  );
+
   const hasCriticalValidationErrors = useCallback(() => {
     return Object.values(constructorValidations).some((v) => v?.severity === 'error');
   }, [constructorValidations]);
@@ -216,7 +258,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     }
     const gen = ++pollGenRef.current;
     const amountBch = fundingAmount / 100_000_000;
-    const uri = `${addr}?amount=${amountBch}&label=NexOps%20WizardDeploy`;
+    const uri = `${addr}?amount=${amountBch.toFixed(8)}&label=NexOps%20WizardDeploy`;
     setPaymentUri(uri);
     setDeployStep(2);
     setFundingStatus({ status: 'monitoring', utxos: [], totalValue: 0 });
@@ -228,30 +270,8 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         (status) => {
           if (gen !== pollGenRef.current) return;
           setFundingStatus(status);
-          if (status.status === 'confirmed' && artifact) {
-            setTxHash(status.txid ?? null);
-            setDeployStep(3);
-            const tokenAddress = tryTokenAddress(artifact, constructorArgs);
-            const utxo = status.utxos.find((u) => u.txid === status.txid) ?? status.utxos[0];
-            const record: WizardDeployRecord = {
-              id: crypto.randomUUID(),
-              kindId,
-              kindName,
-              contractAddress: addr,
-              tokenAddress,
-              constructorArgs: [...constructorArgs],
-              wizardFieldSnapshot: { ...wizardFields },
-              wizardEnabled: { ...wizardEnabled },
-              invariants: invariantIds,
-              fundingTxid: status.txid ?? utxo?.txid ?? '',
-              fundingAmountSats: fundingAmount,
-              timestamp: Date.now(),
-              network: 'chipnet',
-              artifact,
-            };
-            addWizardDeploy(record);
-            onRecordSaved();
-            toast.success('Contract funded on Chipnet.');
+          if (status.status === 'confirmed') {
+            commitFundingRecord(status, addr);
           }
         },
         300_000
@@ -268,6 +288,26 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     }
   };
 
+  const handleManualFundingCheck = async () => {
+    const addr = addressDerivation.derivedAddress;
+    if (!artifact || !addr || deployStep !== 2) return;
+    setFundingCheckBusy(true);
+    try {
+      const status = await checkFundingNow(addr, fundingAmount);
+      if (status.status === 'confirmed') {
+        pollGenRef.current += 1;
+      }
+      setFundingStatus(status);
+      if (status.status === 'confirmed') {
+        commitFundingRecord(status, addr);
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not reach Electrum to check funding.');
+    } finally {
+      setFundingCheckBusy(false);
+    }
+  };
+
   const handleRetrySameAmount = () => {
     pollGenRef.current += 1;
     void handleStartMonitoring();
@@ -277,6 +317,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     pollGenRef.current += 1;
     setDeployStep(1);
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
+    setFundingCheckBusy(false);
   };
 
   const handleResetDeploy = () => {
@@ -286,6 +327,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
     setTxHash(null);
     setStepBanner(null);
+    setFundingCheckBusy(false);
   };
 
   const handleDeployAnother = () => {
@@ -295,6 +337,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
     setTxHash(null);
     setStepBanner(null);
+    setFundingCheckBusy(false);
   };
 
   const stepTitle = useMemo(() => {
@@ -521,7 +564,8 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                     Chipnet.
                   </p>
                   <p className="text-xs text-slate-400">
-                    Scan the QR or copy the address / BIP-21 URI. We poll for up to 5 minutes.
+                    Scan the QR or copy the address / BIP-21 URI. We poll Chipnet every few seconds for up to 5 minutes; tap{' '}
+                    <strong className="text-slate-300">Check payment now</strong> if your wallet already sent.
                   </p>
                   <div className="flex flex-wrap gap-4 items-start justify-center sm:justify-start">
                     <div className="bg-white p-2 rounded-md">
@@ -551,9 +595,29 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Waiting for payment… total seen {fundingStatus.totalValue ?? 0} sats
+                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    <span>
+                      Waiting for payment… total seen {(fundingStatus.totalValue ?? 0).toLocaleString()} /{' '}
+                      {fundingAmount.toLocaleString()} sats
+                    </span>
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={fundingCheckBusy}
+                    onClick={() => void handleManualFundingCheck()}
+                    icon={
+                      fundingCheckBusy ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3" />
+                      )
+                    }
+                  >
+                    Check payment now
+                  </Button>
                 </div>
                 <Button
                   variant="ghost"

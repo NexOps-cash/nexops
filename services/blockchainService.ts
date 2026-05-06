@@ -225,6 +225,25 @@ export async function getBlockHeight(): Promise<number> {
     }
 }
 
+/** Electrum uses 0 or -1 (and sometimes null) for unconfirmed; only positive heights are mined. */
+function normalizeElectrumBlockHeight(height: unknown): number {
+    if (height === null || height === undefined) return 0;
+    const n = Number(height);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n;
+}
+
+function totalUtxoValueSats(utxos: UTXO[]): number {
+    return utxos.reduce((sum, u) => sum + (u.value || 0), 0);
+}
+
+/** Prefer the largest output as the likely funding deposit for explorer links. */
+function pickLikelyFundingTxid(utxos: UTXO[]): string | undefined {
+    if (!utxos.length) return undefined;
+    const sorted = [...utxos].sort((a, b) => b.value - a.value);
+    return sorted[0]?.txid;
+}
+
 /**
  * Fetch UTXOs for a specific address using the shared connection.
  */
@@ -239,8 +258,8 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
             txid: u.tx_hash,
             vout: u.tx_pos,
             value: u.value || 0,
-            height: u.height,
-            confirmations: u.height > 0 ? 1 : 0
+            height: normalizeElectrumBlockHeight(u.height),
+            confirmations: normalizeElectrumBlockHeight(u.height) > 0 ? 1 : 0
         }));
 
     } catch (error: any) {
@@ -249,6 +268,23 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
         // but for now we return empty to avoid crashing UI
         return [];
     }
+}
+
+/**
+ * One-shot funding check (same rules as the poller). Use for manual refresh.
+ */
+export async function checkFundingNow(address: string, minimumRequiredSats: number): Promise<FundingStatus> {
+    const utxos = await fetchUTXOs(address);
+    const totalValue = totalUtxoValueSats(utxos);
+    if (totalValue >= minimumRequiredSats) {
+        return {
+            status: 'confirmed',
+            utxos,
+            totalValue,
+            txid: pickLikelyFundingTxid(utxos),
+        };
+    }
+    return { status: 'monitoring', utxos, totalValue };
 }
 
 /**
@@ -287,14 +323,11 @@ class FundingWatcher {
                 // Fetch using singleton
                 const utxos = await fetchUTXOs(this.address);
 
-                const confirmedUtxos = utxos.filter(u => u.height > 0);
-                const unconfirmedUtxos = utxos.filter(u => u.height === 0);
+                // Sum every UTXO — Electrum marks mempool outputs as height -1, which previously dropped them from totals.
+                const totalValue = totalUtxoValueSats(utxos);
+                const confirmedValue = utxos.filter((u) => u.height > 0).reduce((sum, u) => sum + u.value, 0);
 
-                const confirmedValue = confirmedUtxos.reduce((sum, u) => sum + u.value, 0);
-                const unconfirmedValue = unconfirmedUtxos.reduce((sum, u) => sum + u.value, 0);
-                const totalValue = confirmedValue + unconfirmedValue;
-
-                console.log(`[Watcher] ${this.address.slice(0, 8)}... | ${utxos.length} UTXOs | ${totalValue}/${this.requiredAmount} (C:${confirmedValue} U:${unconfirmedValue})`);
+                console.log(`[Watcher] ${this.address.slice(0, 8)}... | ${utxos.length} UTXOs | ${totalValue}/${this.requiredAmount} (confirmed ${confirmedValue} sats)`);
 
                 // Check status
                 if (totalValue >= this.requiredAmount) {
@@ -303,7 +336,7 @@ class FundingWatcher {
                         status: 'confirmed', // Accept 0-conf for demo UX
                         utxos,
                         totalValue,
-                        txid: utxos[0]?.txid
+                        txid: pickLikelyFundingTxid(utxos),
                     });
 
                     return; // Stop polling since we have enough total funds
