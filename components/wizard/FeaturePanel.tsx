@@ -135,6 +135,12 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
     features: kind.features.filter((f) => f.group === group),
   })).filter((entry) => entry.features.length > 0);
 
+  const enabledFeatureFieldSections = useMemo(
+    () =>
+      kind.features.filter((f) => enabled[f.id] && (f.fields?.length ?? 0) > 0),
+    [kind.features, enabled]
+  );
+
   const renderFieldWithWalletActions = (field: FieldDef) => {
     const highlighted = !!selectedIdentityId && highlightedFillableFields.has(field.id);
     return (
@@ -176,7 +182,7 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
           )}
         </div>
         {errors[field.id] && <div className="text-[10px] text-red-400 mt-1">{errors[field.id]}</div>}
-        <div className="text-[10px] text-slate-600 mt-1">{field.description}</div>
+        <div className="text-[10px] text-slate-400 mt-1 leading-snug">{field.description}</div>
       </div>
     );
   };
@@ -184,13 +190,6 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
   return (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar p-4 space-y-5 [-webkit-overflow-scrolling:touch]">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-black">Base fields</div>
-          <div className="mt-3 space-y-3">
-            {kind.fields.map((field) => renderFieldWithWalletActions(field))}
-          </div>
-        </div>
-
         {grouped.map(({ group, features }) => (
           <div key={group}>
             <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black">{group}</div>
@@ -215,17 +214,28 @@ export const FeaturePanel: React.FC<FeaturePanelProps> = ({
                             <span className="ml-2 text-[10px] text-amber-400">{feature.disabledReason || 'Coming soon'}</span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{feature.description}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">{feature.description}</div>
                       </div>
                     </label>
-                    {checked && (feature.fields ?? []).length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-white/5 space-y-2">
-                        {feature.fields!.map((field) => renderFieldWithWalletActions(field))}
-                      </div>
-                    )}
                   </div>
                 );
               })}
+            </div>
+          </div>
+        ))}
+
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-black">Base fields</div>
+          <div className="mt-3 space-y-3">
+            {kind.fields.map((field) => renderFieldWithWalletActions(field))}
+          </div>
+        </div>
+
+        {enabledFeatureFieldSections.map((feature) => (
+          <div key={`fields-${feature.id}`}>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-400/90 font-black">{feature.label}</div>
+            <div className="mt-3 space-y-3">
+              {feature.fields!.map((field) => renderFieldWithWalletActions(field))}
             </div>
           </div>
         ))}
