@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { WalletProvider } from './contexts/WalletContext';
 import { InfraHealthProvider } from './contexts/InfraHealthContext';
 import { BrowserRouter as Router } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -19,6 +20,7 @@ root.render(
         <InfraHealthProvider>
           <Router>
             <App />
+            <Analytics />
           </Router>
         </InfraHealthProvider>
       </WalletProvider>

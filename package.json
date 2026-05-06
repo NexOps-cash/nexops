@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.97.0",
     "@types/jszip": "^3.4.0",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@vercel/analytics": "^2.0.1",
     "@walletconnect/modal": "^2.7.0",
     "@walletconnect/sign-client": "^2.23.3",
     "@walletconnect/types": "^2.23.3",

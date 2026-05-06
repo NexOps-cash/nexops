@@ -2,7 +2,7 @@
  * Blockchain Service - UTXO Monitoring for BCH Testnet
  * Uses Electrum Cash Network (Reliable UTXO detection)
  */
-import { ElectrumClient } from '@electrum-cash/network';
+import { ElectrumClient, type ElectrumNetworkOptions } from '@electrum-cash/network';
 import { cashAddressToLockingBytecode, sha256, binToHex } from '@bitauth/libauth';
 
 export interface UTXO {
@@ -56,12 +56,17 @@ function addressToScriptHash(address: string): string {
 
 const FALLBACK_SERVERS = [
     'chipnet.imaginary.cash',
+    'chipnet.bch.ninja',
     'chipnet.chaingraph.cash',
-    'electrum.imaginary.cash' // Some standard servers have testnet ports but we prefer explicit ones
-];
+] as const;
+
+/** Shorter verify timeout so a dead host fails fast and we try the next. */
+const ELECTRUM_CLIENT_OPTIONS: ElectrumNetworkOptions = {
+    verifyConnectionTimeoutInMilliSeconds: 14_000,
+};
 
 /** Public list for UI transparency (same order as fallback attempts). */
-export const ELECTRUM_FALLBACK_SERVERS: readonly string[] = FALLBACK_SERVERS;
+export const ELECTRUM_FALLBACK_SERVERS: readonly string[] = [...FALLBACK_SERVERS];
 
 export type ElectrumConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -97,6 +102,13 @@ class ElectrumManager {
         return { host: this.activeHost, status: this.connectionStatus };
     }
 
+    private static shouldRotateHostAfterError(error: unknown): boolean {
+        const msg = error instanceof Error ? error.message : String(error ?? '');
+        return /disconnected|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|Connection closed|Failed to connect|not connected/i.test(
+            msg
+        );
+    }
+
     /**
      * Get the singleton Electrum client.
      * Connects only once on the first call, retries next server if disconnected.
@@ -121,7 +133,12 @@ class ElectrumManager {
                     this.emitStatus();
                     console.log(`[ElectrumManager] Initializing connection to Chipnet via ${server}...`);
 
-                    const client = new ElectrumClient<any>('Nexops-Watcher', '1.4.1', server);
+                    const client = new ElectrumClient<any>(
+                        'Nexops-Watcher',
+                        '1.4.1',
+                        server,
+                        ELECTRUM_CLIENT_OPTIONS
+                    );
 
                     await client.connect();
                     console.log(`[ElectrumManager] Connected successfully to ${server}.`);
@@ -170,12 +187,15 @@ class ElectrumManager {
         while (retries > 0) {
             try {
                 const client = await this.getClient();
-                return await client.request(method, ...params);
-            } catch (error: any) {
+                const result = await client.request(method, ...params);
+                if (result instanceof Error) {
+                    throw result;
+                }
+                return result;
+            } catch (error: unknown) {
                 console.warn(`[ElectrumManager] Request failed: ${method}. Retries left: ${retries - 1}`, error);
 
-                // If it's a disconnect error, clear the instance so getClient forces a reconnect and rotates
-                if (error.message && error.message.includes('disconnected server')) {
+                if (this.shouldRotateHostAfterError(error)) {
                     this.instance = null;
                     this.connectionPromise = null;
                     this.currentServerIndex = (this.currentServerIndex + 1) % FALLBACK_SERVERS.length;

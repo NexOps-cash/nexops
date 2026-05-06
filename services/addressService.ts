@@ -1,5 +1,6 @@
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
 import { ContractArtifact } from '../types';
+import { ELECTRUM_FALLBACK_SERVERS } from './blockchainService';
 
 /**
  * Coerce raw string constructor args to the correct JS types needed by cashscript.
@@ -56,32 +57,35 @@ export function deriveContractAddress(
     console.log('🔍 [addressService] Raw args:', args);
     console.log('🔍 [addressService] Network:', network);
 
-    try {
-        console.log('🔍 [addressService] Creating provider...');
-        const provider = new ElectrumNetworkProvider(network);
-        console.log('🔍 [addressService] Provider created:', provider);
+    const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
 
-        console.log('🔍 [addressService] Typing arguments...');
-        const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
-        console.log('🔍 [addressService] Typed args:', typedArgs);
-
-        console.log('🔍 [addressService] Creating Contract instance...');
-        const contract = new Contract(
-            artifact as any,
-            typedArgs,
-            { provider }
-        );
-        console.log('🔍 [addressService] Contract created:', contract);
-        console.log('🔍 [addressService] Contract.address:', contract.address);
-        console.log('🔍 [addressService] Contract.tokenAddress:', contract.tokenAddress);
-
+    const tryWithProvider = (provider: ElectrumNetworkProvider): string => {
+        const contract = new Contract(artifact as any, typedArgs, { provider });
         const paymentAddress = contract.tokenAddress ?? contract.address;
         if (!paymentAddress) {
             throw new Error('Contract created but address is undefined!');
         }
-
-        console.log('✅ [addressService] SUCCESS! Payment address:', paymentAddress);
         return paymentAddress;
+    };
+
+    try {
+        if (network === Network.CHIPNET) {
+            let lastErr: unknown;
+            for (const hostname of ELECTRUM_FALLBACK_SERVERS) {
+                try {
+                    const provider = new ElectrumNetworkProvider(network, { hostname });
+                    return tryWithProvider(provider);
+                } catch (e) {
+                    lastErr = e;
+                    console.warn(`[addressService] Chipnet Electrum host failed (${hostname}):`, e);
+                }
+            }
+            console.error('❌ [addressService] All Chipnet Electrum hosts failed:', lastErr);
+            throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+        }
+
+        const provider = new ElectrumNetworkProvider(network);
+        return tryWithProvider(provider);
     } catch (e) {
         console.error('❌ [addressService] DERIVATION ERROR:', e);
         console.error('❌ [addressService] Error stack:', (e as Error).stack);

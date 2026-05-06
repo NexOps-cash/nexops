@@ -11,6 +11,7 @@ import { compileCashScript, verifyDeterminism } from '../../services/compilerSer
 import { deriveContractAddress, coerceConstructorArgs } from '../../services/addressService';
 import { pollForFunding, checkFundingNow, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
+import { ELECTRUM_FALLBACK_SERVERS } from '../../services/blockchainService';
 import { useWallet } from '../../contexts/WalletContext';
 import type { ValidationResult } from '../../services/validationService';
 import { addWizardDeploy } from '../../lib/wizardDeployStore';
@@ -44,14 +45,17 @@ function resolveInvariantList(generatedInvariants: string[], source: string): st
 }
 
 function tryTokenAddress(artifact: ContractArtifact, args: string[]): string | undefined {
-  try {
-    const provider = new ElectrumNetworkProvider(Network.CHIPNET);
-    const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
-    const c = new Contract(artifact as never, typedArgs, { provider });
-    return (c as { tokenAddress?: string }).tokenAddress || undefined;
-  } catch {
-    return undefined;
+  const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
+  for (const hostname of ELECTRUM_FALLBACK_SERVERS) {
+    try {
+      const provider = new ElectrumNetworkProvider(Network.CHIPNET, { hostname });
+      const c = new Contract(artifact as never, typedArgs, { provider });
+      return (c as { tokenAddress?: string }).tokenAddress || undefined;
+    } catch {
+      /* try next host */
+    }
   }
+  return undefined;
 }
 
 export interface WizardDeployPanelProps {
