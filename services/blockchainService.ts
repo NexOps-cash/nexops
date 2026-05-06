@@ -6,6 +6,7 @@ import { ElectrumClient } from '@electrum-cash/network';
 import { cashAddressToLockingBytecode, sha256, binToHex } from '@bitauth/libauth';
 
 export interface UTXO {
+    /** `tx_hash` from Electrum `listunspent` — same hex Paytaca shows and explorers index (also used for CashScript inputs). */
     txid: string;
     vout: number;
     value: number; // in satoshis
@@ -23,11 +24,15 @@ export interface FundingStatus {
     status: 'idle' | 'monitoring' | 'confirmed' | 'timeout' | 'error';
     utxos: UTXO[];
     totalValue: number;
+    /** Matches wallet tx id when funding is detected */
     txid?: string;
     error?: string;
 }
 
-const TESTNET_EXPLORER = 'https://chipnet.chaingraph.cash';
+/**
+ * Chipnet block explorer base URL — BCHExplorer (Bitcoin Cash Node + Fulcrum): https://chipnet.bchexplorer.info
+ */
+export const CHIPNET_EXPLORER_BASE = 'https://chipnet.bchexplorer.info';
 
 // --- Pure Utilities ---
 
@@ -237,7 +242,6 @@ function totalUtxoValueSats(utxos: UTXO[]): number {
     return utxos.reduce((sum, u) => sum + (u.value || 0), 0);
 }
 
-/** Prefer the largest output as the likely funding deposit for explorer links. */
 function pickLikelyFundingTxid(utxos: UTXO[]): string | undefined {
     if (!utxos.length) return undefined;
     const sorted = [...utxos].sort((a, b) => b.value - a.value);
@@ -254,12 +258,12 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
         // Use resilient request wrapper
         const listUnspent = await ElectrumManager.request('blockchain.scripthash.listunspent', scriptHash) as any[];
 
-        return listUnspent.map(u => ({
-            txid: u.tx_hash,
+        return listUnspent.map((u) => ({
+            txid: String(u.tx_hash ?? '').trim(),
             vout: u.tx_pos,
             value: u.value || 0,
             height: normalizeElectrumBlockHeight(u.height),
-            confirmations: normalizeElectrumBlockHeight(u.height) > 0 ? 1 : 0
+            confirmations: normalizeElectrumBlockHeight(u.height) > 0 ? 1 : 0,
         }));
 
     } catch (error: any) {
@@ -474,9 +478,9 @@ export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO
  */
 export function getExplorerLink(value: string): string {
     if (value.startsWith('bchtest:') || value.startsWith('bitcoincash:')) {
-        return `${TESTNET_EXPLORER}/address/${value}`;
+        return `${CHIPNET_EXPLORER_BASE}/address/${encodeURIComponent(value)}`;
     }
-    return `${TESTNET_EXPLORER}/tx/${value}`;
+    return `${CHIPNET_EXPLORER_BASE}/tx/${encodeURIComponent(value.trim())}`;
 }
 
 /**

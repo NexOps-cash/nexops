@@ -35,10 +35,14 @@ export function coerceConstructorArgs(
     });
 }
 
+/**
+ * Derives the Chipnet receive address shown by wallets like Paytaca.
+ * Uses the token-aware CashAddr (`Contract.tokenAddress`), not the shorter legacy encoding (`Contract.address`).
+ */
 export function deriveContractAddress(
     artifact: ContractArtifact,
     args: string[],
-    network: Network = Network.TESTNET3
+    network: Network = Network.CHIPNET
 ): string {
     console.log('🔍 [addressService] DERIVATION START');
     console.log('🔍 [addressService] Artifact:', {
@@ -69,13 +73,15 @@ export function deriveContractAddress(
         );
         console.log('🔍 [addressService] Contract created:', contract);
         console.log('🔍 [addressService] Contract.address:', contract.address);
+        console.log('🔍 [addressService] Contract.tokenAddress:', contract.tokenAddress);
 
-        if (!contract.address) {
+        const paymentAddress = contract.tokenAddress ?? contract.address;
+        if (!paymentAddress) {
             throw new Error('Contract created but address is undefined!');
         }
 
-        console.log('✅ [addressService] SUCCESS! Address:', contract.address);
-        return contract.address;
+        console.log('✅ [addressService] SUCCESS! Payment address:', paymentAddress);
+        return paymentAddress;
     } catch (e) {
         console.error('❌ [addressService] DERIVATION ERROR:', e);
         console.error('❌ [addressService] Error stack:', (e as Error).stack);

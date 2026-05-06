@@ -45,7 +45,7 @@ function resolveInvariantList(generatedInvariants: string[], source: string): st
 
 function tryTokenAddress(artifact: ContractArtifact, args: string[]): string | undefined {
   try {
-    const provider = new ElectrumNetworkProvider(Network.TESTNET3);
+    const provider = new ElectrumNetworkProvider(Network.CHIPNET);
     const typedArgs = coerceConstructorArgs(artifact.constructorInputs, args);
     const c = new Contract(artifact as never, typedArgs, { provider });
     return (c as { tokenAddress?: string }).tokenAddress || undefined;
@@ -172,7 +172,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       return { derivedAddress: '', derivationError: null as string | null, incomplete: true };
     }
     try {
-      const addr = deriveContractAddress(artifact, constructorArgs, Network.TESTNET3);
+      const addr = deriveContractAddress(artifact, constructorArgs);
       return { derivedAddress: addr, derivationError: null as string | null, incomplete: false };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -458,6 +458,10 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                 />
                 <div className="rounded border border-white/10 bg-black/30 p-3 space-y-1">
                   <div className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Derived contract address</div>
+                  <p className="text-[10px] text-slate-500 mb-1">
+                    Token-aware CashAddr (matches Paytaca send screen). Some wallets label it{' '}
+                    <span className="font-mono text-slate-400">bitcoincash:</span> but it is the same contract on Chipnet.
+                  </p>
                   {addressDerivation.incomplete ? (
                     <p className="text-xs text-slate-500">Address: — (fill all fields)</p>
                   ) : addressDerivation.derivationError ? (
@@ -636,15 +640,23 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
               <div className="rounded border border-green-500/40 bg-green-500/10 p-4 space-y-3">
                 <p className="text-sm text-green-300 font-black uppercase tracking-widest">Contract funded</p>
                 <p className="text-xs font-mono text-emerald-200 break-all">{addressDerivation.derivedAddress}</p>
-                {txHash && (
+                <div className="flex flex-wrap gap-2">
+                  {txHash ? (
+                    <Button variant="glass" size="sm" onClick={() => window.open(getExplorerLink(txHash), '_blank')}>
+                      View funding tx
+                    </Button>
+                  ) : null}
                   <Button
                     variant="glass"
                     size="sm"
-                    onClick={() => window.open(getExplorerLink(txHash), '_blank')}
+                    onClick={() => window.open(getExplorerLink(addressDerivation.derivedAddress), '_blank')}
                   >
-                    View funding tx
+                    View address on explorer
                   </Button>
-                )}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Opens Chipnet on <span className="text-slate-400">chipnet.bchexplorer.info</span> — same tx id string Paytaca shows.
+                </p>
                 <div className="flex gap-2 pt-2">
                   <Button variant="primary" size="sm" onClick={handleDeployAnother}>
                     Deploy another
