@@ -93,7 +93,7 @@ function indent(lines: string[], spaces = 8): string[] {
   return lines.map((l) => (l ? `${pad}${l}` : l));
 }
 
-function renderFunction(kind: ContractKind, spec: FunctionSpec): string[] {
+function renderFunction(kind: ContractKind, spec: FunctionSpec): { text: string; invariantIds: string[] } {
   if (!ROLE_INVARIANTS[spec.role]) {
     throw new Error(`Unknown FunctionRole "${spec.role}" in ${kind.id}.${spec.name}`);
   }
@@ -122,7 +122,7 @@ function renderFunction(kind: ContractKind, spec: FunctionSpec): string[] {
   if (composed.lines.length && spec.body.length) body.push('');
   body.push(...indent(spec.body, 8));
   body.push('    }');
-  return body;
+  return { text: body.join('\n'), invariantIds: [...composed.ids] };
 }
 
 export interface GenerateResult extends GeneratedContract {
@@ -155,9 +155,12 @@ export function generate(kind: ContractKind, opts: BuildOptions): GenerateResult
 
   const params = renderParams(visibleFields);
   const functionBlocks: string[] = [];
+  const invariantAccumulator = new Set<string>();
   try {
     for (const spec of built.functions) {
-      functionBlocks.push(renderFunction(kind, spec).join('\n'));
+      const rendered = renderFunction(kind, spec);
+      functionBlocks.push(rendered.text);
+      for (const id of rendered.invariantIds) invariantAccumulator.add(id);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -183,10 +186,12 @@ export function generate(kind: ContractKind, opts: BuildOptions): GenerateResult
   const source = [...header, ...body].join('\n');
 
   const warnings = [...quickLint(source), ...(built.warnings ?? [])];
+  const invariants = [...invariantAccumulator];
   return {
     source,
     hash: hashSource(source),
     warnings,
+    invariants,
     fieldErrors,
     constraintErrors,
     params,

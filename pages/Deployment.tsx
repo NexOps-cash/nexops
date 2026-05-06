@@ -7,7 +7,6 @@ import { compileCashScript, verifyDeterminism } from '../services/compilerServic
 import { fixSmartContract } from '../services/groqService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { deriveContractAddress } from '../services/addressService';
-import { Network } from 'cashscript';
 import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
@@ -214,7 +213,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
         let finalAddress = derivedAddress;
         if (!finalAddress) {
             try {
-                finalAddress = deriveContractAddress(artifact!, constructorArgs, Network.TESTNET3);
+                finalAddress = deriveContractAddress(artifact!, constructorArgs);
                 setDerivedAddress(finalAddress);
             } catch (e: any) {
                 toast.error(`Address derivation failed: ${e.message}`);
@@ -275,7 +274,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         setDeploymentStep(4); // Success
                         setTxHash(status.txid || 'Unknown');
 
-                        const utxo = status.utxos.find(u => u.txid === status.txid) || status.utxos[0];
+                        const utxo = status.utxos.find((u) => u.txid === status.txid) || status.utxos[0];
                         setFundingUtxo(utxo);
 
                         // Update Project with Deployment Record
@@ -335,7 +334,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
         try {
             if (constructorArgs.length === artifact.constructorInputs.length) {
-                const addr = deriveContractAddress(artifact, constructorArgs, Network.TESTNET3);
+                const addr = deriveContractAddress(artifact, constructorArgs);
                 setDerivedAddress(addr);
                 // setShowSuccessModal(true); // removed to avoid auto-popup on every keystroke, user clicks confirm in modal
             } else {

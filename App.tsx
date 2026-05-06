@@ -588,7 +588,9 @@ const App: React.FC = () => {
         className={
           location.pathname.startsWith('/workspace')
             ? 'flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col overscroll-none'
-            : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden'
+            : location.pathname.startsWith('/wizard')
+              ? 'flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col overscroll-none'
+              : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden'
         }
       >
         <Routes>
@@ -661,10 +663,7 @@ const App: React.FC = () => {
           <Route
             path="/wizard"
             element={
-              <WizardPage
-                onNavigateHome={() => handleNavigate('home')}
-                onCreateProject={handleCreateProject}
-              />
+              <WizardPage onCreateProject={handleCreateProject} />
             }
           />
           <Route

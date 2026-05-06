@@ -1,17 +1,19 @@
 import React from 'react';
 import { Button } from '../UI';
-import { Copy, Download, FlaskConical, Link2, FolderOpen } from 'lucide-react';
+import { Copy, Download, FlaskConical, FolderOpen, Link2, Rocket } from 'lucide-react';
 
 interface ActionsBarProps {
   copyDisabled?: boolean;
   downloadDisabled?: boolean;
   shareDisabled?: boolean;
   compileDisabled?: boolean;
+  deployDisabled?: boolean;
   openDisabled?: boolean;
   onCopy: () => void;
   onDownload: () => void;
   onShare: () => void;
   onCompile: () => void;
+  onDeploy: () => void;
   onOpenWorkspace: () => void;
 }
 
@@ -20,11 +22,13 @@ export const ActionsBar: React.FC<ActionsBarProps> = ({
   downloadDisabled = false,
   shareDisabled = false,
   compileDisabled = false,
+  deployDisabled = false,
   openDisabled = false,
   onCopy,
   onDownload,
   onShare,
   onCompile,
+  onDeploy,
   onOpenWorkspace,
 }) => {
   return (
@@ -41,7 +45,10 @@ export const ActionsBar: React.FC<ActionsBarProps> = ({
       <Button size="sm" variant="secondary" disabled={compileDisabled} onClick={onCompile} icon={<FlaskConical size={14} />}>
         Compile
       </Button>
-      <Button size="sm" variant="primary" disabled={openDisabled} onClick={onOpenWorkspace} icon={<FolderOpen size={14} />}>
+      <Button size="sm" variant="primary" disabled={deployDisabled} onClick={onDeploy} icon={<Rocket size={14} />}>
+        Deploy
+      </Button>
+      <Button size="sm" variant="secondary" disabled={openDisabled} onClick={onOpenWorkspace} icon={<FolderOpen size={14} />}>
         Open In Workspace
       </Button>
     </div>

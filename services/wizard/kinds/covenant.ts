@@ -4,7 +4,7 @@ export const covenantKind: ContractKind = {
   id: 'covenant',
   name: 'PolicyCovenant',
   summary: 'Secure policy covenant with strict two-output spend conservation and optional whitelist/tight-cap/emergency controls.',
-  allowedRoles: ['quorum-spend'],
+  allowedRoles: ['quorum-spend', 'covenant-continuation'],
   fields: [
     { id: 'ownerPk', label: 'Owner pubkey', type: 'pubkey', description: 'Primary signing key.' },
     {
@@ -120,15 +120,12 @@ export const covenantKind: ContractKind = {
     if (emergencyEnabled) {
       functions.push({
         name: 'emergencyFreeze',
-        role: 'quorum-spend',
+        role: 'covenant-continuation',
         params: ['sig emergencySig'],
         body: [
           'require(emergencyEnabled != 0);',
-          'require(checkSig(emergencySig, emergencyKey));',
           '',
-          'require(tx.outputs.length == 1);',
-          'require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
-          'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
+          'require(checkSig(emergencySig, emergencyKey));',
         ],
       });
     }
