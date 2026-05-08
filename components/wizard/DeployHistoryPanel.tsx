@@ -6,6 +6,7 @@ import { collectFieldDefs } from '../../services/wizard/schema';
 import { getExplorerLink } from '../../services/blockchainService';
 import toast from 'react-hot-toast';
 import { Modal } from '../UI';
+import { formatKindDisplayLabel } from '../../services/wizard/kindDisplay';
 
 const INVARIANT_LABELS: Record<string, string> = {
   OUTPUT_COUNT_CLAMP: 'Max outputs capped',
@@ -43,7 +44,7 @@ function DeploymentDetailBody({ rec }: { rec: WizardDeployRecord }) {
       {kind && (
         <div>
           <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-400 font-semibold mb-1">Template</p>
-          <p className="text-base font-semibold text-white">{kind.name}</p>
+          <p className="text-base font-semibold text-white">{formatKindDisplayLabel(kind.name)}</p>
           <p className="text-[11px] font-mono text-slate-500">{rec.kindId}</p>
         </div>
       )}

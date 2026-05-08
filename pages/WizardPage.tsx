@@ -13,6 +13,7 @@ import {
   setWizardPendingAction,
 } from '../lib/authRouting';
 import { KINDS, KINDS_BY_ID } from '../services/wizard/kinds';
+import { formatKindDisplayLabel } from '../services/wizard/kindDisplay';
 import {
   BuildOptions,
   ContractKind,
@@ -34,6 +35,7 @@ import { ActionsBar } from '../components/wizard/ActionsBar';
 import { WizardDeployOverviewModal } from '../components/wizard/WizardDeployOverviewModal';
 import { WizardDeployPanel } from '../components/wizard/WizardDeployPanel';
 import { DeployHistoryPanel } from '../components/wizard/DeployHistoryPanel';
+import { WizardTemplatePicker } from '../components/wizard/WizardTemplatePicker';
 import { getWizardDeploys } from '../lib/wizardDeployStore';
 
 interface WizardPageProps {
@@ -137,6 +139,17 @@ function decodeHashPayload(encoded: string): WizardState | null {
   }
 }
 
+/** Valid `#nxw=` share payloads open the composer directly (skip template gallery). */
+function shouldSkipTemplatePickerFromHash(): boolean {
+  try {
+    const encoded = readNxwEncodedFromHash();
+    if (!encoded) return false;
+    return decodeHashPayload(encoded) !== null;
+  } catch {
+    return false;
+  }
+}
+
 function stableNormalizeState(state: WizardState): string {
   return JSON.stringify({
     kindId: state.kindId,
@@ -172,6 +185,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     lastAppliedNormalizedRef.current = stableNormalizeState(initial);
     return initial;
   });
+  const [showTemplatePicker, setShowTemplatePicker] = useState(() => !shouldSkipTemplatePickerFromHash());
   const [compileOutput, setCompileOutput] = useState<string>('Compile output will appear here.');
   const [isCompiling, setIsCompiling] = useState(false);
   const [deployOverviewOpen, setDeployOverviewOpen] = useState(false);
@@ -207,11 +221,13 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
       setIsDirty(false);
       setWizardState(parsed);
       setCompileOutput('Compile output will appear here.');
+      setShowTemplatePicker(false);
       return;
     }
 
     if (!isDirty) {
       setWizardState(parsed);
+      setShowTemplatePicker(false);
     }
   }, [isDirty]);
 
@@ -254,7 +270,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
 
   const createProjectFromCode = useCallback(
     (code: string) => {
-      const name = `${activeKind.name} Instance`;
+      const name = `${formatKindDisplayLabel(activeKind.name)} instance`;
       const artifact = compileCashScript(code);
       const files: Project['files'] = [
         { name: 'contract.cash', content: code, language: 'cashscript' },
@@ -280,7 +296,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
             timestamp: Date.now(),
             fileName: 'contract.cash',
             code,
-            description: `Generated from ${activeKind.name} composer`,
+            description: `Generated from ${formatKindDisplayLabel(activeKind.name)} composer`,
             author: 'SYSTEM',
           },
         ],
@@ -367,6 +383,19 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     setCompileOutput('Compile output will appear here.');
   };
 
+  const handlePickerContinue = useCallback((kindId: string) => {
+    const kind = KINDS_BY_ID[kindId];
+    if (!kind) return;
+    if (kindId !== wizardState.kindId) {
+      setIsDirty(false);
+      const next = initialStateForKind(kind);
+      lastAppliedNormalizedRef.current = stableNormalizeState(next);
+      setWizardState(next);
+      setCompileOutput('Compile output will appear here.');
+    }
+    setShowTemplatePicker(false);
+  }, [wizardState.kindId]);
+
   const handleToggleFeature = (featureId: string) => {
     const feature = activeKind.features.find((f) => f.id === featureId);
     if (!feature || feature.disabled) return;
@@ -425,68 +454,91 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     <div className="h-full min-h-0 w-full bg-[#050a08] overflow-hidden flex flex-col px-2 py-2 sm:px-3 sm:py-2">
       <div className="flex flex-col flex-1 min-h-0 w-full">
         <div className="border border-white/10 rounded-lg bg-black/20 overflow-hidden flex flex-col flex-1 min-h-0">
-          <KindTabs kinds={KINDS} activeKindId={activeKind.id} onSelect={handleSelectKind} />
-          <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:h-full">
-            <div className="flex flex-col flex-1 min-h-[260px] w-full xl:flex-none xl:h-full xl:min-h-0 xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden min-h-0">
-              <div className="shrink-0 p-3 border-b border-white/10 bg-[#050a08]">
-                <WizardTestIdentitiesSection
-                  kindId={activeKind.id}
-                  visibleFields={fieldDefsVisible}
-                  values={wizardState.fields}
-                  onFieldChange={handleFieldChange}
-                  selectedIdentityId={wizardIdentityId}
-                  onSelectedIdentityChange={setWizardIdentityId}
-                />
-              </div>
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
-              <div className="p-3 sm:p-4 flex flex-col gap-4 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar min-h-0">
-                {generated.constraintErrors.length > 0 && (
-                  <div className="shrink-0 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
-                    {generated.constraintErrors.map((e) => (
-                      <div key={e}>- {e}</div>
-                    ))}
+          {showTemplatePicker ? (
+            <WizardTemplatePicker
+              kinds={KINDS}
+              initialSelectedKindId={wizardState.kindId}
+              onContinue={handlePickerContinue}
+            />
+          ) : (
+            <>
+              <KindTabs
+                kinds={KINDS}
+                activeKindId={activeKind.id}
+                onSelect={handleSelectKind}
+                leadingControls={
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-emerald-400/95 hover:text-emerald-300 whitespace-nowrap px-3 py-2 rounded-xl border border-transparent hover:border-emerald-500/25 hover:bg-emerald-500/[0.08] transition-colors"
+                    onClick={() => setShowTemplatePicker(true)}
+                  >
+                    All templates
+                  </button>
+                }
+              />
+              <div className="flex flex-col xl:flex-row xl:items-stretch flex-1 min-h-0 xl:h-full">
+                <div className="flex flex-col flex-1 min-h-[260px] w-full xl:flex-none xl:h-full xl:min-h-0 xl:w-[360px] xl:max-w-[360px] shrink-0 xl:shrink-0 border-b xl:border-b-0 xl:border-r border-white/10 overflow-hidden min-h-0">
+                  <div className="shrink-0 p-3 border-b border-white/10 bg-[#050a08]">
+                    <WizardTestIdentitiesSection
+                      kindId={activeKind.id}
+                      visibleFields={fieldDefsVisible}
+                      values={wizardState.fields}
+                      onFieldChange={handleFieldChange}
+                      selectedIdentityId={wizardIdentityId}
+                      onSelectedIdentityChange={setWizardIdentityId}
+                    />
                   </div>
-                )}
-                <div className="shrink-0">
-                  <ActionsBar
-                    copyDisabled={false}
-                    compileDisabled={isCompiling}
-                    deployDisabled={!canAct}
-                    downloadDisabled={!canAct}
-                    openDisabled={!canAct}
-                    onCopy={onCopy}
-                    onDownload={onDownload}
-                    onCompile={onCompile}
-                    onDeploy={() => setDeployOverviewOpen(true)}
-                    onOpenWorkspace={onOpenWorkspace}
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
+                  <div className="p-3 sm:p-4 flex flex-col gap-4 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar min-h-0">
+                    {generated.constraintErrors.length > 0 && (
+                      <div className="shrink-0 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-xs space-y-1">
+                        {generated.constraintErrors.map((e) => (
+                          <div key={e}>- {e}</div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="shrink-0">
+                      <ActionsBar
+                        copyDisabled={false}
+                        compileDisabled={isCompiling}
+                        deployDisabled={!canAct}
+                        downloadDisabled={!canAct}
+                        openDisabled={!canAct}
+                        onCopy={onCopy}
+                        onDownload={onDownload}
+                        onCompile={onCompile}
+                        onDeploy={() => setDeployOverviewOpen(true)}
+                        onOpenWorkspace={onOpenWorkspace}
+                      />
+                    </div>
+                    <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
+                    <div className="shrink-0 rounded-md border border-white/10 bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
+                        Compile Output {isCompiling ? '(running...)' : ''}
+                      </div>
+                      <pre className="text-xs text-slate-300 whitespace-pre-wrap">{compileOutput}</pre>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col min-w-0 min-h-0 h-full max-h-52 xl:max-h-none shrink-0 xl:flex-none xl:w-72 xl:h-full border-t xl:border-t-0 xl:border-l border-white/10 overflow-hidden">
+                  <FeaturePanel
+                    kind={activeKind}
+                    values={wizardState.fields}
+                    enabled={wizardState.enabled}
+                    errors={fieldErrors}
+                    onToggle={handleToggleFeature}
+                    onFieldChange={handleFieldChange}
+                    selectedIdentityId={wizardIdentityId}
+                    onSelectedIdentityChange={setWizardIdentityId}
                   />
                 </div>
-                <CodePreview code={generated.source} hash={generated.hash} warnings={generated.warnings} />
-                <div className="shrink-0 rounded-md border border-white/10 bg-black/20 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-black mb-2">
-                    Compile Output {isCompiling ? '(running...)' : ''}
-                  </div>
-                  <pre className="text-xs text-slate-300 whitespace-pre-wrap">{compileOutput}</pre>
-                </div>
               </div>
-            </div>
-            <div className="flex flex-col min-w-0 min-h-0 h-full max-h-52 xl:max-h-none shrink-0 xl:flex-none xl:w-72 xl:h-full border-t xl:border-t-0 xl:border-l border-white/10 overflow-hidden">
-              <FeaturePanel
-                kind={activeKind}
-                values={wizardState.fields}
-                enabled={wizardState.enabled}
-                errors={fieldErrors}
-                onToggle={handleToggleFeature}
-                onFieldChange={handleFieldChange}
-                selectedIdentityId={wizardIdentityId}
-                onSelectedIdentityChange={setWizardIdentityId}
-              />
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
       <WizardDeployOverviewModal
@@ -496,7 +548,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
           setDeployOverviewOpen(false);
           setDeployModalOpen(true);
         }}
-        kindName={activeKind.name}
+        kindName={formatKindDisplayLabel(activeKind.name)}
         kindId={activeKind.id}
         summary={activeKind.summary}
         invariantCount={(generated.invariants ?? []).length}
@@ -507,7 +559,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
         source={generated.source}
         generatedInvariants={generated.invariants ?? []}
         kindId={activeKind.id}
-        kindName={activeKind.name}
+        kindName={formatKindDisplayLabel(activeKind.name)}
         fieldDefs={fieldDefsVisible}
         wizardFields={wizardState.fields}
         wizardEnabled={wizardState.enabled}
