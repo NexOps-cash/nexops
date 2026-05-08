@@ -31,6 +31,7 @@ import { FeaturePanel } from '../components/wizard/FeaturePanel';
 import { WizardTestIdentitiesSection } from '../components/wizard/WizardTestIdentitiesSection';
 import { CodePreview } from '../components/wizard/CodePreview';
 import { ActionsBar } from '../components/wizard/ActionsBar';
+import { WizardDeployOverviewModal } from '../components/wizard/WizardDeployOverviewModal';
 import { WizardDeployPanel } from '../components/wizard/WizardDeployPanel';
 import { DeployHistoryPanel } from '../components/wizard/DeployHistoryPanel';
 import { getWizardDeploys } from '../lib/wizardDeployStore';
@@ -47,13 +48,6 @@ interface WizardState {
   kindId: string;
   fields: Record<string, string | number | boolean>;
   enabled: Record<string, boolean>;
-}
-
-function base64UrlEncode(text: string): string {
-  return btoa(unescape(encodeURIComponent(text)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
 }
 
 function base64UrlDecode(text: string): string {
@@ -180,6 +174,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   });
   const [compileOutput, setCompileOutput] = useState<string>('Compile output will appear here.');
   const [isCompiling, setIsCompiling] = useState(false);
+  const [deployOverviewOpen, setDeployOverviewOpen] = useState(false);
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [wizardDeployRecords, setWizardDeployRecords] = useState<WizardDeployRecord[]>(() => getWizardDeploys());
   const [debouncedBuild, setDebouncedBuild] = useState<BuildOptions>({
@@ -403,20 +398,6 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     await runDownloadZip();
   };
 
-  const onShare = async () => {
-    const payload: WizardState = {
-      kindId: activeKind.id,
-      fields: wizardState.fields,
-      enabled: wizardState.enabled,
-    };
-    const encoded = base64UrlEncode(JSON.stringify(payload));
-    const hash = `#${HASH_FRAGMENT_PREFIX}${encoded}`;
-    const link = `${window.location.origin}${window.location.pathname}${hash}`;
-    await navigator.clipboard.writeText(link);
-    window.history.replaceState({}, '', hash);
-    toast.success('Share link copied');
-  };
-
   const onCompile = async () => {
     setIsCompiling(true);
     try {
@@ -476,13 +457,11 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
                     compileDisabled={isCompiling}
                     deployDisabled={!canAct}
                     downloadDisabled={!canAct}
-                    shareDisabled={!canAct}
                     openDisabled={!canAct}
                     onCopy={onCopy}
                     onDownload={onDownload}
-                    onShare={onShare}
                     onCompile={onCompile}
-                    onDeploy={() => setDeployModalOpen(true)}
+                    onDeploy={() => setDeployOverviewOpen(true)}
                     onOpenWorkspace={onOpenWorkspace}
                   />
                 </div>
@@ -510,6 +489,18 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
           </div>
         </div>
       </div>
+      <WizardDeployOverviewModal
+        isOpen={deployOverviewOpen}
+        onClose={() => setDeployOverviewOpen(false)}
+        onContinue={() => {
+          setDeployOverviewOpen(false);
+          setDeployModalOpen(true);
+        }}
+        kindName={activeKind.name}
+        kindId={activeKind.id}
+        summary={activeKind.summary}
+        invariantCount={(generated.invariants ?? []).length}
+      />
       <WizardDeployPanel
         isOpen={deployModalOpen}
         onClose={() => setDeployModalOpen(false)}

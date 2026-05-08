@@ -377,7 +377,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   }, [artifact, constructorArgs, selectedWallet]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl max-h-[90vh] overflow-y-auto" title={`Deploy — ${kindName}`}>
+    <Modal isOpen={isOpen} onClose={onClose} className="max-w-3xl max-h-[90vh] overflow-y-auto" title="Chipnet deploy">
       <div className="space-y-4 text-slate-200">
         {compileBusy && (
           <div className="flex items-center gap-2 text-xs text-slate-400">
