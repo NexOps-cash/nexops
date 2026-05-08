@@ -4,7 +4,7 @@ import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 export const multisigKind: ContractKind = {
   id: 'multisig',
   name: 'MultisigVault',
-  summary: 'Secure 2-of-3 vault with parameterized timelock, oracle check, and emergency freeze path.',
+  summary: 'Secure 2-of-3 vault with parameterized timelock plus optional oracle and emergency self-continuation paths.',
   allowedRoles: ['quorum-spend', 'covenant-continuation'],
   fields: [
     { id: 'pk1', label: 'Signer 1', type: 'pubkey', description: 'Compressed pubkey for signer 1.' },
@@ -44,7 +44,7 @@ export const multisigKind: ContractKind = {
       id: 'emergencyPath',
       label: 'Emergency freeze path',
       group: 'Auth',
-      description: 'Adds emergency freeze function and related constructor fields.',
+      description: 'Adds an emergency-signed self-continuation path that keeps funds locked in the same contract.',
       fields: [
         {
           id: 'emergencyKey',

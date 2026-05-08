@@ -3,7 +3,7 @@ import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 export const vestingKind: ContractKind = {
   id: 'vesting',
   name: 'LinearVesting',
-  summary: 'Stateful linear vesting with 2-output continuation claims and optional admin revocation.',
+  summary: 'Cliff-gated vesting-style continuation contract with bounded claims and optional admin revocation.',
   allowedRoles: ['quorum-spend'],
   fields: [
     { id: 'beneficiaryPk', label: 'Beneficiary pubkey', type: 'pubkey', description: 'Claim signer.' },
@@ -25,14 +25,14 @@ export const vestingKind: ContractKind = {
       id: 'endTime',
       label: 'End time',
       type: 'unixTime',
-      description: 'Upper bound for claims; used as a hard expiry guard.',
+      description: 'Used for schedule validation and admin revocation timing; claim path does not expire automatically.',
       defaultValue: 1767225600,
     },
     {
       id: 'totalAmount',
       label: 'Total vesting amount (sats)',
       type: 'int',
-      description: 'Total amount that linearly unlocks across the schedule.',
+      description: 'Maximum payout allowed per claim under this simplified vesting guard.',
       defaultValue: 1000000,
     },
   ],

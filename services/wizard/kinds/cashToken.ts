@@ -3,20 +3,20 @@ import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 export const cashTokenKind: ContractKind = {
   id: 'cashToken',
   name: 'CashTokenPolicy',
-  summary: 'Secure CashToken policy with full output category coverage and optional total mint cap.',
+  summary: 'CashToken mint policy for one or two token outputs with category continuity and optional per-transaction mint cap.',
   allowedRoles: ['token-mint'],
   fields: [
     {
       id: 'category',
       label: 'Token category',
       type: 'tokenCategory',
-      description: '32-byte CashToken category (hex). Enforced on input 0 and output 0.',
+      description: '32-byte CashToken category. Required on each permitted token output; authority is accepted from matching token inputs.',
     },
     {
       id: 'mintingPk',
       label: 'Minting authority key',
       type: 'pubkey',
-      description: 'Key authorised to mint or release tokens under this policy.',
+      description: 'Key authorised to mint tokens under this policy.',
     },
   ],
   features: [

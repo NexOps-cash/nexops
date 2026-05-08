@@ -56,7 +56,7 @@ export const covenantKind: ContractKind = {
       id: 'emergencyPath',
       label: 'Emergency freeze path',
       group: 'Auth',
-      description: 'Adds emergency freeze function and related constructor fields.',
+      description: 'Adds an emergency-signed self-continuation path that keeps funds locked in the same contract.',
       fields: [
         {
           id: 'emergencyKey',
