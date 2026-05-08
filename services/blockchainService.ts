@@ -4,6 +4,7 @@
  */
 import { ElectrumClient, type ElectrumNetworkOptions } from '@electrum-cash/network';
 import { cashAddressToLockingBytecode, sha256, binToHex } from '@bitauth/libauth';
+import { normalizeChipnetCashAddress } from './chipnetCashAddr';
 
 export interface UTXO {
     /** `tx_hash` from Electrum `listunspent` — same hex Paytaca shows and explorers index (also used for CashScript inputs). */
@@ -58,7 +59,14 @@ function addressToScriptHash(address: string): string {
 
 /** Throws if Electrum fails or returns a non-array — distinguishes “RPC broken” from “zero UTXOs”. */
 async function fetchUTXOsFromElectrum(address: string): Promise<UTXO[]> {
-    const scriptHash = addressToScriptHash(address);
+    let addr = address.trim();
+    try {
+        addr = normalizeChipnetCashAddress(addr);
+    } catch (e) {
+        console.warn('[blockchainService] normalizeChipnetCashAddress failed, using raw address:', e);
+        /* decode failed — fall back to raw string for addressToScriptHash */
+    }
+    const scriptHash = addressToScriptHash(addr);
     const listUnspent = await ElectrumManager.request('blockchain.scripthash.listunspent', scriptHash);
     if (!Array.isArray(listUnspent)) {
         throw new Error(

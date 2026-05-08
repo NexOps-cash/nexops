@@ -1,6 +1,7 @@
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
 import { ContractArtifact } from '../types';
 import { ELECTRUM_FALLBACK_SERVERS } from './blockchainService';
+import { normalizeChipnetCashAddress } from './chipnetCashAddr';
 
 /**
  * Coerce raw string constructor args to the correct JS types needed by cashscript.
@@ -64,6 +65,14 @@ export function deriveContractAddress(
         const paymentAddress = contract.tokenAddress ?? contract.address;
         if (!paymentAddress) {
             throw new Error('Contract created but address is undefined!');
+        }
+        if (network === Network.CHIPNET) {
+            try {
+                return normalizeChipnetCashAddress(paymentAddress);
+            } catch (e) {
+                console.warn('[addressService] Chipnet address normalization failed, using raw:', e);
+                return paymentAddress;
+            }
         }
         return paymentAddress;
     };
