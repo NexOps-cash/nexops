@@ -1,0 +1,8 @@
+pragma cashscript ^0.13.0;
+
+/** Minimal Chipnet smoke-test: constructor pubkey must match signer (--inject-pubkey owner). */
+contract HelloLock(pubkey owner) {
+    function unlock(sig s) {
+        require(checkSig(s, owner));
+    }
+}
