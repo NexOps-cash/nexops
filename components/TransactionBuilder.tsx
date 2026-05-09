@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ContractArtifact, ExecutionRecord, Project } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { Button, Badge, Modal, Input, Card } from './UI';
@@ -9,13 +9,22 @@ import {
     ExternalLink, History, Clock, Zap, ChevronDown, ChevronUp,
     RotateCcw
 } from 'lucide-react';
-import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds } from '../services/blockchainService';
+import {
+    getExplorerLink,
+    fetchUTXOs,
+    subscribeToAddress,
+    requestFaucetFunds,
+    getElectrumConnectionSnapshot,
+    ELECTRUM_FALLBACK_SERVERS,
+} from '../services/blockchainService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { QRCodeSVG } from 'qrcode.react';
 import LocalWalletService from '../services/localWalletService';
 import toast from 'react-hot-toast';
 import { decodeCashAddress } from '@bitauth/libauth';
 import { coerceConstructorArgs } from '../services/addressService';
+import type { FunctionMeta } from '../services/wizard/parseContractMeta';
+import { parseFunctionMeta } from '../services/wizard/parseContractMeta';
 
 interface TransactionBuilderProps {
     artifact: ContractArtifact;
@@ -35,6 +44,76 @@ interface TransactionBuilderProps {
     // Transaction History Props
     history?: ExecutionRecord[];
     onRecordTransaction?: (record: ExecutionRecord) => void;
+}
+
+type OutputStrategy =
+    | { kind: 'sweep-to-wallet' }
+    | { kind: 'value-preserving-to-self' }
+    | { kind: 'bound-payout'; note: string }
+    | { kind: 'token-mint' }
+    | { kind: 'unknown' };
+
+function deriveOutputStrategy(meta: FunctionMeta): OutputStrategy {
+    const invs = new Set(meta.invariants);
+
+    if (meta.role === 'token-mint' && invs.has('TOKEN_CATEGORY_CONTINUITY')) {
+        return { kind: 'token-mint' };
+    }
+    if (meta.role === 'bound-payout' && invs.has('BOUND_RECIPIENT')) {
+        return { kind: 'bound-payout', note: 'Recipient enforced by contract.' };
+    }
+    if (meta.role === 'covenant-continuation' && invs.has('VALUE_PRESERVING_COVENANT')) {
+        return { kind: 'value-preserving-to-self' };
+    }
+    if (
+        (meta.role === 'owner-spend' || meta.role === 'owner-escape') &&
+        invs.has('OUTPUT_COUNT_CLAMP')
+    ) {
+        return { kind: 'sweep-to-wallet' };
+    }
+    if (meta.role === 'quorum-spend') {
+        return { kind: 'sweep-to-wallet' };
+    }
+    return { kind: 'unknown' };
+}
+
+function estimateFee(inputCount: number, outputCount: number): bigint {
+    return BigInt(10 + inputCount * 300 + outputCount * 34);
+}
+
+function buildTxOutputs(
+    strategy: OutputStrategy,
+    totalInput: bigint,
+    fee: bigint,
+    walletAddress: string,
+    contractAddress: string
+): Array<{ to: string; amount: bigint }> {
+    switch (strategy.kind) {
+        case 'value-preserving-to-self': {
+            const amt = totalInput - fee;
+            if (amt <= 0n) {
+                throw new Error(
+                    `Insufficient funds: Total selected value (${totalInput} sats) is less than or equal to the fee (${fee} sats).`
+                );
+            }
+            return [{ to: contractAddress, amount: amt }];
+        }
+        case 'token-mint':
+            throw new Error(
+                'Token-mint transactions require manual output configuration — coming soon.'
+            );
+        case 'bound-payout':
+        case 'sweep-to-wallet':
+        default: {
+            const amt = totalInput - fee;
+            if (amt <= 0n) {
+                throw new Error(
+                    `Insufficient funds: Total selected value (${totalInput} sats) is less than or equal to the fee (${fee} sats).`
+                );
+            }
+            return [{ to: walletAddress, amount: amt }];
+        }
+    }
 }
 
 interface FunctionInput {
@@ -106,6 +185,103 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     // Parse ABI - SAFE ACCESS
     const functions = artifact?.abi.filter(item => item.type === 'function' || !item.type) || [];
     const constructorInputs = artifact?.constructorInputs || [];
+
+    const cashContractSource = useMemo(
+        () =>
+            project.contractCode ??
+            project.files.find((f) => f.name.endsWith('.cash'))?.content ??
+            '',
+        [project.contractCode, project.files]
+    );
+
+    const functionMetaByName = useMemo(() => parseFunctionMeta(cashContractSource), [cashContractSource]);
+
+    const selectedFunctionMeta = useMemo((): FunctionMeta | null => {
+        if (!selectedFunction) return null;
+        return (
+            functionMetaByName[selectedFunction] ?? {
+                name: selectedFunction,
+                role: 'quorum-spend',
+                invariants: [],
+            }
+        );
+    }, [functionMetaByName, selectedFunction]);
+
+    const outputStrategyForSelection = useMemo((): OutputStrategy => {
+        if (!selectedFunctionMeta) return { kind: 'unknown' };
+        return deriveOutputStrategy(selectedFunctionMeta);
+    }, [selectedFunctionMeta]);
+
+    const txExecutionPreview = useMemo(() => {
+        if (!selectedFunction || !contractUtxos?.length) return null;
+
+        let selectedUtxos = contractUtxos.filter((u) =>
+            selectedUtxoIds.includes(`${u.txid}:${u.vout}`)
+        );
+        if (selectedUtxos.length === 0 && contractUtxos.length === 1) {
+            selectedUtxos = contractUtxos;
+        }
+        if (selectedUtxos.length === 0) return null;
+
+        const meta: FunctionMeta =
+            functionMetaByName[selectedFunction] ?? {
+                name: selectedFunction,
+                role: 'quorum-spend',
+                invariants: [],
+            };
+        const strategy = deriveOutputStrategy(meta);
+        const outputCount = 1;
+        const fee = estimateFee(selectedUtxos.length, outputCount);
+        const totalInput = selectedUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
+
+        const globalWalletForAddr = wallets.find((w) => w.id === selectedGlobalWalletId);
+        const walletCandidate =
+            signingMethod === 'burner'
+                ? globalWalletForAddr?.address || burnerAddress || ''
+                : walletConnectService.getAddress() || '';
+
+        const contractAddr = (deployedAddress || '').trim();
+        const outputTo =
+            walletCandidate && walletCandidate !== 'Not Connected'
+                ? walletCandidate
+                : contractAddr;
+
+        try {
+            const outputs = buildTxOutputs(strategy, totalInput, fee, outputTo, contractAddr || outputTo);
+            return {
+                meta,
+                strategy,
+                fee,
+                totalInput,
+                outputs,
+                walletCandidate,
+                contractAddr,
+                error: null as string | null,
+            };
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return {
+                meta,
+                strategy,
+                fee,
+                totalInput,
+                outputs: [] as Array<{ to: string; amount: bigint }>,
+                walletCandidate,
+                contractAddr,
+                error: msg,
+            };
+        }
+    }, [
+        selectedFunction,
+        contractUtxos,
+        selectedUtxoIds,
+        functionMetaByName,
+        signingMethod,
+        selectedGlobalWalletId,
+        wallets,
+        burnerAddress,
+        deployedAddress,
+    ]);
 
     // Initialize/Sync constructor args
     useEffect(() => {
@@ -432,7 +608,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const signer = new SignatureTemplate(burnerWif);
 
             // 4. Calculate amount (Sweep minus fee)
-            const fee = 1000n;
+            const fee = estimateFee(1, 1);
             const amount = BigInt(burnerBalance || 0) - fee;
 
             if (amount <= 500n) {
@@ -516,14 +692,25 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             // Import dynamically to avoid SSR/Init issues if any
             const { Contract, ElectrumNetworkProvider, SignatureTemplate, Network: CashScriptNetwork } = await import('cashscript');
 
-            // Reuse existing connection if possible, or new one
-            // Note: ElectrumNetworkProvider manages its own connection
-            // Force Chipnet and the EXACT same server used by the watcher
-            // to ensure UTXO visibility and successful broadcasting.
+            const source =
+                project.contractCode ??
+                project.files.find((f) => f.name.endsWith('.cash'))?.content ??
+                '';
+            const allMeta = parseFunctionMeta(source);
+            const fnMeta: FunctionMeta =
+                allMeta[selectedFunction] ?? {
+                    name: selectedFunction,
+                    role: 'quorum-spend',
+                    invariants: [],
+                };
+            const outputStrategy = deriveOutputStrategy(fnMeta);
+
+            const activeHost =
+                getElectrumConnectionSnapshot().host ?? ELECTRUM_FALLBACK_SERVERS[0];
             const provider = new ElectrumNetworkProvider(CashScriptNetwork.CHIPNET, {
-                hostname: 'chipnet.imaginary.cash'
+                hostname: activeHost,
             });
-            console.log("Provider initialized with chipnet.imaginary.cash");
+            console.log(`Provider initialized with Electrum host: ${activeHost}`);
 
             // 2. Initialize Contract
             // NEW: Prioritize persisted constructor args from deploymentRecord to ensure identity stability.
@@ -639,24 +826,27 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 (sum, u) => sum + BigInt(u.value),
                 0n
             );
-            const fee = 1000n;
-            const sendAmount = totalInput - fee;
-
-            if (sendAmount <= 0n) {
-                throw new Error(`Insufficient funds: Total selected value (${totalInput} sats) is less than or equal to the fee (${fee} sats).`);
-            }
+            const outputCount = 1;
+            const fee = estimateFee(selectedUtxos.length, outputCount);
 
             const globalWalletForAddr = wallets.find(w => w.id === selectedGlobalWalletId);
             const walletAddress = signingMethod === 'burner' ? (globalWalletForAddr?.address || burnerAddress) : getWalletAddress();
-            console.log("Using wallet address for output:", walletAddress);
+            console.log('Using wallet address for output:', walletAddress);
 
-            if (walletAddress && walletAddress !== 'Not Connected') {
-                // Use the wallet address directly (already has correct prefix and checksum)
-                txBuilder.addOutput({ to: walletAddress, amount: sendAmount });
-            } else {
-                // Fallback to contract if no wallet
-                txBuilder.addOutput({ to: contract.address, amount: sendAmount });
-            }
+            const sweepDestination =
+                walletAddress && walletAddress !== 'Not Connected'
+                    ? walletAddress
+                    : contract.address;
+
+            const outputs = buildTxOutputs(
+                outputStrategy,
+                totalInput,
+                fee,
+                sweepDestination,
+                contract.address
+            );
+
+            outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
 
             // 6. Build Unsigned/Signed Transaction
             let signedHex: string;
@@ -705,7 +895,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             console.log("Selected UTXOs:", selectedUtxos);
             console.log("Network:", network);
             console.log("Provider network:", (provider as any).network);
-            console.log("Broadcasting...");
+            console.log('Broadcasting...');
+            console.log('[nexops:tx-plan]', {
+                fnMeta,
+                outputStrategy,
+                outputs,
+                fee,
+                totalInput,
+                activeHost,
+            });
             const txid = await provider.sendRawTransaction(signedHex);
 
             setExecutionResult({
@@ -805,6 +1003,34 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     ))
                 )}
             </div>
+
+            {selectedFunctionMeta && (
+                <div
+                    className={`rounded-xl border p-4 space-y-2 ${
+                        outputStrategyForSelection.kind === 'token-mint'
+                            ? 'border-yellow-500/30 bg-yellow-500/5'
+                            : outputStrategyForSelection.kind === 'unknown'
+                              ? 'border-white/10 bg-black/20'
+                              : 'border-nexus-cyan/20 bg-nexus-cyan/5'
+                    }`}
+                >
+                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        Output plan
+                    </div>
+                    <p className="text-xs text-gray-300 leading-relaxed">
+                        {outputStrategyForSelection.kind === 'sweep-to-wallet' &&
+                            'All funds minus fee go to your wallet.'}
+                        {outputStrategyForSelection.kind === 'value-preserving-to-self' &&
+                            'Funds loop back to the contract (value-preserving covenant).'}
+                        {outputStrategyForSelection.kind === 'bound-payout' &&
+                            'Recipient is locked by the contract.'}
+                        {outputStrategyForSelection.kind === 'token-mint' &&
+                            'Token-mint: manual outputs required (not yet supported).'}
+                        {outputStrategyForSelection.kind === 'unknown' &&
+                            'Output strategy could not be determined from contract metadata; execution uses the default single-output path.'}
+                    </p>
+                </div>
+            )}
 
             <div className="flex justify-between pt-4">
                 <Button variant="ghost" onClick={() => setCurrentStep(1)} icon={<ArrowLeft className="w-4 h-4" />}>
@@ -988,6 +1214,47 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     )}
                 </div>
 
+                {/* Estimated outputs (from wizard metadata + selected UTXOs) */}
+                {txExecutionPreview && (
+                    <div className="bg-nexus-900/40 border border-white/10 rounded-2xl p-5 space-y-3">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                            Estimated outputs
+                        </span>
+                        {txExecutionPreview.error ? (
+                            <p className="text-xs text-amber-400/90 leading-relaxed">{txExecutionPreview.error}</p>
+                        ) : (
+                            <>
+                                <div className="space-y-2">
+                                    {txExecutionPreview.outputs.map((o, i) => (
+                                        <div
+                                            key={i}
+                                            className="flex flex-col gap-1 p-3 bg-black/30 rounded-lg border border-white/5"
+                                        >
+                                            <span className="text-[9px] text-gray-500 font-bold uppercase">
+                                                Output {i + 1}
+                                            </span>
+                                            <span className="font-mono text-[10px] text-nexus-cyan break-all">
+                                                {o.to}
+                                            </span>
+                                            <span className="text-[11px] text-white font-mono">
+                                                {o.amount.toString()} sats
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex justify-between text-[10px] font-mono text-gray-400 pt-1 border-t border-white/5">
+                                    <span>Fee (estimate)</span>
+                                    <span>{txExecutionPreview.fee.toString()} sats</span>
+                                </div>
+                                <div className="flex justify-between text-[10px] font-mono text-gray-400">
+                                    <span>Total input</span>
+                                    <span>{txExecutionPreview.totalInput.toString()} sats</span>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+
                 {/* ADVANCED DETAILS: Collapsible */}
                 <div className="border-t border-white/5 pt-4">
                     <button
@@ -1132,9 +1399,16 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     </div>
 
                     <div className="flex flex-col gap-2 pt-4">
-                        <Button variant="ghost" onClick={() => window.open(getExplorerLink(history[0].txid), '_blank')}>
+                        <Button
+                            variant="ghost"
+                            onClick={() =>
+                                executionResult.txid &&
+                                window.open(getExplorerLink(executionResult.txid), '_blank')
+                            }
+                            disabled={!executionResult.txid}
+                        >
                             <ExternalLink className="w-4 h-4 mr-2" />
-                            View Last
+                            View Transaction
                         </Button>
                         <Button onClick={resetFlow}>
                             Make Another Call
