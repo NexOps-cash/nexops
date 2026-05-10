@@ -24,7 +24,7 @@ import {
 import LocalWalletService from '../localWalletService';
 import { parseFunctionMeta } from '../wizard/parseContractMeta';
 import type { FunctionMeta } from '../wizard/parseContractMeta';
-import { estimateFee, deriveOutputStrategy, buildTxOutputs } from '../wizard/txPlanning';
+import { estimateFee, feeForStrategy, deriveOutputStrategy, buildTxOutputs } from '../wizard/txPlanning';
 import { coerceAbiFunctionArgs, getAbiFunction } from './coerceFunctionArgs';
 
 export interface ChipnetLiveManifest {
@@ -43,6 +43,8 @@ export interface ChipnetLiveTestOptions {
     pollTimeoutMs: number;
     /** If set, overwrite manifest constructor arg with this name using burner pubkey hex */
     injectPubkeyConstructorArgName?: string | null;
+    /** Fill every `pubkey` constructor slot with the burner pubkey (smoke-test multisig with one key). */
+    injectAllPubkeys?: boolean;
     jsonlLog: (obj: Record<string, unknown>) => void;
 }
 
@@ -137,6 +139,24 @@ async function burnerPaymentAddressFromWif(
     return p2pkh.tokenAddress ?? p2pkh.address;
 }
 
+function applyInjectAllPubkeys(
+    artifact: ContractArtifact,
+    args: string[],
+    pubkeyHex: string
+): string[] {
+    const next = [...args];
+    while (next.length < artifact.constructorInputs.length) {
+        next.push('');
+    }
+    for (let i = 0; i < artifact.constructorInputs.length; i += 1) {
+        const t = artifact.constructorInputs[i]?.type?.toLowerCase();
+        if (t === 'pubkey') {
+            next[i] = pubkeyHex;
+        }
+    }
+    return next;
+}
+
 function applyPubkeyInjection(
     artifact: ContractArtifact,
     args: string[],
@@ -226,7 +246,15 @@ async function fundContractFromBurnerP2pkh(params: {
  * Full Chipnet flow: compile → optional pubkey inject → derive address → faucet → fund → spend.
  */
 export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<ChipnetLiveTestResult> {
-    const { cashSource, manifest, wif, pollTimeoutMs, injectPubkeyConstructorArgName, jsonlLog } = opts;
+    const {
+        cashSource,
+        manifest,
+        wif,
+        pollTimeoutMs,
+        injectPubkeyConstructorArgName,
+        injectAllPubkeys = false,
+        jsonlLog,
+    } = opts;
 
     try {
         const provider = chipnetProvider();
@@ -246,6 +274,9 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
                 injectPubkeyConstructorArgName,
                 burnerPubkeyHex
             );
+        }
+        if (injectAllPubkeys) {
+            constructorStrings = applyInjectAllPubkeys(artifact, constructorStrings, burnerPubkeyHex);
         }
 
         if (constructorStrings.length !== artifact.constructorInputs.length) {
@@ -347,15 +378,51 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
 
         const totalInput = contractUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
         const outputCount = 1;
-        const fee = estimateFee(contractUtxos.length, outputCount);
+        const fee = feeForStrategy(outputStrategy, contractUtxos.length, outputCount);
         const sweepDestination = burnerAddress;
 
         const outputs = buildTxOutputs(outputStrategy, totalInput, fee, sweepDestination, contract.address);
+
+        let sponsorInputValue = 0n;
+        if (outputStrategy.kind === 'exact-input-value-to-wallet') {
+            // For INPUT_OUTPUT_VALUE_MATCH, the contract output cannot absorb miner fee.
+            // Add one burner P2PKH input so relay/miner fee is paid externally.
+            const burnerSpendUtxos = await fetchUTXOs(burnerAddress);
+            const sponsor = burnerSpendUtxos
+                .filter((u) => BigInt(u.value) >= 600n)
+                .sort((a, b) => a.value - b.value)[0];
+            if (!sponsor) {
+                throw new Error('No burner UTXO available to sponsor relay fee for exact-input-value spend');
+            }
+
+            const decoded = decodePrivateKeyWif(wif);
+            if (typeof decoded === 'string') throw new Error(decoded);
+            const secp256k1 = await instantiateSecp256k1();
+            const ripemd160 = await instantiateRipemd160();
+            const pubkeyBytes = secp256k1.derivePublicKeyCompressed(decoded.privateKey);
+            if (typeof pubkeyBytes === 'string') throw new Error(pubkeyBytes);
+            const pkh = ripemd160.hash(sha256.hash(pubkeyBytes));
+            const p2pkh = new Contract(getP2pkhBridgeArtifact() as any, [pkh], { provider });
+            const signer = new SignatureTemplate(wif);
+            const sponsorUnlocker = p2pkh.unlock.spend(pubkeyBytes, signer);
+
+            txBuilder.addInput(
+                {
+                    txid: sponsor.txid,
+                    vout: sponsor.vout,
+                    satoshis: BigInt(sponsor.value),
+                },
+                sponsorUnlocker
+            );
+            sponsorInputValue = BigInt(sponsor.value);
+        }
 
         outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
 
         const builtSpend = await txBuilder.build();
         const signedHex = typeof builtSpend === 'string' ? builtSpend : (builtSpend as any).hex;
+        const outputTotal = outputs.reduce((sum, o) => sum + o.amount, 0n);
+        const effectiveMinerFee = totalInput + sponsorInputValue - outputTotal;
 
         jsonlLog({
             phase: 'nexops:tx-plan',
@@ -364,6 +431,8 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             outputs: outputs.map((o) => ({ to: o.to, amount: o.amount.toString() })),
             fee: fee.toString(),
             totalInput: totalInput.toString(),
+            sponsorInputValue: sponsorInputValue.toString(),
+            effectiveMinerFee: effectiveMinerFee.toString(),
             activeHost,
             ok: true,
             ts: Date.now(),

@@ -3,6 +3,7 @@ import type { FunctionMeta } from './parseContractMeta';
 export type OutputStrategy =
     | { kind: 'sweep-to-wallet' }
     | { kind: 'value-preserving-to-self' }
+    | { kind: 'exact-input-value-to-wallet' }
     | { kind: 'bound-payout'; note: string }
     | { kind: 'token-mint' }
     | { kind: 'unknown' };
@@ -19,6 +20,9 @@ export function deriveOutputStrategy(meta: FunctionMeta): OutputStrategy {
     if (meta.role === 'covenant-continuation' && invs.has('VALUE_PRESERVING_COVENANT')) {
         return { kind: 'value-preserving-to-self' };
     }
+    if (invs.has('INPUT_OUTPUT_VALUE_MATCH')) {
+        return { kind: 'exact-input-value-to-wallet' };
+    }
     if (
         (meta.role === 'owner-spend' || meta.role === 'owner-escape') &&
         invs.has('OUTPUT_COUNT_CLAMP')
@@ -33,6 +37,18 @@ export function deriveOutputStrategy(meta: FunctionMeta): OutputStrategy {
 
 export function estimateFee(inputCount: number, outputCount: number): bigint {
     return BigInt(10 + inputCount * 300 + outputCount * 34);
+}
+
+/** Fee for a planned spend; multisig-style INPUT_OUTPUT_VALUE_MATCH uses zero fee (output must equal input). */
+export function feeForStrategy(
+    strategy: OutputStrategy,
+    inputCount: number,
+    outputCount: number
+): bigint {
+    if (strategy.kind === 'exact-input-value-to-wallet') {
+        return 0n;
+    }
+    return estimateFee(inputCount, outputCount);
 }
 
 export function buildTxOutputs(
@@ -51,6 +67,17 @@ export function buildTxOutputs(
                 );
             }
             return [{ to: contractAddress, amount: amt }];
+        }
+        case 'exact-input-value-to-wallet': {
+            if (fee !== 0n) {
+                throw new Error(
+                    'exact-input-value-to-wallet requires zero fee so output value equals contract input'
+                );
+            }
+            if (totalInput <= 0n) {
+                throw new Error('Insufficient funds for value-preserving spend');
+            }
+            return [{ to: walletAddress, amount: totalInput }];
         }
         case 'token-mint':
             throw new Error(

@@ -20,6 +20,7 @@ const INVARIANT_LABELS: Record<string, string> = {
   OUTPUT_COUNT_CLAMP: 'Max outputs capped',
   OUTPUT_COUNT_GUARD: 'Min outputs enforced',
   VALUE_PRESERVING_COVENANT: 'Value preserved',
+  INPUT_OUTPUT_VALUE_MATCH: 'Output value matches spent input',
   BOUND_RECIPIENT: 'Locked recipient',
   TOKEN_CATEGORY_CONTINUITY: 'Token category locked',
   DISTINCT_PUBKEYS: 'Distinct keys enforced',

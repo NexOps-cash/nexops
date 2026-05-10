@@ -27,6 +27,7 @@ import type { FunctionMeta } from '../services/wizard/parseContractMeta';
 import { parseFunctionMeta } from '../services/wizard/parseContractMeta';
 import {
     estimateFee,
+    feeForStrategy,
     deriveOutputStrategy,
     buildTxOutputs,
     type OutputStrategy,
@@ -167,7 +168,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             };
         const strategy = deriveOutputStrategy(meta);
         const outputCount = 1;
-        const fee = estimateFee(selectedUtxos.length, outputCount);
+        const fee = feeForStrategy(strategy, selectedUtxos.length, outputCount);
         const totalInput = selectedUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
 
         const globalWalletForAddr = wallets.find((w) => w.id === selectedGlobalWalletId);
@@ -626,7 +627,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
         try {
             // Import dynamically to avoid SSR/Init issues if any
-            const { Contract, ElectrumNetworkProvider, SignatureTemplate, Network: CashScriptNetwork } = await import('cashscript');
+            const {
+                Contract,
+                ElectrumNetworkProvider,
+                SignatureTemplate,
+                HashType,
+                SignatureAlgorithm,
+                Network: CashScriptNetwork,
+            } = await import('cashscript');
 
             const source =
                 project.contractCode ??
@@ -685,10 +693,18 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     const wifToUse = globalWallet?.wif || burnerWif;
 
                     if (!wifToUse) throw new Error("No private key found for signing. Please generate or select a wallet.");
-                    return new SignatureTemplate(wifToUse);
+                    return new SignatureTemplate(
+                        wifToUse,
+                        HashType.SIGHASH_ALL,
+                        SignatureAlgorithm.ECDSA
+                    );
                 } else {
                     const dummyKey = new Uint8Array(32).fill(1);
-                    const wcTemplate = new SignatureTemplate(dummyKey);
+                    const wcTemplate = new SignatureTemplate(
+                        dummyKey,
+                        HashType.SIGHASH_ALL,
+                        SignatureAlgorithm.ECDSA
+                    );
                     wcTemplate.generateSignature = (_payload: any, _bchForkId: any) => new Uint8Array(65).fill(0);
                     return wcTemplate;
                 }
@@ -763,7 +779,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 0n
             );
             const outputCount = 1;
-            const fee = estimateFee(selectedUtxos.length, outputCount);
+            const fee = feeForStrategy(outputStrategy, selectedUtxos.length, outputCount);
 
             const globalWalletForAddr = wallets.find(w => w.id === selectedGlobalWalletId);
             const walletAddress = signingMethod === 'burner' ? (globalWalletForAddr?.address || burnerAddress) : getWalletAddress();
@@ -956,6 +972,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     <p className="text-xs text-gray-300 leading-relaxed">
                         {outputStrategyForSelection.kind === 'sweep-to-wallet' &&
                             'All funds minus fee go to your wallet.'}
+                        {outputStrategyForSelection.kind === 'exact-input-value-to-wallet' &&
+                            'Single output must equal locked contract input value (no fee deducted — multisig-style covenant).'}
                         {outputStrategyForSelection.kind === 'value-preserving-to-self' &&
                             'Funds loop back to the contract (value-preserving covenant).'}
                         {outputStrategyForSelection.kind === 'bound-payout' &&

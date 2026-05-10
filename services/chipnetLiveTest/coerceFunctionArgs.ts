@@ -1,4 +1,4 @@
-import { SignatureTemplate } from 'cashscript';
+import { HashType, SignatureAlgorithm, SignatureTemplate } from 'cashscript';
 import type { ContractArtifact } from '../../types';
 
 export function getAbiFunction(artifact: ContractArtifact, name: string): {
@@ -23,7 +23,7 @@ export function coerceAbiFunctionArgs(
         const raw = stringArgs[i] ?? '';
 
         if (def.type === 'sig') {
-            return new SignatureTemplate(wif);
+            return new SignatureTemplate(wif, HashType.SIGHASH_ALL, SignatureAlgorithm.ECDSA);
         }
         if (def.type === 'int') {
             const val = raw || '0';

@@ -77,13 +77,18 @@ export const multisigKind: ContractKind = {
       name: 'spend',
       role: 'quorum-spend',
       params: oracleEnabled ? ['sig s1', 'sig s2', 'datasig oracleSig'] : ['sig s1', 'sig s2'],
+      extraInvariants: [
+        'INPUT_OUTPUT_VALUE_MATCH',
+        ...(opts.enabled.strictDistinctKeys ? (['DISTINCT_PUBKEYS'] as const) : []),
+      ],
+      invariantParams: opts.enabled.strictDistinctKeys
+        ? { distinctPubkeys: ['pk1', 'pk2', 'pk3'] }
+        : undefined,
       body: [
         'if (unlockTime != 0) {',
         '    require(tx.time >= unlockTime);',
         '}',
         '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
         ...(oracleEnabled
           ? [
               '',
@@ -98,10 +103,6 @@ export const multisigKind: ContractKind = {
           : []),
         'require(checkMultiSig([s1, s2], [pk1, pk2, pk3]));',
       ],
-      extraInvariants: opts.enabled.strictDistinctKeys ? ['DISTINCT_PUBKEYS'] : [],
-      invariantParams: opts.enabled.strictDistinctKeys
-        ? { distinctPubkeys: ['pk1', 'pk2', 'pk3'] }
-        : undefined,
     };
     const functions: FunctionSpec[] = [spend];
     if (emergencyEnabled) {

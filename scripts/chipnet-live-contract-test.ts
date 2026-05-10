@@ -7,6 +7,7 @@
  *
  * Options:
  *   --inject-pubkey <constructorArgName>   Replace that constructor arg with burner pubkey hex
+ *   --inject-all-pubkeys                   Set every pubkey constructor slot to the burner pubkey
  *   --poll-timeout-ms <n>                  Default 180000
  *   --no-jsonl                             Pretty-print log objects (still JSON)
  */
@@ -32,6 +33,10 @@ function parseArgv(argv: string[]): Record<string, string | boolean> {
             out['no-jsonl'] = true;
             continue;
         }
+        if (a === '--inject-all-pubkeys') {
+            out['inject-all-pubkeys'] = true;
+            continue;
+        }
         if (a.startsWith('--')) {
             const key = a.slice(2);
             const next = argv[i + 1];
@@ -54,6 +59,7 @@ function main() {
         ? Number(args['poll-timeout-ms'])
         : 180_000;
     const injectPubkey = (args['inject-pubkey'] as string) || null;
+    const injectAllPubkeys = args['inject-all-pubkeys'] === true;
     const noJsonl = args['no-jsonl'] === true;
 
     let wif = args.wif as string | undefined;
@@ -110,6 +116,7 @@ function main() {
         wif,
         pollTimeoutMs,
         injectPubkeyConstructorArgName: injectPubkey,
+        injectAllPubkeys,
         jsonlLog,
     }).then((r) => {
         jsonlLog({

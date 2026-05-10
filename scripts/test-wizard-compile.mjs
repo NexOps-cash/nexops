@@ -149,6 +149,12 @@ function patternsFor(role, declared) {
   if (declared.includes('DISTINCT_PUBKEYS')) {
     out.push(/require\s*\(\s*\w+\s*!=\s*\w+\s*\)/);
   }
+  if (declared.includes('INPUT_OUTPUT_VALUE_MATCH')) {
+    out.push(/require\s*\(\s*tx\.outputs\.length\s*==\s*1\s*\)/);
+    out.push(
+      /require\s*\(\s*tx\.outputs\[0\]\.value\s*==\s*tx\.inputs\[this\.activeInputIndex\]\.value\s*\)/
+    );
+  }
   return out;
 }
 
