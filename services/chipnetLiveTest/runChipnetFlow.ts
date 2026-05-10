@@ -31,12 +31,41 @@ import { attachBurnerP2pkhSponsorIfNeeded } from './exactInputValueMatchSponsor'
 import { csvEncodedSequenceBlocks } from './csvSequence';
 import { getP2pkhBridgeArtifact } from './p2pkhBridgeArtifact';
 
+/** `estimateFee` undercounts large unlocking scripts; Chipnet returns code 66 below relay minimum. */
+const CHIPNET_MIN_SPEND_FEE_SATS = 1200n;
+
+/** Seller payout == input when release cap is 0; plan builder must use IOVM + sponsor (metadata often omits INPUT_OUTPUT_VALUE_MATCH because source branches on constructor). */
+function escrowSellerExactInputPath(
+    artifact: ContractArtifact,
+    functionName: string,
+    constructorStrings: string[]
+): boolean {
+    if (artifact.contractName !== 'ArbitrationEscrow') return false;
+    if (functionName !== 'complete' && functionName !== 'arbitrateToSeller') return false;
+    const capIdx = artifact.constructorInputs.findIndex((i) => i.name === 'releaseCapSats');
+    if (capIdx < 0) return false;
+    const cap = Number(constructorStrings[capIdx] ?? '0');
+    return Number.isFinite(cap) && cap === 0;
+}
+
 export interface ChipnetLiveManifest {
     constructorArgs: string[];
     functionName: string;
     functionArgs: string[];
     /** Default 2000 — matches WizardDeployPanel default. */
     fundContractSats?: number;
+    /**
+     * LinearVesting `claim` only: value (sats) for continuation output[1] back to the contract.
+     * Payout output[0] = contract input − this value; sponsor covers miner fee.
+     */
+    vestingContinuationSats?: number;
+    /**
+     * Skip burner→contract funding when the covenant already holds spendable sats (e.g. vesting
+     * continuation). Avoids merging all burner UTXOs right before a sponsored spend (mempool conflict).
+     */
+    skipContractFunding?: boolean;
+    /** When `skipContractFunding`, poll until sum(contract UTXOs) ≥ this (default 1). */
+    minContractBalanceSats?: number;
 }
 
 export interface ChipnetLiveTestOptions {
@@ -273,9 +302,13 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
         const contractPaymentAddress = deriveContractAddress(artifact, constructorStrings, Network.CHIPNET);
         logPhase(jsonlLog, 'derive_contract_address', true, { contractPaymentAddress });
 
+        const skipContractFunding = manifest.skipContractFunding === true;
         const fundContractSats = BigInt(manifest.fundContractSats ?? 2000);
+        const minContractPollTotal =
+            skipContractFunding ? BigInt(manifest.minContractBalanceSats ?? 1) : fundContractSats;
         /** Fund tx + typical sponsored IOVM spend (≤2 inputs); faucet grants ~10k but sequential legs reuse the wallet */
-        const minBurnerBalance = fundContractSats + estimateFee(1, 2) + estimateFee(2, 2) + 800n;
+        const minBurnerBalance =
+            (skipContractFunding ? 0n : fundContractSats) + estimateFee(1, 2) + estimateFee(2, 2) + 800n;
 
         const faucetRes = await requestFaucetFunds(burnerAddress);
         logPhase(jsonlLog, 'faucet_request', faucetRes.success, {
@@ -299,29 +332,36 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
 
         const activeHost = getElectrumConnectionSnapshot().host ?? ELECTRUM_FALLBACK_SERVERS[0];
 
-        const burnerUtxos = await fetchUTXOs(burnerAddress);
-        const fundT0 = Date.now();
-        const fundingTxid = await fundContractFromBurnerP2pkh({
-            provider,
-            wif,
-            burnerAddress,
-            contractPaymentAddress,
-            fundSats: fundContractSats,
-            utxos: burnerUtxos,
-            jsonlLog,
-        });
-        logPhase(jsonlLog, 'fund_contract_broadcast', true, {
-            txid: fundingTxid,
-            ms: Date.now() - fundT0,
-        });
+        let fundingTxid: string | undefined;
+        if (!skipContractFunding) {
+            const burnerUtxos = await fetchUTXOs(burnerAddress);
+            const fundT0 = Date.now();
+            fundingTxid = await fundContractFromBurnerP2pkh({
+                provider,
+                wif,
+                burnerAddress,
+                contractPaymentAddress,
+                fundSats: fundContractSats,
+                utxos: burnerUtxos,
+                jsonlLog,
+            });
+            logPhase(jsonlLog, 'fund_contract_broadcast', true, {
+                txid: fundingTxid,
+                ms: Date.now() - fundT0,
+            });
+        } else {
+            logPhase(jsonlLog, 'fund_contract_skipped', true, {
+                minContractBalanceSats: minContractPollTotal.toString(),
+            });
+        }
 
         await pollUntil(
             () => fetchUTXOs(contractPaymentAddress),
-            (us) => us.reduce((s, u) => s + BigInt(u.value), 0n) >= fundContractSats,
+            (us) => us.reduce((s, u) => s + BigInt(u.value), 0n) >= minContractPollTotal,
             pollTimeoutMs,
             2500
         );
-        logPhase(jsonlLog, 'contract_funded', true, {});
+        logPhase(jsonlLog, 'contract_funded', true, { skipContractFunding });
 
         const typedConstructorArgs = coerceConstructorArgs(artifact.constructorInputs, constructorStrings);
         const contract = new Contract(artifact as any, typedConstructorArgs, { provider }) as any;
@@ -339,9 +379,8 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             throw new Error('No contract UTXOs after funding');
         }
 
-        /** HTLC `refund()` requires mined CSV maturity relative to `timeoutHeight`. */
+        /** HTLC `refund()` requires mined CSV maturity relative to `timeoutHeight`. Absolute `nLocktime` caused Chipnet relay code 64 despite CSV-ready polls — maturity is enforced by `nSequence` alone. */
         let csvRefundSequence: number | undefined;
-        let csvRefundTxLocktime: number | undefined;
         if (manifest.functionName === 'refund' && artifact.contractName === 'HashTimeLock') {
             const ti = artifact.constructorInputs.findIndex((i) => i.name === 'timeoutHeight');
             if (ti < 0) {
@@ -375,7 +414,6 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
                 2500
             );
 
-            csvRefundTxLocktime = targetTip;
             logPhase(jsonlLog, 'csv_refund_mature', true, {
                 anchorHeight: anchor.height,
                 timeoutBlocks,
@@ -395,7 +433,16 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
                 role: 'quorum-spend',
                 invariants: [],
             };
-        const outputStrategy = deriveOutputStrategy(fnMeta);
+        let outputStrategy = deriveOutputStrategy(fnMeta);
+        if (
+            outputStrategy.kind === 'sweep-to-wallet' &&
+            escrowSellerExactInputPath(artifact, manifest.functionName, constructorStrings)
+        ) {
+            outputStrategy = { kind: 'exact-input-value-to-wallet' };
+        }
+        if (artifact.contractName === 'LinearVesting' && manifest.functionName === 'revoke') {
+            outputStrategy = { kind: 'exact-input-value-to-wallet' };
+        }
 
         const txBuilder = new CashScriptTransactionBuilder({ provider });
         const unlocker = contract.unlock[manifest.functionName](...typedFnArgs);
@@ -413,11 +460,50 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
         });
 
         const totalInput = contractUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
-        const outputCount = 1;
-        const fee = feeForStrategy(outputStrategy, contractUtxos.length, outputCount);
         const sweepDestination = burnerAddress;
 
-        const outputs = buildTxOutputs(outputStrategy, totalInput, fee, sweepDestination, contract.address);
+        const isVestingClaim =
+            artifact.contractName === 'LinearVesting' && manifest.functionName === 'claim';
+
+        let outputs: Array<{ to: string; amount: bigint }>;
+        let sponsorForce = false;
+        let plannedFee = 0n;
+
+        if (isVestingClaim) {
+            const cont =
+                manifest.vestingContinuationSats !== undefined ?
+                    BigInt(manifest.vestingContinuationSats)
+                :   0n;
+            if (!manifest.vestingContinuationSats || cont < 546n) {
+                throw new Error(
+                    'LinearVesting claim requires manifest.vestingContinuationSats >= 546 (continuation dust)'
+                );
+            }
+            if (cont >= totalInput) {
+                throw new Error('vestingContinuationSats must be less than funded contract input');
+            }
+            const payout = totalInput - cont;
+            if (payout < 546n) {
+                throw new Error('LinearVesting claim payout would be below dust; lower continuation');
+            }
+            outputs = [
+                { to: sweepDestination, amount: payout },
+                { to: contract.address, amount: cont },
+            ];
+            outputStrategy = { kind: 'exact-input-value-to-wallet' };
+            sponsorForce = true;
+            plannedFee = 0n;
+        } else {
+            const outputCount = 1;
+            const baseFee = feeForStrategy(outputStrategy, contractUtxos.length, outputCount);
+            plannedFee =
+                outputStrategy.kind === 'exact-input-value-to-wallet'
+                    ? baseFee
+                    : baseFee > CHIPNET_MIN_SPEND_FEE_SATS
+                      ? baseFee
+                      : CHIPNET_MIN_SPEND_FEE_SATS;
+            outputs = buildTxOutputs(outputStrategy, totalInput, plannedFee, sweepDestination, contract.address);
+        }
 
         const { sponsorInputValue } = await attachBurnerP2pkhSponsorIfNeeded({
             outputStrategy,
@@ -425,12 +511,28 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             provider,
             wif,
             burnerAddress,
+            forceSponsor: sponsorForce,
         });
 
         outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
 
-        if (csvRefundTxLocktime !== undefined) {
-            txBuilder.setLocktime(csvRefundTxLocktime);
+        /** LinearVesting enforces `tx.time >= cliffTime` / `>= endTime`; CashScript `tx.time` follows `nLocktime`. */
+        if (artifact.contractName === 'LinearVesting') {
+            const cliffIdx = artifact.constructorInputs.findIndex((i) => i.name === 'cliffTime');
+            const endIdx = artifact.constructorInputs.findIndex((i) => i.name === 'endTime');
+            if (manifest.functionName === 'claim' && cliffIdx >= 0) {
+                const cliff = Number(constructorStrings[cliffIdx]);
+                if (!Number.isFinite(cliff) || cliff < 500_000_000) {
+                    throw new Error('LinearVesting claim: invalid cliffTime for locktime');
+                }
+                txBuilder.setLocktime(cliff);
+            } else if (manifest.functionName === 'revoke' && endIdx >= 0) {
+                const end = Number(constructorStrings[endIdx]);
+                if (!Number.isFinite(end) || end < 500_000_000) {
+                    throw new Error('LinearVesting revoke: invalid endTime for locktime');
+                }
+                txBuilder.setLocktime(end);
+            }
         }
 
         const builtSpend = await txBuilder.build();
@@ -443,11 +545,15 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             fnMeta,
             outputStrategy,
             outputs: outputs.map((o) => ({ to: o.to, amount: o.amount.toString() })),
-            fee: fee.toString(),
+            fee: plannedFee.toString(),
             totalInput: totalInput.toString(),
             csvRefundSequence:
                 csvRefundSequence !== undefined ? String(csvRefundSequence) : undefined,
-            txLocktime: csvRefundTxLocktime !== undefined ? String(csvRefundTxLocktime) : undefined,
+            vestingLocktime:
+                artifact.contractName === 'LinearVesting' &&
+                (manifest.functionName === 'claim' || manifest.functionName === 'revoke')
+                    ? String(txBuilder.locktime)
+                    : undefined,
             sponsorInputValue: sponsorInputValue.toString(),
             effectiveMinerFee: effectiveMinerFee.toString(),
             activeHost,
