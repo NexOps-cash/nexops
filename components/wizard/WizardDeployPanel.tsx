@@ -670,6 +670,15 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                 <p className="text-[10px] text-slate-500 leading-relaxed">
                   Opens Chipnet on <span className="text-slate-400">chipnet.bchexplorer.info</span> — same tx id string Paytaca shows.
                 </p>
+                {kindId === 'htlc' ? (
+                  <div className="rounded border border-amber-500/30 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-100/90 leading-relaxed">
+                    <span className="font-semibold text-amber-400">Refund note — </span>
+                    Interacting with <span className="font-mono text-amber-200/95">refund()</span> waits for confirmations
+                    plus the template&apos;s relative timeout in blocks, so it can take much longer than{' '}
+                    <span className="font-mono text-amber-200/95">claim()</span>. Leave the transaction flow open until the
+                    refund broadcasts.
+                  </div>
+                ) : null}
                 <div className="flex gap-2 pt-2">
                   <Button variant="primary" size="sm" onClick={handleDeployAnother}>
                     Deploy another

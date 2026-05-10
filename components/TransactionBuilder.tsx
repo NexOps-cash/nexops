@@ -20,6 +20,7 @@ import {
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
 import { QRCodeSVG } from 'qrcode.react';
 import LocalWalletService from '../services/localWalletService';
+import { cashscriptBytesFromString } from '../services/cashscriptBytes';
 import toast from 'react-hot-toast';
 import { decodeCashAddress } from '@bitauth/libauth';
 import { coerceConstructorArgs } from '../services/addressService';
@@ -148,6 +149,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         if (!selectedFunctionMeta) return { kind: 'unknown' };
         return deriveOutputStrategy(selectedFunctionMeta);
     }, [selectedFunctionMeta]);
+
+    /** HashTimeLock `refund()` uses CSV relative maturity; Chipnet interaction can sit idle for many minutes. */
+    const isHtlcRefundSlowPath = useMemo(
+        () =>
+            project.deployedArtifact?.contractName === 'HashTimeLock' &&
+            selectedFunction.toLowerCase() === 'refund',
+        [project.deployedArtifact?.contractName, selectedFunction]
+    );
 
     const txExecutionPreview = useMemo(() => {
         if (!selectedFunction || !contractUtxos?.length) return null;
@@ -725,7 +734,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     return BigInt(val);
                 }
                 if (def.type === 'bool') return input.value === 'true';
-                if (def.type === 'bytes') return input.value.startsWith('0x') ? input.value.slice(2) : input.value;
+                if (def.type === 'bytes') return cashscriptBytesFromString(input.value || '');
 
                 return input.value;
             }));
@@ -986,6 +995,18 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 </div>
             )}
 
+            {isHtlcRefundSlowPath && (
+                <div className="flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                    <Clock className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                        <span className="font-bold uppercase tracking-wide text-amber-400">Refund timing — </span>
+                        This path waits for your funding tx to confirm, then for the relative timeout in blocks before the
+                        transaction can relay. On Chipnet that often means several minutes (sometimes longer); keep this
+                        panel open until broadcast completes.
+                    </p>
+                </div>
+            )}
+
             <div className="flex justify-between pt-4">
                 <Button variant="ghost" onClick={() => setCurrentStep(1)} icon={<ArrowLeft className="w-4 h-4" />}>
                     Back
@@ -1075,6 +1096,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                         The spend/execute call is experimental and may not work correctly for all contract types. Complex covenant patterns with custom signing logic may require manual transaction crafting.
                     </p>
                 </div>
+                {isHtlcRefundSlowPath && (
+                    <div className="flex gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+                        <Clock className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                        <p className="text-[11px] text-amber-100/90 leading-relaxed">
+                            HashTimeLock refund uses a relative block delay after the contract UTXO confirms. Execution may
+                            appear idle while the network advances; this is expected before the spend broadcasts.
+                        </p>
+                    </div>
+                )}
                 {/* HERO SECTION: Contract Status */}
                 {totalBalance > 0 ? (
                     <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-6 text-center space-y-4">
