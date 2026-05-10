@@ -535,6 +535,14 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             }
         }
 
+        /**
+         * HashTimeLock `refund` uses CSV (`this.age`); mixed with sponsor input (`sequence` max), Chipnet
+         * relay returned code 64 with `locktime: 0` — anchor locktime to current tip after maturity polls.
+         */
+        if (csvRefundSequence !== undefined && artifact.contractName === 'HashTimeLock') {
+            txBuilder.setLocktime(await getBlockHeight());
+        }
+
         const builtSpend = await txBuilder.build();
         const signedHex = typeof builtSpend === 'string' ? builtSpend : (builtSpend as any).hex;
         const outputTotal = outputs.reduce((sum, o) => sum + o.amount, 0n);
