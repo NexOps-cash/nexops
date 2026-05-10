@@ -52,6 +52,7 @@ export const htlcKind: ContractKind = {
       name: 'claim',
       role: 'quorum-spend',
       params: ['sig receiverSig', 'bytes preimage'],
+      extraInvariants: ['INPUT_OUTPUT_VALUE_MATCH'],
       body: [
         'require(checkSig(receiverSig, receiverPk));',
         ...(strict ? ['require(senderPk != receiverPk);'] : []),
@@ -61,9 +62,6 @@ export const htlcKind: ContractKind = {
         '} else {',
         '    require(sha256(preimage) == digest32);',
         '}',
-        '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
       ],
     };
 
@@ -71,13 +69,11 @@ export const htlcKind: ContractKind = {
       name: 'refund',
       role: 'quorum-spend',
       params: ['sig senderSig'],
+      extraInvariants: ['INPUT_OUTPUT_VALUE_MATCH'],
       body: [
         'require(checkSig(senderSig, senderPk));',
         ...(strict ? ['require(senderPk != receiverPk);'] : []),
         'require(this.age >= timeoutHeight);',
-        '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
       ],
     };
 
