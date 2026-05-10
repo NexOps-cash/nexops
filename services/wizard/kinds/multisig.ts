@@ -4,7 +4,8 @@ import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 export const multisigKind: ContractKind = {
   id: 'multisig',
   name: 'MultisigVault',
-  summary: 'Secure 2-of-3 vault with parameterized timelock plus optional oracle and emergency self-continuation paths.',
+  summary:
+    'Secure 2-of-3 vault with parameterized timelock, optional oracle, delayed single-signer recovery, and emergency self-continuation paths.',
   allowedRoles: ['quorum-spend', 'covenant-continuation'],
   fields: [
     { id: 'pk1', label: 'Signer 1', type: 'pubkey', description: 'Compressed pubkey for signer 1.' },
@@ -67,11 +68,28 @@ export const multisigKind: ContractKind = {
       group: 'Policy',
       description: 'Enforce pk1 != pk2 != pk3 inside spend().',
     },
+    {
+      id: 'timedRecoveryPath',
+      label: 'Delayed 1-of-3 recovery',
+      group: 'Timing',
+      description:
+        'After a relative block delay, any single signer may sweep (CSV age), with the same value-preserving output rule as spend().',
+      fields: [
+        {
+          id: 'recoveryTimeoutBlocks',
+          label: 'Recovery delay (blocks)',
+          type: 'blockHeight',
+          description: 'Relative blocks (nSequence) before timedRecover() accepts one signature from any signer.',
+          defaultValue: 144,
+        },
+      ],
+    },
   ],
   crossFieldValidators: [makeDistinctPubkeyValidator(['pk1', 'pk2', 'pk3'])],
   build: (opts): BuildOutput => {
     const oracleEnabled = opts.enabled.oraclePath === true;
     const emergencyEnabled = opts.enabled.emergencyPath === true;
+    const timedRecoveryEnabled = opts.enabled.timedRecoveryPath === true;
 
     const spend: FunctionSpec = {
       name: 'spend',
@@ -105,6 +123,27 @@ export const multisigKind: ContractKind = {
       ],
     };
     const functions: FunctionSpec[] = [spend];
+
+    if (timedRecoveryEnabled) {
+      functions.push({
+        name: 'timedRecover',
+        role: 'quorum-spend',
+        params: ['sig s'],
+        extraInvariants: [
+          'INPUT_OUTPUT_VALUE_MATCH',
+          ...(opts.enabled.strictDistinctKeys ? (['DISTINCT_PUBKEYS'] as const) : []),
+        ],
+        invariantParams: opts.enabled.strictDistinctKeys
+          ? { distinctPubkeys: ['pk1', 'pk2', 'pk3'] }
+          : undefined,
+        body: [
+          'require(this.age >= recoveryTimeoutBlocks);',
+          '',
+          'require(checkSig(s, pk1) || checkSig(s, pk2) || checkSig(s, pk3));',
+        ],
+      });
+    }
+
     if (emergencyEnabled) {
       functions.push({
         name: 'emergencyFreeze',
