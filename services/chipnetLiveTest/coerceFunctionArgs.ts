@@ -1,5 +1,6 @@
 import { HashType, SignatureAlgorithm, SignatureTemplate } from 'cashscript';
 import type { ContractArtifact } from '../../types';
+import { cashscriptBytesFromString } from '../cashscriptBytes';
 
 export function getAbiFunction(artifact: ContractArtifact, name: string): {
     name: string;
@@ -36,7 +37,7 @@ export function coerceAbiFunctionArgs(
             return raw === 'true';
         }
         if (def.type === 'bytes') {
-            return raw.startsWith('0x') ? raw.slice(2) : raw;
+            return cashscriptBytesFromString(raw);
         }
         if (def.type === 'pubkey') {
             if (raw && /^[0-9a-fA-F]{66}$/.test(raw)) {

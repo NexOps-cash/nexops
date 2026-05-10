@@ -1,0 +1,13 @@
+{
+  "constructorArgs": [
+    "",
+    "",
+    "1",
+    "e3d68fa24d3d7d7d31cf8788ec618ab436e414ac",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0"
+  ],
+  "functionName": "claim",
+  "functionArgs": ["", "nexops_htlc_smoke"],
+  "fundContractSats": 2000
+}

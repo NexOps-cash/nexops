@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "wizard:compile-matrix": "npx --yes tsx scripts/wizard-compile-matrix.ts",
-    "chipnet:live-test": "npx --yes tsx scripts/chipnet-live-contract-test.ts"
+    "chipnet:live-test": "npx --yes tsx scripts/chipnet-live-contract-test.ts",
+    "chipnet:live-test-htlc": "npx --yes tsx scripts/chipnet-live-htlc-two-paths.ts",
+    "chipnet:live-test-htlc-claim": "npx --yes tsx scripts/chipnet-live-htlc-claim.ts",
+    "chipnet:live-test-htlc-refund": "npx --yes tsx scripts/chipnet-live-htlc-refund.ts"
   },
   "dependencies": {
     "@bitauth/libauth": "^3.1.0-next.8",

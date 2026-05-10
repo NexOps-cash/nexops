@@ -16,6 +16,7 @@ import type { ContractArtifact } from '../../types';
 import { coerceConstructorArgs, deriveContractAddress } from '../addressService';
 import {
     fetchUTXOs,
+    getBlockHeight,
     requestFaucetFunds,
     getElectrumConnectionSnapshot,
     ELECTRUM_FALLBACK_SERVERS,
@@ -26,6 +27,9 @@ import { parseFunctionMeta } from '../wizard/parseContractMeta';
 import type { FunctionMeta } from '../wizard/parseContractMeta';
 import { estimateFee, feeForStrategy, deriveOutputStrategy, buildTxOutputs } from '../wizard/txPlanning';
 import { coerceAbiFunctionArgs, getAbiFunction } from './coerceFunctionArgs';
+import { attachBurnerP2pkhSponsorIfNeeded } from './exactInputValueMatchSponsor';
+import { csvEncodedSequenceBlocks } from './csvSequence';
+import { getP2pkhBridgeArtifact } from './p2pkhBridgeArtifact';
 
 export interface ChipnetLiveManifest {
     constructorArgs: string[];
@@ -100,25 +104,6 @@ function compileArtifact(source: string): ContractArtifact {
         throw new Error('Compile failed: no bytecode');
     }
     return raw as ContractArtifact;
-}
-
-/** Canonical P2PKH bridge contract — must come from cashc, not hand-written bytecode. */
-const P2PKH_BRIDGE_SOURCE = `pragma cashscript ^0.13.0;
-
-contract P2PKH(bytes20 pkh) {
-    function spend(pubkey pk, sig s) {
-        require(hash160(pk) == pkh);
-        require(checkSig(s, pk));
-    }
-}`;
-
-let cachedP2pkhBridgeArtifact: ContractArtifact | null = null;
-
-function getP2pkhBridgeArtifact(): ContractArtifact {
-    if (!cachedP2pkhBridgeArtifact) {
-        cachedP2pkhBridgeArtifact = compileArtifact(P2PKH_BRIDGE_SOURCE);
-    }
-    return cachedP2pkhBridgeArtifact;
 }
 
 /** CashAddr where Chipnet faucet UTXOs must land — matches P2PKH Contract locking script (token-aware). */
@@ -289,8 +274,8 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
         logPhase(jsonlLog, 'derive_contract_address', true, { contractPaymentAddress });
 
         const fundContractSats = BigInt(manifest.fundContractSats ?? 2000);
-        const minBurnerBalance =
-            fundContractSats + estimateFee(1, 2) + estimateFee(4, 2) + 3000n;
+        /** Fund tx + typical sponsored IOVM spend (≤2 inputs); faucet grants ~10k but sequential legs reuse the wallet */
+        const minBurnerBalance = fundContractSats + estimateFee(1, 2) + estimateFee(2, 2) + 800n;
 
         const faucetRes = await requestFaucetFunds(burnerAddress);
         logPhase(jsonlLog, 'faucet_request', faucetRes.success, {
@@ -349,9 +334,59 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
         }
         const typedFnArgs = coerceAbiFunctionArgs(abiFn, manifest.functionArgs, wif);
 
-        const contractUtxos = await fetchUTXOs(contractPaymentAddress);
+        let contractUtxos = await fetchUTXOs(contractPaymentAddress);
         if (contractUtxos.length === 0) {
             throw new Error('No contract UTXOs after funding');
+        }
+
+        /** HTLC `refund()` requires mined CSV maturity relative to `timeoutHeight`. */
+        let csvRefundSequence: number | undefined;
+        let csvRefundTxLocktime: number | undefined;
+        if (manifest.functionName === 'refund' && artifact.contractName === 'HashTimeLock') {
+            const ti = artifact.constructorInputs.findIndex((i) => i.name === 'timeoutHeight');
+            if (ti < 0) {
+                throw new Error('HashTimeLock refund requires timeoutHeight constructor argument');
+            }
+            const timeoutBlocks = Number(constructorStrings[ti]);
+            if (!Number.isFinite(timeoutBlocks) || timeoutBlocks <= 0 || timeoutBlocks > 65535) {
+                throw new Error(`Invalid timeoutHeight for CSV refund: ${constructorStrings[ti]}`);
+            }
+            csvRefundSequence = csvEncodedSequenceBlocks(timeoutBlocks);
+
+            await pollUntil(
+                () => fetchUTXOs(contractPaymentAddress),
+                (us) => us.some((u) => u.height > 0 && BigInt(u.value) > 0n),
+                pollTimeoutMs,
+                2500
+            );
+
+            const mined = (await fetchUTXOs(contractPaymentAddress)).filter((u) => u.height > 0);
+            const anchor = mined.sort((a, b) => b.value - a.value)[0];
+            if (!anchor) {
+                throw new Error('HTLC refund: no mined contract UTXO to anchor CSV maturity');
+            }
+
+            const targetTip = anchor.height + timeoutBlocks;
+            /** Extra chain tip block avoids relay treating CSV + nLocktime as unsatisfied at boundary */
+            await pollUntil(
+                () => getBlockHeight(),
+                (tip) => tip >= targetTip + 1,
+                pollTimeoutMs,
+                2500
+            );
+
+            csvRefundTxLocktime = targetTip;
+            logPhase(jsonlLog, 'csv_refund_mature', true, {
+                anchorHeight: anchor.height,
+                timeoutBlocks,
+                targetTip,
+                tipNow: await getBlockHeight(),
+            });
+
+            contractUtxos = await fetchUTXOs(contractPaymentAddress);
+            if (contractUtxos.length === 0) {
+                throw new Error('No contract UTXOs after CSV maturity wait');
+            }
         }
 
         const fnMeta: FunctionMeta =
@@ -372,7 +407,8 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
                     vout: u.vout,
                     satoshis: BigInt(u.value),
                 },
-                unlocker
+                unlocker,
+                csvRefundSequence !== undefined ? { sequence: csvRefundSequence } : undefined
             );
         });
 
@@ -383,41 +419,19 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
 
         const outputs = buildTxOutputs(outputStrategy, totalInput, fee, sweepDestination, contract.address);
 
-        let sponsorInputValue = 0n;
-        if (outputStrategy.kind === 'exact-input-value-to-wallet') {
-            // For INPUT_OUTPUT_VALUE_MATCH, the contract output cannot absorb miner fee.
-            // Add one burner P2PKH input so relay/miner fee is paid externally.
-            const burnerSpendUtxos = await fetchUTXOs(burnerAddress);
-            const sponsor = burnerSpendUtxos
-                .filter((u) => BigInt(u.value) >= 600n)
-                .sort((a, b) => a.value - b.value)[0];
-            if (!sponsor) {
-                throw new Error('No burner UTXO available to sponsor relay fee for exact-input-value spend');
-            }
-
-            const decoded = decodePrivateKeyWif(wif);
-            if (typeof decoded === 'string') throw new Error(decoded);
-            const secp256k1 = await instantiateSecp256k1();
-            const ripemd160 = await instantiateRipemd160();
-            const pubkeyBytes = secp256k1.derivePublicKeyCompressed(decoded.privateKey);
-            if (typeof pubkeyBytes === 'string') throw new Error(pubkeyBytes);
-            const pkh = ripemd160.hash(sha256.hash(pubkeyBytes));
-            const p2pkh = new Contract(getP2pkhBridgeArtifact() as any, [pkh], { provider });
-            const signer = new SignatureTemplate(wif);
-            const sponsorUnlocker = p2pkh.unlock.spend(pubkeyBytes, signer);
-
-            txBuilder.addInput(
-                {
-                    txid: sponsor.txid,
-                    vout: sponsor.vout,
-                    satoshis: BigInt(sponsor.value),
-                },
-                sponsorUnlocker
-            );
-            sponsorInputValue = BigInt(sponsor.value);
-        }
+        const { sponsorInputValue } = await attachBurnerP2pkhSponsorIfNeeded({
+            outputStrategy,
+            txBuilder,
+            provider,
+            wif,
+            burnerAddress,
+        });
 
         outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
+
+        if (csvRefundTxLocktime !== undefined) {
+            txBuilder.setLocktime(csvRefundTxLocktime);
+        }
 
         const builtSpend = await txBuilder.build();
         const signedHex = typeof builtSpend === 'string' ? builtSpend : (builtSpend as any).hex;
@@ -431,6 +445,9 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             outputs: outputs.map((o) => ({ to: o.to, amount: o.amount.toString() })),
             fee: fee.toString(),
             totalInput: totalInput.toString(),
+            csvRefundSequence:
+                csvRefundSequence !== undefined ? String(csvRefundSequence) : undefined,
+            txLocktime: csvRefundTxLocktime !== undefined ? String(csvRefundTxLocktime) : undefined,
             sponsorInputValue: sponsorInputValue.toString(),
             effectiveMinerFee: effectiveMinerFee.toString(),
             activeHost,
