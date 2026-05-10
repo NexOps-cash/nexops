@@ -367,10 +367,10 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             }
 
             const targetTip = anchor.height + timeoutBlocks;
-            /** Extra chain tip block avoids relay treating CSV + nLocktime as unsatisfied at boundary */
+            /** Two blocks past CSV target avoids relay `non-BIP68-final` at boundary (Chipnet / Electrum height skew). */
             await pollUntil(
                 () => getBlockHeight(),
-                (tip) => tip >= targetTip + 1,
+                (tip) => tip >= targetTip + 2,
                 pollTimeoutMs,
                 2500
             );

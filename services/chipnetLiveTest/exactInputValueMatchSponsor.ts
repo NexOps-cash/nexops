@@ -54,7 +54,9 @@ export async function attachBurnerP2pkhSponsorIfNeeded(params: {
             vout: sponsor.vout,
             satoshis: BigInt(sponsor.value),
         },
-        sponsorUnlocker
+        sponsorUnlocker,
+        /** CashScript default 0xfffffffe can interact oddly with mixed CSV spends; max opts sponsor out of sequence semantics. */
+        { sequence: 0xffffffff }
     );
 
     return { sponsorInputValue: BigInt(sponsor.value) };
