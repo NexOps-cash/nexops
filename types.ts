@@ -135,6 +135,9 @@ export interface WizardDeployRecord {
   kindName: string;
   contractAddress: string;
   tokenAddress?: string;
+  /** NexOps test identity selected under “Deploy identity context” when funded — guides spend signing. */
+  deployIdentityWalletId?: string;
+  deployIdentityWalletName?: string;
   constructorArgs: string[];
   wizardFieldSnapshot: Record<string, string | number | boolean>;
   /** Feature toggles at deploy time — used to resolve labels in history. */

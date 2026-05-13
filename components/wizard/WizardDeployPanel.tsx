@@ -70,6 +70,8 @@ export interface WizardDeployPanelProps {
   wizardFields: Record<string, string | number | boolean>;
   wizardEnabled: Record<string, boolean>;
   onRecordSaved: () => void;
+  /** Opens Transaction Builder for this funded deployment (same record written to history). */
+  onRequestSpend?: (record: WizardDeployRecord) => void;
 }
 
 export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
@@ -83,6 +85,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   wizardFields,
   wizardEnabled,
   onRecordSaved,
+  onRequestSpend,
 }) => {
   const { wallets, activeWallet } = useWallet();
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   const [stepBanner, setStepBanner] = useState<string | null>(null);
   const [fundingCheckBusy, setFundingCheckBusy] = useState(false);
   const pollGenRef = useRef(0);
+  const [fundedRecordForSpend, setFundedRecordForSpend] = useState<WizardDeployRecord | null>(null);
 
   useEffect(() => {
     if (!wallets.length) {
@@ -127,6 +131,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       setStepBanner(null);
       setFundingCheckBusy(false);
       pollGenRef.current += 1;
+      setFundedRecordForSpend(null);
       return;
     }
 
@@ -198,6 +203,8 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         kindName,
         contractAddress: addr,
         tokenAddress,
+        deployIdentityWalletId: selectedWallet?.id,
+        deployIdentityWalletName: selectedWallet?.name,
         constructorArgs: [...constructorArgs],
         wizardFieldSnapshot: { ...wizardFields },
         wizardEnabled: { ...wizardEnabled },
@@ -209,6 +216,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         artifact,
       };
       addWizardDeploy(record);
+      setFundedRecordForSpend(record);
       onRecordSaved();
       toast.success('Contract funded on Chipnet.');
     },
@@ -222,6 +230,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       onRecordSaved,
       wizardEnabled,
       wizardFields,
+      selectedWallet,
     ]
   );
 
@@ -330,6 +339,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
 
   const handleResetDeploy = () => {
     pollGenRef.current += 1;
+    setFundedRecordForSpend(null);
     setDeployStep(0);
     setPaymentUri(null);
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
@@ -340,6 +350,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
 
   const handleDeployAnother = () => {
     pollGenRef.current += 1;
+    setFundedRecordForSpend(null);
     setDeployStep(0);
     setPaymentUri(null);
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
@@ -666,6 +677,15 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   >
                     View address on explorer
                   </Button>
+                  {fundedRecordForSpend && onRequestSpend ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => onRequestSpend(fundedRecordForSpend)}
+                    >
+                      Call function
+                    </Button>
+                  ) : null}
                 </div>
                 <p className="text-[10px] text-slate-500 leading-relaxed">
                   Opens Chipnet on <span className="text-slate-400">chipnet.bchexplorer.info</span> — same tx id string Paytaca shows.

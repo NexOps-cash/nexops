@@ -35,6 +35,7 @@ import { ActionsBar } from '../components/wizard/ActionsBar';
 import { WizardDeployOverviewModal } from '../components/wizard/WizardDeployOverviewModal';
 import { WizardDeployPanel } from '../components/wizard/WizardDeployPanel';
 import { DeployHistoryPanel } from '../components/wizard/DeployHistoryPanel';
+import { WizardSpendModal } from '../components/wizard/WizardSpendModal';
 import { WizardTemplatePicker } from '../components/wizard/WizardTemplatePicker';
 import { getWizardDeploys } from '../lib/wizardDeployStore';
 
@@ -191,6 +192,8 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   const [deployOverviewOpen, setDeployOverviewOpen] = useState(false);
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [wizardDeployRecords, setWizardDeployRecords] = useState<WizardDeployRecord[]>(() => getWizardDeploys());
+  const [spendModalOpen, setSpendModalOpen] = useState(false);
+  const [spendModalRecord, setSpendModalRecord] = useState<WizardDeployRecord | null>(null);
   const [debouncedBuild, setDebouncedBuild] = useState<BuildOptions>({
     fields: wizardState.fields,
     enabled: wizardState.enabled,
@@ -200,6 +203,11 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
 
   const refreshWizardDeploys = useCallback(() => {
     setWizardDeployRecords(getWizardDeploys());
+  }, []);
+
+  const openWizardSpend = useCallback((rec: WizardDeployRecord) => {
+    setSpendModalRecord(rec);
+    setSpendModalOpen(true);
   }, []);
 
   const fieldDefsVisible = useMemo(
@@ -489,7 +497,11 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
                     />
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                    <DeployHistoryPanel kindId={activeKind.id} records={wizardDeployRecords} />
+                    <DeployHistoryPanel
+                      kindId={activeKind.id}
+                      records={wizardDeployRecords}
+                      onRequestSpend={openWizardSpend}
+                    />
                   </div>
                 </div>
                 <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden">
@@ -564,6 +576,18 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
         wizardFields={wizardState.fields}
         wizardEnabled={wizardState.enabled}
         onRecordSaved={refreshWizardDeploys}
+        onRequestSpend={(rec) => {
+          setDeployModalOpen(false);
+          openWizardSpend(rec);
+        }}
+      />
+      <WizardSpendModal
+        isOpen={spendModalOpen}
+        onClose={() => {
+          setSpendModalOpen(false);
+          setSpendModalRecord(null);
+        }}
+        record={spendModalRecord}
       />
     </div>
   );
