@@ -39,6 +39,24 @@ export function estimateFee(inputCount: number, outputCount: number): bigint {
     return BigInt(10 + inputCount * 300 + outputCount * 34);
 }
 
+/** Chipnet relay policy rejects naive fee estimates for large covenant scripts (error 66). */
+export const CHIPNET_MIN_RELAY_FEE_SATS = 1200n;
+
+/** Effective miner fee for preview + broadcast on Chipnet (non–IOVM spends use a conservative floor). */
+export function effectiveRelayFeeSats(
+    strategy: OutputStrategy,
+    inputCount: number,
+    outputCount: number,
+    network?: string
+): bigint {
+    const base = feeForStrategy(strategy, inputCount, outputCount);
+    const chipnet = network === 'chipnet';
+    if (!chipnet || strategy.kind === 'exact-input-value-to-wallet') {
+        return base;
+    }
+    return base >= CHIPNET_MIN_RELAY_FEE_SATS ? base : CHIPNET_MIN_RELAY_FEE_SATS;
+}
+
 /** Fee for a planned spend; multisig-style INPUT_OUTPUT_VALUE_MATCH uses zero fee (output must equal input). */
 export function feeForStrategy(
     strategy: OutputStrategy,

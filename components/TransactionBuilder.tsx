@@ -22,17 +22,29 @@ import { QRCodeSVG } from 'qrcode.react';
 import LocalWalletService from '../services/localWalletService';
 import { cashscriptBytesFromString } from '../services/cashscriptBytes';
 import toast from 'react-hot-toast';
-import { decodeCashAddress } from '@bitauth/libauth';
+import { decodeCashAddress, cashAddressToLockingBytecode, binToHex } from '@bitauth/libauth';
 import { coerceConstructorArgs } from '../services/addressService';
 import type { FunctionMeta } from '../services/wizard/parseContractMeta';
 import { parseFunctionMeta } from '../services/wizard/parseContractMeta';
 import {
     estimateFee,
-    feeForStrategy,
     deriveOutputStrategy,
     buildTxOutputs,
+    effectiveRelayFeeSats,
+    CHIPNET_MIN_RELAY_FEE_SATS,
     type OutputStrategy,
 } from '../services/wizard/txPlanning';
+
+/** Legacy vs token-aware Chipnet CashAddr encodings share the same locking bytecode — string compare false positive. */
+function covenantCashAddrsEquivalent(a: string, b: string): boolean {
+    const x = a.trim();
+    const y = b.trim();
+    if (x === y) return true;
+    const ra = cashAddressToLockingBytecode(x);
+    const rb = cashAddressToLockingBytecode(y);
+    if (typeof ra === 'string' || typeof rb === 'string') return false;
+    return binToHex(ra.bytecode) === binToHex(rb.bytecode);
+}
 
 interface TransactionBuilderProps {
     artifact: ContractArtifact;
@@ -177,7 +189,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             };
         const strategy = deriveOutputStrategy(meta);
         const outputCount = 1;
-        const fee = feeForStrategy(strategy, selectedUtxos.length, outputCount);
+        const fee = effectiveRelayFeeSats(strategy, selectedUtxos.length, outputCount, network);
         const totalInput = selectedUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
 
         const globalWalletForAddr = wallets.find((w) => w.id === selectedGlobalWalletId);
@@ -227,6 +239,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         wallets,
         burnerAddress,
         deployedAddress,
+        network,
     ]);
 
     // Initialize/Sync constructor args
@@ -554,11 +567,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const signer = new SignatureTemplate(burnerWif);
 
             // 4. Calculate amount (Sweep minus fee)
-            const fee = estimateFee(1, 1);
+            const rawBridgeFee = estimateFee(1, 1);
+            const fee =
+                network === 'chipnet' && rawBridgeFee < CHIPNET_MIN_RELAY_FEE_SATS ?
+                    CHIPNET_MIN_RELAY_FEE_SATS
+                :   rawBridgeFee;
             const amount = BigInt(burnerBalance || 0) - fee;
 
             if (amount <= 500n) {
-                toast.error('Insufficient burner funds (min ~1500 sats needed).', { id: 'bridge_load' });
+                toast.error('Insufficient burner funds (need balance above Chipnet relay fee + dust).', { id: 'bridge_load' });
                 return;
             }
 
@@ -681,8 +698,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             console.log('[Debug] Generated Address (Local):  ', contract.address);
             console.log('[Debug] Constructor Args Used:      ', sanitizedConstructorArgs);
 
-            if (deployedAddress && contract.address !== deployedAddress) {
-                const errorMsg = `Identity Drift Detected: The contract address generated from your current configuration (${contract.address}) does not match the deployed address (${deployedAddress}). This usually means your identity keys have changed since deployment. Script verification will likely fail.`;
+            const candidateAddrs = [contract.address, (contract as { tokenAddress?: string }).tokenAddress].filter(
+                (addr): addr is string => typeof addr === 'string' && addr.trim().length > 0
+            );
+            const addrMatchesDeployment =
+                !deployedAddress ||
+                candidateAddrs.some((addr) => covenantCashAddrsEquivalent(deployedAddress, addr));
+
+            if (!addrMatchesDeployment) {
+                const errorMsg = `Identity Drift Detected: The contract address generated from your current configuration (${candidateAddrs.join(' / ')}) does not match the deployed address (${deployedAddress}). This usually means your identity keys or constructor args have changed since deployment. Script verification will likely fail.`;
                 console.error(errorMsg);
                 throw new Error(errorMsg);
             }
@@ -788,7 +812,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 0n
             );
             const outputCount = 1;
-            const fee = feeForStrategy(outputStrategy, selectedUtxos.length, outputCount);
+            const fee = effectiveRelayFeeSats(outputStrategy, selectedUtxos.length, outputCount, network);
 
             const globalWalletForAddr = wallets.find(w => w.id === selectedGlobalWalletId);
             const walletAddress = signingMethod === 'burner' ? (globalWalletForAddr?.address || burnerAddress) : getWalletAddress();
