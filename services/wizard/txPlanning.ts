@@ -1,3 +1,4 @@
+import type { ContractArtifact } from '../../types';
 import type { FunctionMeta } from './parseContractMeta';
 
 export type OutputStrategy =
@@ -35,14 +36,42 @@ export function deriveOutputStrategy(meta: FunctionMeta): OutputStrategy {
     return { kind: 'unknown' };
 }
 
+/**
+ * `ArbitrationEscrow` `complete` / `arbitrateToSeller` with `releaseCapSats == 0` requires:
+ * `tx.outputs[0].value == tx.inputs[this.activeInputIndex].value` (one contract input per tx) and pays **no** fee from that output.
+ * CLI (`runChipnetFlow`) switches to `exact-input-value-to-wallet` + P2PKH fee sponsor — sweep-minus-fee would fail script checks.
+ */
+export function escrowSellerExactInputPath(
+    artifact: ContractArtifact,
+    functionName: string,
+    constructorStrings: string[]
+): boolean {
+    if (artifact.contractName !== 'ArbitrationEscrow') return false;
+    if (functionName !== 'complete' && functionName !== 'arbitrateToSeller') return false;
+    const capIdx = artifact.constructorInputs.findIndex((i) => i.name === 'releaseCapSats');
+    if (capIdx < 0) return false;
+    const cap = Number(constructorStrings[capIdx] ?? '0');
+    return Number.isFinite(cap) && cap === 0;
+}
+
 export function estimateFee(inputCount: number, outputCount: number): bigint {
     return BigInt(10 + inputCount * 300 + outputCount * 34);
 }
 
-/** Chipnet relay policy rejects naive fee estimates for large covenant scripts (error 66). */
+/** Absolute floor for tiny spends — superseded by {@link chipnetFootprintRelayFloor} when inputs add bulk. */
 export const CHIPNET_MIN_RELAY_FEE_SATS = 1200n;
 
-/** Effective miner fee for preview + broadcast on Chipnet (non–IOVM spends use a conservative floor). */
+/**
+ * Chipnet fee sizing from serialized footprint (~1.15 sat/vbyte margin). Used for relay floors and minimum sponsor value.
+ */
+export function estimateChipnetRelayFootprintFeeSats(inputCount: number, outputCount: number): bigint {
+    const ins = Math.max(1, inputCount);
+    const outs = Math.max(1, outputCount);
+    const estimatedBytes = 200 + ins * 950 + outs * 55;
+    return (BigInt(estimatedBytes) * 115n) / 100n;
+}
+
+/** Effective miner fee for preview + broadcast on Chipnet (non–IOVM spends use size-aware floor). */
 export function effectiveRelayFeeSats(
     strategy: OutputStrategy,
     inputCount: number,
@@ -50,11 +79,13 @@ export function effectiveRelayFeeSats(
     network?: string
 ): bigint {
     const base = feeForStrategy(strategy, inputCount, outputCount);
-    const chipnet = network === 'chipnet';
+    const chipnet = (network ?? '').toLowerCase() === 'chipnet';
     if (!chipnet || strategy.kind === 'exact-input-value-to-wallet') {
         return base;
     }
-    return base >= CHIPNET_MIN_RELAY_FEE_SATS ? base : CHIPNET_MIN_RELAY_FEE_SATS;
+    const staticFloor = base >= CHIPNET_MIN_RELAY_FEE_SATS ? base : CHIPNET_MIN_RELAY_FEE_SATS;
+    const sizeFloor = estimateChipnetRelayFootprintFeeSats(inputCount, outputCount);
+    return staticFloor > sizeFloor ? staticFloor : sizeFloor;
 }
 
 /** Fee for a planned spend; multisig-style INPUT_OUTPUT_VALUE_MATCH uses zero fee (output must equal input). */

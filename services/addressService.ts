@@ -1,4 +1,5 @@
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
+import { encodeCashAddress } from '@bitauth/libauth';
 import { ContractArtifact } from '../types';
 import { ELECTRUM_FALLBACK_SERVERS } from './blockchainService';
 import { normalizeChipnetCashAddress } from './chipnetCashAddr';
@@ -35,6 +36,54 @@ export function coerceConstructorArgs(
         }
         return val;
     });
+}
+
+function lockingBytecodeHexToUint8Array(hexRaw: string): Uint8Array {
+    const s = hexRaw.trim().replace(/^0x/i, '');
+    if (!s.length || s.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(s)) {
+        throw new Error('Invalid locking bytecode hex');
+    }
+    return new Uint8Array(s.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+}
+
+/** Standard P2PKH locking bytecode (OP_DUP OP_HASH160 … OP_EQUALVERIFY OP_CHECKSIG). */
+export function chipnetLockingBytecodeToP2pkhAddress(lockingBytecode: Uint8Array): string {
+    const lb = lockingBytecode;
+    if (
+        lb.length !== 25 ||
+        lb[0] !== 0x76 ||
+        lb[1] !== 0xa9 ||
+        lb[2] !== 0x14 ||
+        lb[23] !== 0x88 ||
+        lb[24] !== 0xac
+    ) {
+        throw new Error(
+            'Expected standard P2PKH locking bytecode for seller payout (NexOps escrow uses hex like 76a914…88ac).'
+        );
+    }
+    const pkh = lb.slice(3, 23);
+    const { address } = encodeCashAddress({ prefix: 'bchtest', type: 'p2pkh', payload: pkh });
+    try {
+        return normalizeChipnetCashAddress(address);
+    } catch {
+        return address;
+    }
+}
+
+/** CashAddr paid by `complete` / `arbitrateToSeller` — must match constructor `sellerLockingBytecode`. */
+export function arbitrationEscrowSellerPayoutAddress(
+    artifact: ContractArtifact,
+    constructorArgStrings: string[]
+): string {
+    if (artifact.contractName !== 'ArbitrationEscrow') {
+        throw new Error('arbitrationEscrowSellerPayoutAddress: not ArbitrationEscrow');
+    }
+    const idx = artifact.constructorInputs.findIndex((i) => i.name === 'sellerLockingBytecode');
+    if (idx < 0) throw new Error('artifact missing sellerLockingBytecode');
+    const coerced = coerceConstructorArgs(artifact.constructorInputs, constructorArgStrings)[idx];
+    const bytes =
+        coerced instanceof Uint8Array ? coerced : lockingBytecodeHexToUint8Array(String(coerced ?? ''));
+    return chipnetLockingBytecodeToP2pkhAddress(bytes);
 }
 
 /**

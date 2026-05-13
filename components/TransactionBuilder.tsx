@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ContractArtifact, ExecutionRecord, Project } from '../types';
 import { useWallet } from '../contexts/WalletContext';
 import { Button, Badge, Modal, Input, Card } from './UI';
@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import {
     getExplorerLink,
-    fetchUTXOs,
+    fetchUTXOsWithTimeout,
     subscribeToAddress,
     requestFaucetFunds,
     getElectrumConnectionSnapshot,
@@ -23,7 +23,7 @@ import LocalWalletService from '../services/localWalletService';
 import { cashscriptBytesFromString } from '../services/cashscriptBytes';
 import toast from 'react-hot-toast';
 import { decodeCashAddress, cashAddressToLockingBytecode, binToHex } from '@bitauth/libauth';
-import { coerceConstructorArgs } from '../services/addressService';
+import { coerceConstructorArgs, arbitrationEscrowSellerPayoutAddress } from '../services/addressService';
 import type { FunctionMeta } from '../services/wizard/parseContractMeta';
 import { parseFunctionMeta } from '../services/wizard/parseContractMeta';
 import {
@@ -32,8 +32,10 @@ import {
     buildTxOutputs,
     effectiveRelayFeeSats,
     CHIPNET_MIN_RELAY_FEE_SATS,
+    escrowSellerExactInputPath,
     type OutputStrategy,
 } from '../services/wizard/txPlanning';
+import { attachBurnerP2pkhSponsorIfNeeded } from '../services/chipnetLiveTest/exactInputValueMatchSponsor';
 
 /** Legacy vs token-aware Chipnet CashAddr encodings share the same locking bytecode — string compare false positive. */
 function covenantCashAddrsEquivalent(a: string, b: string): boolean {
@@ -44,6 +46,17 @@ function covenantCashAddrsEquivalent(a: string, b: string): boolean {
     const rb = cashAddressToLockingBytecode(y);
     if (typeof ra === 'string' || typeof rb === 'string') return false;
     return binToHex(ra.bytecode) === binToHex(rb.bytecode);
+}
+
+/**
+ * Contract inputs for spending: there is no multi-select UI yet, so an empty selection means “all synced UTXOs”.
+ * (Previously only the single-UTXO case was auto-selected, which broke execute when several outputs existed.)
+ */
+function pickContractUtxosForSpend(contractUtxos: any[] | null | undefined, selectedUtxoIds: string[]): any[] {
+    const list = contractUtxos ?? [];
+    if (!list.length) return [];
+    if (!selectedUtxoIds.length) return list;
+    return list.filter((u) => selectedUtxoIds.includes(`${u.txid}:${u.vout}`));
 }
 
 interface TransactionBuilderProps {
@@ -159,8 +172,21 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
     const outputStrategyForSelection = useMemo((): OutputStrategy => {
         if (!selectedFunctionMeta) return { kind: 'unknown' };
-        return deriveOutputStrategy(selectedFunctionMeta);
-    }, [selectedFunctionMeta]);
+        let s = deriveOutputStrategy(selectedFunctionMeta);
+        const strings = (project.deploymentRecord?.constructorArgs ?? internalConstructorArgs).map((a) =>
+            String(a ?? '')
+        );
+        if (s.kind === 'sweep-to-wallet' && escrowSellerExactInputPath(artifact, selectedFunction, strings)) {
+            return { kind: 'exact-input-value-to-wallet' };
+        }
+        return s;
+    }, [
+        selectedFunctionMeta,
+        artifact,
+        selectedFunction,
+        project.deploymentRecord?.constructorArgs,
+        internalConstructorArgs,
+    ]);
 
     /** HashTimeLock `refund()` uses CSV relative maturity; Chipnet interaction can sit idle for many minutes. */
     const isHtlcRefundSlowPath = useMemo(
@@ -173,13 +199,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
     const txExecutionPreview = useMemo(() => {
         if (!selectedFunction || !contractUtxos?.length) return null;
 
-        let selectedUtxos = contractUtxos.filter((u) =>
-            selectedUtxoIds.includes(`${u.txid}:${u.vout}`)
-        );
-        if (selectedUtxos.length === 0 && contractUtxos.length === 1) {
-            selectedUtxos = contractUtxos;
-        }
+        let selectedUtxos = pickContractUtxosForSpend(contractUtxos, selectedUtxoIds);
         if (selectedUtxos.length === 0) return null;
+
+        const strings = (project.deploymentRecord?.constructorArgs ?? internalConstructorArgs).map((a) =>
+            String(a ?? '')
+        );
+        if (escrowSellerExactInputPath(artifact, selectedFunction, strings) && selectedUtxoIds.length === 0) {
+            selectedUtxos = [...selectedUtxos].sort((a, b) => b.value - a.value).slice(0, 1);
+        }
 
         const meta: FunctionMeta =
             functionMetaByName[selectedFunction] ?? {
@@ -187,7 +215,13 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 role: 'quorum-spend',
                 invariants: [],
             };
-        const strategy = deriveOutputStrategy(meta);
+        let strategy = deriveOutputStrategy(meta);
+        if (
+            strategy.kind === 'sweep-to-wallet' &&
+            escrowSellerExactInputPath(artifact, selectedFunction, strings)
+        ) {
+            strategy = { kind: 'exact-input-value-to-wallet' };
+        }
         const outputCount = 1;
         const fee = effectiveRelayFeeSats(strategy, selectedUtxos.length, outputCount, network);
         const totalInput = selectedUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
@@ -199,10 +233,20 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 : walletConnectService.getAddress() || '';
 
         const contractAddr = (deployedAddress || '').trim();
-        const outputTo =
-            walletCandidate && walletCandidate !== 'Not Connected'
-                ? walletCandidate
-                : contractAddr;
+
+        let outputTo =
+            walletCandidate && walletCandidate !== 'Not Connected' ? walletCandidate : contractAddr;
+
+        if (
+            artifact.contractName === 'ArbitrationEscrow' &&
+            (selectedFunction === 'complete' || selectedFunction === 'arbitrateToSeller')
+        ) {
+            try {
+                outputTo = arbitrationEscrowSellerPayoutAddress(artifact, strings);
+            } catch {
+                /* incomplete preview — execution will validate */
+            }
+        }
 
         try {
             const outputs = buildTxOutputs(strategy, totalInput, fee, outputTo, contractAddr || outputTo);
@@ -240,6 +284,45 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         burnerAddress,
         deployedAddress,
         network,
+        artifact,
+        internalConstructorArgs,
+        project.deploymentRecord?.constructorArgs,
+    ]);
+
+    /** Burner mode can still sign multiple roles in one tx — each sig slot uses the identity whose pubkey matches buyerPk/sellerPk/arbiterPk. */
+    const multiPartySignerPreview = useMemo(() => {
+        if (!selectedFunction || signingMethod !== 'burner') return null;
+        const fn = functions.find((f: { name: string }) => f.name === selectedFunction);
+        if (!fn?.inputs?.length) return null;
+        const persisted = project.deploymentRecord?.constructorArgs;
+        const args =
+            persisted && persisted.length === constructorInputs.length ? persisted : internalConstructorArgs;
+        const rows: { slot: string; party: string; walletName: string; matched: boolean }[] = [];
+        for (const inp of fn.inputs as { name: string; type: string }[]) {
+            if (inp.type !== 'sig') continue;
+            const m = inp.name.match(/^(buyer|seller|arbiter)Sig$/i);
+            if (!m) continue;
+            const role = m[1].toLowerCase();
+            const pkField = `${role}Pk`;
+            const pkIdx = constructorInputs.findIndex((ci) => ci.name === pkField);
+            const expectedPk = pkIdx >= 0 ? (args[pkIdx] ?? '').trim().toLowerCase() : '';
+            const w = expectedPk ? wallets.find((x) => x.pubkey.trim().toLowerCase() === expectedPk) : undefined;
+            rows.push({
+                slot: inp.name,
+                party: role,
+                walletName: w?.name ?? 'No matching identity',
+                matched: !!w,
+            });
+        }
+        return rows.length > 0 ? rows : null;
+    }, [
+        selectedFunction,
+        signingMethod,
+        functions,
+        internalConstructorArgs,
+        project.deploymentRecord?.constructorArgs,
+        constructorInputs,
+        wallets,
     ]);
 
     // Initialize/Sync constructor args
@@ -349,8 +432,57 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         }
     }, [initialUtxo]);
 
-    // Fetch UTXOs when component mounts or address changes
-    // Monitor addresses using subscriptions for "instant" updates
+    const loadUtxos = useCallback(async (manual = false) => {
+        if (!deployedAddress) return;
+        setIsFetchingUtxos(true);
+        let refreshToastSettled = !manual;
+        if (manual) toast.loading('Refreshing balance...', { id: 'refresh_load' });
+        try {
+            const utxos = await fetchUTXOsWithTimeout(deployedAddress);
+            setContractUtxos(utxos);
+
+            const confirmedValue = utxos.filter(u => u.height > 0).reduce((acc, u) => acc + u.value, 0);
+            const unconfirmedValue = utxos.filter(u => u.height === 0).reduce((acc, u) => acc + u.value, 0);
+
+            setTotalBalance(confirmedValue + unconfirmedValue);
+            setUnconfirmedContractBalance(unconfirmedValue);
+
+            if (confirmedValue + unconfirmedValue > 0) setIsAwaitingPropagation(false);
+
+            if (burnerAddress) {
+                const bUtxos = await fetchUTXOsWithTimeout(burnerAddress);
+                const bConfirmedValue = bUtxos.filter(u => u.height > 0).reduce((acc, u) => acc + u.value, 0);
+                const bUnconfirmedValue = bUtxos.filter(u => u.height === 0).reduce((acc, u) => acc + u.value, 0);
+
+                setBurnerBalance(bConfirmedValue + bUnconfirmedValue);
+                setUnconfirmedBurnerBalance(bUnconfirmedValue);
+
+                if (bConfirmedValue + bUnconfirmedValue > 0) setIsAwaitingPropagation(false);
+            }
+            if (manual) {
+                toast.success('Balance updated', { id: 'refresh_load' });
+                refreshToastSettled = true;
+            }
+        } catch (e) {
+            console.error(e);
+            if (manual) {
+                const msg = e instanceof Error ? e.message : 'Failed to refresh balance';
+                toast.error(msg, { id: 'refresh_load' });
+                refreshToastSettled = true;
+            }
+        } finally {
+            setIsFetchingUtxos(false);
+            if (manual && !refreshToastSettled) toast.dismiss('refresh_load');
+        }
+    }, [deployedAddress, burnerAddress]);
+
+    /** Explicit fetch on mount / address change — subscriptions alone miss errors (they previously swallowed RPC failures as empty). */
+    useEffect(() => {
+        if (!deployedAddress) return;
+        void loadUtxos(false);
+    }, [deployedAddress, burnerAddress, loadUtxos]);
+
+    // Monitor addresses using subscriptions for live updates
     useEffect(() => {
         if (!deployedAddress) return;
 
@@ -445,47 +577,11 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         }
     }, [selectedGlobalWalletId, signingMethod, wallets]);
 
-    const loadUtxos = async (manual = false) => {
-        if (!deployedAddress) return;
-        setIsFetchingUtxos(true);
-        if (manual) toast.loading('Refreshing balance...', { id: 'refresh_load' });
-        try {
-            const utxos = await fetchUTXOs(deployedAddress);
-            setContractUtxos(utxos);
-
-            const confirmedValue = utxos.filter(u => u.height > 0).reduce((acc, u) => acc + u.value, 0);
-            const unconfirmedValue = utxos.filter(u => u.height === 0).reduce((acc, u) => acc + u.value, 0);
-
-            setTotalBalance(confirmedValue + unconfirmedValue);
-            setUnconfirmedContractBalance(unconfirmedValue);
-
-            if (confirmedValue + unconfirmedValue > 0) setIsAwaitingPropagation(false);
-
-            // Also check burner if active
-            if (burnerAddress) {
-                const bUtxos = await fetchUTXOs(burnerAddress);
-                const bConfirmedValue = bUtxos.filter(u => u.height > 0).reduce((acc, u) => acc + u.value, 0);
-                const bUnconfirmedValue = bUtxos.filter(u => u.height === 0).reduce((acc, u) => acc + u.value, 0);
-
-                setBurnerBalance(bConfirmedValue + bUnconfirmedValue);
-                setUnconfirmedBurnerBalance(bUnconfirmedValue);
-
-                if (bConfirmedValue + bUnconfirmedValue > 0) setIsAwaitingPropagation(false);
-            }
-            if (manual) toast.success('Balance updated', { id: 'refresh_load' });
-        } catch (e) {
-            console.error(e);
-            if (manual) toast.error('Failed to refresh balance', { id: 'refresh_load' });
-        } finally {
-            setIsFetchingUtxos(false);
-        }
-    };
-
     useEffect(() => {
-        if (isModalOpen && currentStep === 3) {
-            loadUtxos();
+        if (isModalOpen && currentStep === 3 && deployedAddress) {
+            void loadUtxos(false);
         }
-    }, [isModalOpen, currentStep, deployedAddress]);
+    }, [isModalOpen, currentStep, deployedAddress, loadUtxos]);
 
     // Fallback polling for 0-conf propagation
     useEffect(() => {
@@ -499,7 +595,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
         return () => {
             if (intervalId) clearInterval(intervalId);
         };
-    }, [isAwaitingPropagation, deployedAddress, burnerAddress]);
+    }, [isAwaitingPropagation, deployedAddress, burnerAddress, loadUtxos]);
 
     /**
      * Reusable Faucet function
@@ -662,6 +758,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 Network: CashScriptNetwork,
             } = await import('cashscript');
 
+            const deploymentArgs = project.deploymentRecord?.constructorArgs;
+            const sanitizedConstructorArgs = (deploymentArgs || internalConstructorArgs).map((arg) => arg || '');
+
             const source =
                 project.contractCode ??
                 project.files.find((f) => f.name.endsWith('.cash'))?.content ??
@@ -673,7 +772,13 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     role: 'quorum-spend',
                     invariants: [],
                 };
-            const outputStrategy = deriveOutputStrategy(fnMeta);
+            let outputStrategy = deriveOutputStrategy(fnMeta);
+            if (
+                outputStrategy.kind === 'sweep-to-wallet' &&
+                escrowSellerExactInputPath(artifact, selectedFunction, sanitizedConstructorArgs)
+            ) {
+                outputStrategy = { kind: 'exact-input-value-to-wallet' };
+            }
 
             const activeHost =
                 getElectrumConnectionSnapshot().host ?? ELECTRUM_FALLBACK_SERVERS[0];
@@ -682,12 +787,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             });
             console.log(`Provider initialized with Electrum host: ${activeHost}`);
 
-            // 2. Initialize Contract
-            // NEW: Prioritize persisted constructor args from deploymentRecord to ensure identity stability.
-            // This prevents "Identity Drift" if the user edits the sidebar config after deployment.
-            const deploymentArgs = project.deploymentRecord?.constructorArgs;
-            const sanitizedConstructorArgs = (deploymentArgs || internalConstructorArgs).map(arg => arg || '');
-
+            // 2. Initialize Contract (sanitizedConstructorArgs already aligned with deployment record)
             const typedConstructorArgs = coerceConstructorArgs(artifact.constructorInputs, sanitizedConstructorArgs);
             const contract = new Contract(artifact as any, typedConstructorArgs, { provider }) as any;
 
@@ -717,21 +817,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const func = functions.find(f => f.name === selectedFunction);
             if (!func) throw new Error("Function not found");
 
-            // Setup Signature Template based on method
-            // If Burner, use real WIF to sign. If WalletConnect, use dummy key to bypass local signing.
-            const createWCTemplate = () => {
-                if (signingMethod === 'burner') {
-                    // Try to use selected global wallet first, then fallback to prop
-                    const globalWallet = wallets.find(w => w.id === selectedGlobalWalletId);
-                    const wifToUse = globalWallet?.wif || burnerWif;
+            const abiSigCount = func.inputs.filter((inp: { type: string }) => inp.type === 'sig').length;
 
-                    if (!wifToUse) throw new Error("No private key found for signing. Please generate or select a wallet.");
-                    return new SignatureTemplate(
-                        wifToUse,
-                        HashType.SIGHASH_ALL,
-                        SignatureAlgorithm.ECDSA
-                    );
-                } else {
+            const createSigTemplate = (sigAbiName: string) => {
+                if (signingMethod === 'walletconnect') {
+                    if (abiSigCount > 1) {
+                        throw new Error(
+                            'This call needs multiple ECDSA signatures (e.g. buyer + seller). Switch to Burner and add a NexOps test identity per party whose pubkey matches the constructor — WalletConnect here signs only one key per execution.'
+                        );
+                    }
                     const dummyKey = new Uint8Array(32).fill(1);
                     const wcTemplate = new SignatureTemplate(
                         dummyKey,
@@ -741,6 +835,33 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                     wcTemplate.generateSignature = (_payload: any, _bchForkId: any) => new Uint8Array(65).fill(0);
                     return wcTemplate;
                 }
+
+                const roleMatch = sigAbiName.match(/^(buyer|seller|arbiter)Sig$/i);
+                let wifToUse: string | undefined;
+                if (roleMatch) {
+                    const role = roleMatch[1].toLowerCase();
+                    const pkField = `${role}Pk`;
+                    const pkIdx = artifact.constructorInputs.findIndex((ci: { name: string }) => ci.name === pkField);
+                    const expectedPk =
+                        pkIdx >= 0 ? (sanitizedConstructorArgs[pkIdx] ?? '').trim().toLowerCase() : '';
+                    const matchedWallet = expectedPk
+                        ? wallets.find((w) => w.pubkey.trim().toLowerCase() === expectedPk)
+                        : undefined;
+                    if (expectedPk && !matchedWallet) {
+                        throw new Error(
+                            `No NexOps test identity has the ${role} private key (${pkField}). Add an identity whose pubkey matches the constructor, or import that WIF — ${sigAbiName} must be signed by ${role}.`
+                        );
+                    }
+                    if (matchedWallet) {
+                        wifToUse = matchedWallet.wif;
+                    }
+                }
+                if (!wifToUse) {
+                    const globalWallet = wallets.find((w) => w.id === selectedGlobalWalletId);
+                    wifToUse = globalWallet?.wif || burnerWif;
+                }
+                if (!wifToUse) throw new Error("No private key found for signing. Please generate or select a wallet.");
+                return new SignatureTemplate(wifToUse, HashType.SIGHASH_ALL, SignatureAlgorithm.ECDSA);
             };
 
             const typedArgs = await Promise.all(inputs.map(async (input, i) => {
@@ -748,8 +869,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                 // Handle Signature Placeholders
                 if (def.type === 'sig') {
-                    // Use our placeholder template
-                    return createWCTemplate();
+                    return createSigTemplate(def.name);
                 }
 
                 if (def.type === 'int') {
@@ -773,55 +893,72 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             // 4. Build Transaction (CashScript v0.10+ Flow)
             console.log("Preparing UTXOs from selected set...");
 
-            // Use selected UTXOs from state instead of fetching from contract again
-            // This ensures we spend exactly what the user sees and selects
-            let selectedUtxos = contractUtxos?.filter(u =>
-                selectedUtxoIds.includes(`${u.txid}:${u.vout}`)
-            ) || [];
-
-            // Logic: if only 1 utxo is available, use it even if not explicitly selected in UI
-            if (selectedUtxos.length === 0 && contractUtxos?.length === 1) {
-                selectedUtxos = contractUtxos;
-            }
+            let selectedUtxos = pickContractUtxosForSpend(contractUtxos, selectedUtxoIds);
 
             if (selectedUtxos.length === 0) {
                 throw new Error("No UTXOs found for this contract. Please fund it first.");
             }
 
+            if (escrowSellerExactInputPath(artifact, selectedFunction, sanitizedConstructorArgs)) {
+                if (selectedUtxos.length !== 1) {
+                    if (selectedUtxoIds.length > 0) {
+                        throw new Error(
+                            'Escrow with release cap 0 requires exactly one contract UTXO per transaction. Clear custom selection or pick a single output in Advanced.'
+                        );
+                    }
+                    selectedUtxos = [...selectedUtxos].sort((a, b) => b.value - a.value).slice(0, 1);
+                    toast.success(
+                        `Escrow release cap 0: one contract input per tx — using ${selectedUtxos[0].value} sats. Run again for other outputs.`,
+                        { duration: 6500 }
+                    );
+                }
+            }
+
             console.log(`Using ${selectedUtxos.length} selected UTXOs for transaction.`);
 
-            // Import TransactionBuilder class
             const { TransactionBuilder: CashScriptTransactionBuilder } = await import('cashscript');
             const txBuilder = new CashScriptTransactionBuilder({ provider });
 
-            // Get the unlocker (Redeem Script + Args)
             const unlocker = contract.unlock[selectedFunction](...typedArgs);
 
-            // Add all selected inputs with correct shape for CashScript TransactionBuilder
-            selectedUtxos.forEach(utxo => {
-                txBuilder.addInput({
-                    txid: utxo.txid,
-                    vout: utxo.vout,
-                    satoshis: BigInt(utxo.value)
-                }, unlocker);
+            selectedUtxos.forEach((utxo) => {
+                txBuilder.addInput(
+                    {
+                        txid: utxo.txid,
+                        vout: utxo.vout,
+                        satoshis: BigInt(utxo.value),
+                    },
+                    unlocker
+                );
             });
 
-            // 5. Configure Transaction
-            const totalInput = selectedUtxos.reduce(
-                (sum, u) => sum + BigInt(u.value),
-                0n
-            );
+            const totalInput = selectedUtxos.reduce((sum, u) => sum + BigInt(u.value), 0n);
             const outputCount = 1;
             const fee = effectiveRelayFeeSats(outputStrategy, selectedUtxos.length, outputCount, network);
 
-            const globalWalletForAddr = wallets.find(w => w.id === selectedGlobalWalletId);
-            const walletAddress = signingMethod === 'burner' ? (globalWalletForAddr?.address || burnerAddress) : getWalletAddress();
-            console.log('Using wallet address for output:', walletAddress);
+            const globalWalletForAddr = wallets.find((w) => w.id === selectedGlobalWalletId);
+            const walletAddress =
+                signingMethod === 'burner' ? globalWalletForAddr?.address || burnerAddress : getWalletAddress();
 
-            const sweepDestination =
-                walletAddress && walletAddress !== 'Not Connected'
-                    ? walletAddress
-                    : contract.address;
+            let sweepDestination =
+                walletAddress && walletAddress !== 'Not Connected' ? walletAddress : contract.address;
+
+            if (
+                artifact.contractName === 'ArbitrationEscrow' &&
+                (selectedFunction === 'complete' || selectedFunction === 'arbitrateToSeller')
+            ) {
+                try {
+                    sweepDestination = arbitrationEscrowSellerPayoutAddress(artifact, sanitizedConstructorArgs);
+                } catch (e) {
+                    console.warn('[TransactionBuilder] seller payout address', e);
+                    throw new Error(
+                        'Could not derive seller payout from sellerLockingBytecode (need standard P2PKH hex 76a914…88ac).'
+                    );
+                }
+            }
+
+            const sponsorWif = globalWalletForAddr?.wif || burnerWif;
+            const sponsorAddr = globalWalletForAddr?.address || burnerAddress;
 
             const outputs = buildTxOutputs(
                 outputStrategy,
@@ -830,6 +967,28 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 sweepDestination,
                 contract.address
             );
+
+            if (
+                outputStrategy.kind === 'exact-input-value-to-wallet' &&
+                escrowSellerExactInputPath(artifact, selectedFunction, sanitizedConstructorArgs)
+            ) {
+                if (!sponsorWif || !sponsorAddr) {
+                    throw new Error(
+                        'This escrow call pays the seller the full UTXO with no fee taken from that output (covenant rule). NexOps adds a separate Chipnet P2PKH input to pay miners — use Test Wallet with a funded identity (WIF), same pattern as the CLI.'
+                    );
+                }
+                await attachBurnerP2pkhSponsorIfNeeded({
+                    outputStrategy,
+                    txBuilder,
+                    provider,
+                    wif: sponsorWif,
+                    burnerAddress: sponsorAddr,
+                    sponsorSizing: {
+                        covenantInputCount: selectedUtxos.length,
+                        covenantOutputCount: outputs.length,
+                    },
+                });
+            }
 
             outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
 
@@ -973,8 +1132,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             </label>
                             {input.type === 'sig' ? (
                                 <div className="flex items-center p-3 bg-nexus-800/50 border border-nexus-700 rounded-lg text-sm text-gray-400 font-mono italic">
-                                    <Wallet className="w-4 h-4 mr-2 text-nexus-pink" />
-                                    Will be signed by connected wallet
+                                    <Wallet className="w-4 h-4 mr-2 text-nexus-pink shrink-0" />
+                                    <span>
+                                        {multiPartySignerPreview && /^(buyer|seller|arbiter)Sig$/i.test(input.name)
+                                            ? 'Signed locally by the test identity whose pubkey matches this role (same run can use several identities).'
+                                            : signingMethod === 'walletconnect'
+                                              ? 'Will be signed via WalletConnect'
+                                              : 'Will be signed by the selected test wallet'}
+                                    </span>
                                 </div>
                             ) : (
                                 <Input
@@ -1297,7 +1462,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                             {/* Signing Info / Switcher */}
                             <div className="p-4 bg-nexus-cyan/5 border border-nexus-cyan/10 rounded-2xl">
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex justify-between items-center mb-2">
                                     <div className="text-[10px] font-black text-nexus-cyan/80 uppercase tracking-widest">Signing Identity</div>
                                     <div className="flex bg-black/40 p-1 rounded-lg border border-white/5">
                                         <button
@@ -1314,6 +1479,14 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                         </button>
                                     </div>
                                 </div>
+
+                                {signingMethod === 'burner' ? (
+                                    <p className="text-[9px] text-gray-500 mb-3 leading-relaxed">
+                                        {multiPartySignerPreview ?
+                                            'One execution can still produce multiple signatures locally: each buyer/seller/arbiter slot uses whichever test identity owns that pubkey. The dropdown only chooses the default wallet for single-sig functions.'
+                                        :   'The selected test wallet signs slots that are not bound to named buyer/seller/arbiter roles.'}
+                                    </p>
+                                ) : null}
 
                                 <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/5">
                                     <div className="flex items-center gap-3">
@@ -1359,6 +1532,32 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                         </div>
                                     )}
                                 </div>
+
+                                {signingMethod === 'burner' && multiPartySignerPreview ? (
+                                    <div className="mt-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2 space-y-2">
+                                        <div className="text-[9px] font-black uppercase tracking-wider text-gray-500">
+                                            Signers for {selectedFunction}()
+                                        </div>
+                                        <ul className="space-y-1.5">
+                                            {multiPartySignerPreview.map((row) => (
+                                                <li
+                                                    key={row.slot}
+                                                    className="flex flex-wrap items-center justify-between gap-2 text-[9px] font-mono"
+                                                >
+                                                    <span className="text-gray-400">{row.slot}</span>
+                                                    <span className={row.matched ? 'text-emerald-400' : 'text-amber-400'}>
+                                                        {row.walletName}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        {!multiPartySignerPreview.every((r) => r.matched) ? (
+                                            <p className="text-[9px] text-amber-300/90 leading-snug border-t border-white/5 pt-2 mt-1">
+                                                Add test identities whose pubkeys match buyer/seller/arbiter (wizard &quot;Fill party pubkeys&quot; / Create 3 identities).
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     )}

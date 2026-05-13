@@ -310,6 +310,31 @@ export async function fetchUTXOs(address: string): Promise<UTXO[]> {
     }
 }
 
+/** Max wait for `listunspent` — prevents hung RPC from freezing UI refresh loops. */
+export const FETCH_UTXO_RPC_TIMEOUT_MS = 15_000;
+
+/**
+ * Like {@link fetchUTXOsFromElectrum} but rejects if Electrum does not respond in time.
+ * Prefer this for interactive refresh paths; {@link fetchUTXOs} swallows errors and never rejects.
+ */
+export async function fetchUTXOsWithTimeout(
+    address: string,
+    timeoutMs: number = FETCH_UTXO_RPC_TIMEOUT_MS
+): Promise<UTXO[]> {
+    return Promise.race([
+        fetchUTXOsFromElectrum(address),
+        new Promise<UTXO[]>((_, reject) =>
+            setTimeout(
+                () =>
+                    reject(
+                        new Error(`Chipnet Electrum did not respond within ${Math.round(timeoutMs / 1000)}s`)
+                    ),
+                timeoutMs
+            )
+        ),
+    ]);
+}
+
 /**
  * One-shot funding check (same rules as the poller). Use for manual refresh.
  */
@@ -487,7 +512,13 @@ export async function pollForFunding(
  * Includes auto-recovery on disconnects.
  */
 export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO[]) => void): Promise<() => void> {
-    const scriptHash = addressToScriptHash(address);
+    let addr = address.trim();
+    try {
+        addr = normalizeChipnetCashAddress(addr);
+    } catch (e) {
+        console.warn('[blockchainService] subscribeToAddress: normalizeChipnetCashAddress failed, using raw:', e);
+    }
+    const scriptHash = addressToScriptHash(addr);
     let isSubscribed = true;
     let currentClient: ElectrumClient<any> | null = null;
     let handleUpdate: any = null;
@@ -499,16 +530,20 @@ export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO
             currentClient = await ElectrumManager.getClient();
 
             // 1. Initial Fetch (or Re-Sync after reconnect)
-            const utxos = await fetchUTXOs(address);
+            const utxos = await fetchUTXOsWithTimeout(addr);
             onUpdate(utxos);
 
             // 2. Subscribe
             await ElectrumManager.request('blockchain.scripthash.subscribe', scriptHash);
 
             handleUpdate = async (update: any) => {
-                console.log(`[Subscription] Change detected for ${address.slice(0, 8)}...`);
-                const freshUtxos = await fetchUTXOs(address);
-                if (isSubscribed) onUpdate(freshUtxos);
+                console.log(`[Subscription] Change detected for ${addr.slice(0, 8)}...`);
+                try {
+                    const freshUtxos = await fetchUTXOsWithTimeout(addr);
+                    if (isSubscribed) onUpdate(freshUtxos);
+                } catch (err) {
+                    console.warn('[Subscription] listunspent refresh failed:', err);
+                }
             };
 
             // 3. Listen for changes
@@ -517,7 +552,7 @@ export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO
             // 4. Auto-Recover
             currentClient.once('disconnected', () => {
                 if (!isSubscribed) return;
-                console.warn(`[Subscription] Disconnected on ${address.slice(0, 8)}... Attempting recovery.`);
+                console.warn(`[Subscription] Disconnected on ${addr.slice(0, 8)}... Attempting recovery.`);
                 // Clean up old listener
                 if (handleUpdate) currentClient?.off('blockchain.scripthash.subscribe', handleUpdate);
                 // The manager will rotate the server automatically on next getClient call.
@@ -536,7 +571,7 @@ export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO
 
     // Return true unsubscribe function
     return () => {
-        console.log(`[Subscription] Unsubscribing from ${address.slice(0, 8)}...`);
+        console.log(`[Subscription] Unsubscribing from ${addr.slice(0, 8)}...`);
         isSubscribed = false;
         if (currentClient && handleUpdate) {
             currentClient.off('blockchain.scripthash.subscribe', handleUpdate);

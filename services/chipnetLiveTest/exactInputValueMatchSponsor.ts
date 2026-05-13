@@ -12,9 +12,13 @@ import {
     type ElectrumNetworkProvider,
 } from 'cashscript';
 import { decodePrivateKeyWif, instantiateSecp256k1, instantiateRipemd160, sha256 } from '@bitauth/libauth';
-import type { OutputStrategy } from '../wizard/txPlanning';
-import { fetchUTXOs, type UTXO } from '../blockchainService';
+import { estimateChipnetRelayFootprintFeeSats, type OutputStrategy } from '../wizard/txPlanning';
+import { fetchUTXOsWithTimeout, type UTXO } from '../blockchainService';
 import { getP2pkhBridgeArtifact } from './p2pkhBridgeArtifact';
+
+const CHANGE_DUST_SATS = 546n;
+/** Extra slack beyond footprint relay estimate (rounding / wallet-specific overhead). */
+const SPONSOR_RELAY_MARGIN_SATS = 3500n;
 
 function utxoSetFingerprint(us: UTXO[]): string {
     return [...us]
@@ -25,10 +29,10 @@ function utxoSetFingerprint(us: UTXO[]): string {
 
 /** Two identical Electrum snapshots back-to-back avoids picking coins a funding tx just spent (stale list → mempool conflict). */
 async function fetchStableBurnerUtxos(burnerAddress: string): Promise<UTXO[]> {
-    let prev = await fetchUTXOs(burnerAddress);
+    let prev = await fetchUTXOsWithTimeout(burnerAddress);
     for (let i = 0; i < 12; i++) {
         await new Promise((r) => setTimeout(r, 280));
-        const cur = await fetchUTXOs(burnerAddress);
+        const cur = await fetchUTXOsWithTimeout(burnerAddress);
         if (utxoSetFingerprint(prev) === utxoSetFingerprint(cur)) {
             return cur;
         }
@@ -45,21 +49,38 @@ export async function attachBurnerP2pkhSponsorIfNeeded(params: {
     burnerAddress: string;
     /** Mult-output covenant spends (e.g. LinearVesting claim) still need a fee input. */
     forceSponsor?: boolean;
+    /**
+     * Size-aware minimum sponsor coin value. Covenant + sponsor + change output often needs many ksats on Chipnet;
+     * picking ≥600 sats caused relay error 66.
+     */
+    sponsorSizing?: { covenantInputCount: number; covenantOutputCount: number };
 }): Promise<{ sponsorInputValue: bigint }> {
-    const { outputStrategy, txBuilder, provider, wif, burnerAddress, forceSponsor } = params;
+    const { outputStrategy, txBuilder, provider, wif, burnerAddress, forceSponsor, sponsorSizing } = params;
 
     if (outputStrategy.kind !== 'exact-input-value-to-wallet' && !forceSponsor) {
         return { sponsorInputValue: 0n };
     }
 
+    let minSponsorValue = 18_000n;
+    if (sponsorSizing) {
+        const footprintRelay = estimateChipnetRelayFootprintFeeSats(
+            sponsorSizing.covenantInputCount + 1,
+            sponsorSizing.covenantOutputCount + 1
+        );
+        minSponsorValue = footprintRelay + CHANGE_DUST_SATS + SPONSOR_RELAY_MARGIN_SATS;
+    }
+
     const burnerSpendUtxos: UTXO[] = await fetchStableBurnerUtxos(burnerAddress);
-    const bigEnough = burnerSpendUtxos.filter((u) => BigInt(u.value) >= 600n);
+    const bigEnough = burnerSpendUtxos.filter((u) => BigInt(u.value) >= minSponsorValue);
     /** Prefer mined sponsor outs so we do not race Electrum 0-conf lists after a funding tx spent overlapping coins */
     const confirmedPool = bigEnough.filter((u) => u.height > 0).sort((a, b) => a.value - b.value);
     const pool = confirmedPool.length > 0 ? confirmedPool : bigEnough.sort((a, b) => a.value - b.value);
     const sponsor = pool[0];
     if (!sponsor) {
-        throw new Error('No burner UTXO available to sponsor relay fee for exact-input-value spend');
+        throw new Error(
+            `No single burner UTXO ≥ ${minSponsorValue} sats to sponsor Chipnet relay fees for this covenant spend ` +
+                `(your identities may show aggregate balance, but each coin must be large enough — consolidate or fund one ≥ ${minSponsorValue}).`
+        );
     }
 
     const decoded = decodePrivateKeyWif(wif);

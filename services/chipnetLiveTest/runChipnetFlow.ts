@@ -25,7 +25,13 @@ import {
 import LocalWalletService from '../localWalletService';
 import { parseFunctionMeta } from '../wizard/parseContractMeta';
 import type { FunctionMeta } from '../wizard/parseContractMeta';
-import { estimateFee, feeForStrategy, deriveOutputStrategy, buildTxOutputs } from '../wizard/txPlanning';
+import {
+    estimateFee,
+    feeForStrategy,
+    deriveOutputStrategy,
+    buildTxOutputs,
+    escrowSellerExactInputPath,
+} from '../wizard/txPlanning';
 import { coerceAbiFunctionArgs, getAbiFunction } from './coerceFunctionArgs';
 import { attachBurnerP2pkhSponsorIfNeeded } from './exactInputValueMatchSponsor';
 import { csvEncodedSequenceBlocks } from './csvSequence';
@@ -33,20 +39,6 @@ import { getP2pkhBridgeArtifact } from './p2pkhBridgeArtifact';
 
 /** `estimateFee` undercounts large unlocking scripts; Chipnet returns code 66 below relay minimum. */
 const CHIPNET_MIN_SPEND_FEE_SATS = 1200n;
-
-/** Seller payout == input when release cap is 0; plan builder must use IOVM + sponsor (metadata often omits INPUT_OUTPUT_VALUE_MATCH because source branches on constructor). */
-function escrowSellerExactInputPath(
-    artifact: ContractArtifact,
-    functionName: string,
-    constructorStrings: string[]
-): boolean {
-    if (artifact.contractName !== 'ArbitrationEscrow') return false;
-    if (functionName !== 'complete' && functionName !== 'arbitrateToSeller') return false;
-    const capIdx = artifact.constructorInputs.findIndex((i) => i.name === 'releaseCapSats');
-    if (capIdx < 0) return false;
-    const cap = Number(constructorStrings[capIdx] ?? '0');
-    return Number.isFinite(cap) && cap === 0;
-}
 
 export interface ChipnetLiveManifest {
     constructorArgs: string[];
@@ -512,6 +504,10 @@ export async function runChipnetLiveTest(opts: ChipnetLiveTestOptions): Promise<
             wif,
             burnerAddress,
             forceSponsor: sponsorForce,
+            sponsorSizing: {
+                covenantInputCount: contractUtxos.length,
+                covenantOutputCount: outputs.length,
+            },
         });
 
         outputs.forEach((o) => txBuilder.addOutput({ to: o.to, amount: o.amount }));
