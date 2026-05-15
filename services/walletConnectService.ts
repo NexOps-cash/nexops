@@ -173,10 +173,16 @@ class WalletConnectService extends EventEmitter {
 
     /**
      * Starts the connection flow. Returns the URI for the QR code.
+     * @param openWalletConnectModal When false, only emits `session_proposal` — use for an in-app QR (e.g. header).
      */
-    public async connect(validChainId: ChainId): Promise<string | undefined> {
+    public async connect(
+        validChainId: ChainId,
+        options?: { openWalletConnectModal?: boolean }
+    ): Promise<string | undefined> {
         await this.ensureInit();
         if (!this.client) throw new Error('WalletConnect Client not initialized');
+
+        const openWalletConnectModal = options?.openWalletConnectModal !== false;
 
         // Map internal network name to CAIP-2
         // We handle variants of 'chipnet', 'testnet' etc.
@@ -199,8 +205,8 @@ class WalletConnectService extends EventEmitter {
             if (uri) {
                 this.emit('session_proposal', uri);
 
-                // Open Modal with the URI
-                if (this.modal) {
+                // Open Modal with the URI (optional — sidebar / deployment may use modal; header uses inline QR)
+                if (openWalletConnectModal && this.modal) {
                     await this.modal.openModal({ uri });
                 }
 
@@ -225,6 +231,7 @@ class WalletConnectService extends EventEmitter {
             this.updateConnectionStatus(ConnectionStatus.DISCONNECTED);
             throw e;
         }
+        return undefined;
     }
 
     /**

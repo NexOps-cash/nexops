@@ -36,6 +36,7 @@ import {
     type OutputStrategy,
 } from '../services/wizard/txPlanning';
 import { attachBurnerP2pkhSponsorIfNeeded } from '../services/chipnetLiveTest/exactInputValueMatchSponsor';
+import { FundFromWalletConnectPanel } from './FundFromWalletConnectPanel';
 
 /** Legacy vs token-aware Chipnet CashAddr encodings share the same locking bytecode — string compare false positive. */
 function covenantCashAddrsEquivalent(a: string, b: string): boolean {
@@ -1311,6 +1312,12 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 </button>
                             </div>
                         </div>
+
+                        <FundFromWalletConnectPanel
+                            contractAddress={deployedAddress || ''}
+                            disabled={!deployedAddress}
+                            onFunded={() => void loadUtxos(false)}
+                        />
 
                         {/* Auto-Fund button removed at user request */}
                     </div>

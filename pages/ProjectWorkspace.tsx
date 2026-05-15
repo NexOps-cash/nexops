@@ -38,6 +38,7 @@ import { extractFlow } from '../components/flow/FlowExtractor';
 import { PublishModal } from '../components/PublishModal';
 import { supabase } from '../lib/supabase';
 import { ensureContractCodeAsCashFile } from '../lib/projectNormalize';
+import { FundFromWalletConnectPanel } from '../components/FundFromWalletConnectPanel';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -1528,6 +1529,25 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                     {deployedAddress}
                                 </p>
                             </div>
+                            <FundFromWalletConnectPanel
+                                contractAddress={deployedAddress}
+                                disabled={!deployedAddress}
+                                onFunded={async () => {
+                                    setIsFetchingBalance(true);
+                                    try {
+                                        const utxos = await fetchUTXOs(deployedAddress);
+                                        const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                                        setContractBalance(balance);
+                                        if (balance > 0) {
+                                            toast.success(`Balance detected: ${balance} sats`);
+                                            setShowBuilder(false);
+                                            setActiveView('INTERACT');
+                                        }
+                                    } finally {
+                                        setIsFetchingBalance(false);
+                                    }
+                                }}
+                            />
                         </div>
                     )}
 
