@@ -17,8 +17,6 @@ import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, 
 
 interface DeploymentProps {
     project: Project | null;
-    walletConnected: boolean;
-    onConnectWallet: () => void;
     onUpdateProject: (p: Project) => void;
     onNavigate?: (view: any) => void;
     onDeployed?: (address: string, artifact: ContractArtifact, args: string[], fundingUtxo?: UTXO) => void;
@@ -31,12 +29,12 @@ interface DeploymentProps {
     isGeneratingBurner?: boolean;
     useExternalGenerator?: boolean;
     byokSettings?: BYOKSettings;
+    /** Clear sidebar/workspace deployment snapshot before persisting a fresh deploy — avoids funding monitors firing for the old address */
+    onBeginFreshDeployment?: () => void;
 }
 
 export const Deployment: React.FC<DeploymentProps> = ({
     project,
-    walletConnected,
-    onConnectWallet,
     onUpdateProject,
     onNavigate,
     onDeployed,
@@ -48,7 +46,8 @@ export const Deployment: React.FC<DeploymentProps> = ({
     onGenerateBurner,
     isGeneratingBurner = false,
     useExternalGenerator = false,
-    byokSettings
+    byokSettings,
+    onBeginFreshDeployment
 }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
@@ -86,12 +85,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
     }, []);
 
     useEffect(() => {
-        // If project already has a deployed address, set success state
         if (project?.deployedAddress && !fundingUtxo) {
             setDeploymentStep(4);
             setDerivedAddress(project.deployedAddress);
 
-            // Re-fetch UTXO metadata for exact height/value
             fetchUTXOs(project.deployedAddress).then(utxos => {
                 if (utxos.length > 0) {
                     setFundingUtxo(utxos[0]);
@@ -99,25 +96,20 @@ export const Deployment: React.FC<DeploymentProps> = ({
                 }
             });
         }
+    }, [project?.deployedAddress, fundingUtxo]);
 
-        // Sync local session state with service
+    useEffect(() => {
         const session = walletConnectService.getSession();
-        if (session) {
-            setWcSession(session);
-            // Notify parent app of connection state if needed
-            if (!walletConnected) onConnectWallet();
-        }
+        setWcSession(session ?? null);
 
         const onConnected = (s: any) => {
             setWcSession(s);
             setIsConnecting(false);
-            if (!walletConnected) onConnectWallet();
         };
 
         const onDisconnected = () => {
             setWcSession(null);
             setIsConnecting(false);
-            if (walletConnected) onConnectWallet(); // Toggle off
         };
 
         walletConnectService.on('session_connected', onConnected);
@@ -127,7 +119,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
             walletConnectService.off('session_connected', onConnected);
             walletConnectService.off('session_disconnected', onDisconnected);
         };
-    }, [walletConnected, onConnectWallet]);
+    }, []);
 
     if (!project) return <div className="p-8 text-center text-gray-500">No project selected.</div>;
 
@@ -215,6 +207,35 @@ export const Deployment: React.FC<DeploymentProps> = ({
         setTxHash(null);
         setIsDeploying(false);
     }, []);
+
+    /** Clear persisted + local deployment so user can run compile → constructor → fund again */
+    const handleDeployAgain = useCallback(() => {
+        if (!project) return;
+
+        // Must run before onUpdateProject: clears workspace `deployedAddress` while GlobalMonitor
+        // still sees the previous funded chain — would satisfy total>0 && !project.deployedAddress.
+        onBeginFreshDeployment?.();
+
+        onUpdateProject({
+            ...project,
+            deployedAddress: undefined,
+            deployedArtifact: undefined,
+            constructorArgs: undefined,
+            deploymentRecord: undefined,
+            lastModified: Date.now()
+        });
+
+        resetDeploymentFunding();
+        setFundingUtxo(null);
+        setDerivedAddress('');
+        setDerivationError(null);
+        setConstructorArgs([]);
+        setConstructorValidations({});
+
+        if (artifact) {
+            setShowConstructorModal(true);
+        }
+    }, [project, onUpdateProject, artifact, resetDeploymentFunding, onBeginFreshDeployment]);
 
     const handleDeploy = async () => {
         if (!isAuditPassed) {
@@ -500,13 +521,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         <Button
                             variant="glass"
                             className="w-full mt-2 text-[10px] border-nexus-cyan/20 opacity-40 hover:opacity-100"
-                            onClick={() => {
-                                setDeploymentStep(0);
-                                setFundingUtxo(null);
-                                setTxHash(null);
-                            }}
+                            onClick={handleDeployAgain}
+                            icon={<Repeat className="w-3 h-3" />}
                         >
-                            Redeploy
+                            Deploy again
                         </Button>
                     </Card>
                 )}

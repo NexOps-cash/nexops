@@ -281,8 +281,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     }
                 })
                 .catch((e) => console.warn('[Rehydration] UTXO fetch failed:', e));
+        } else {
+            // Deploy again / no persisted deployment — drop stale workspace snapshot (also fixes project switch)
+            setDeployedAddress('');
+            setDeployedArtifact(null);
+            setConstructorArgs(project.constructorArgs ?? []);
+            setFundingUtxo(null);
+            setContractBalance(0);
         }
-    }, [project.deployedAddress]);
+    }, [project.id, project.deployedAddress]);
 
     useEffect(() => {
         setFundStepBalanceHint(null);
@@ -365,6 +372,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         monitor();
         return () => { if (unsub) unsub(); };
     }, [deployedAddress, !!project.deployedAddress, project.id]);
+
+    /** Sync snapshot reset before clearing persisted deployment — prevents GlobalMonitor/subscribers matching old funded addr + empty project.deployedAddress */
+    const beginFreshDeploymentSync = () => {
+        setShowLiveModal(false);
+        setDeployedAddress('');
+        setDeployedArtifact(null);
+        setConstructorArgs([]);
+        setFundingUtxo(null);
+        setContractBalance(0);
+    };
 
     const addLog = (channel: TerminalChannel, message: string | string[]) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -1843,11 +1860,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         <Deployment
             project={project}
             onUpdateProject={onUpdateProject}
-            walletConnected={walletConnected}
-            onConnectWallet={onConnectWallet}
             compact={true}
             useExternalGenerator={isWsConnected}
             byokSettings={byokSettings}
+            onBeginFreshDeployment={beginFreshDeploymentSync}
             onArtifactsGenerated={(addr, artifact, args) => {
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
