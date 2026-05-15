@@ -31,9 +31,37 @@ export interface FundingStatus {
 }
 
 /**
- * Chipnet block explorer base URL — BCHExplorer (Bitcoin Cash Node + Fulcrum): https://chipnet.bchexplorer.info
+ * Chipnet block explorer — [BCH Explorer](https://bchexplorer.cash/chipnet)
  */
-export const CHIPNET_EXPLORER_BASE = 'https://chipnet.bchexplorer.info';
+export const CHIPNET_EXPLORER_BASE = 'https://bchexplorer.cash/chipnet';
+
+const CHIPNET_TXID_HEX_RE = /^[0-9a-fA-F]{64}$/;
+
+/** True for a 32-byte hex tx id (Electrum `tx_hash` / explorer `/tx/` segment). */
+export function isChipnetTxid(value: string): boolean {
+    if (!value?.trim() || value.trim() === 'Unknown') return false;
+    const v = value.trim().replace(/^0x/i, '');
+    return CHIPNET_TXID_HEX_RE.test(v);
+}
+
+function looksLikeCashAddress(value: string): boolean {
+    const v = value.trim();
+    return v.startsWith('bchtest:') || v.startsWith('bitcoincash:') || v.startsWith('bchreg:');
+}
+
+/** Funding / spend transaction on Chipnet (never pass a CashAddr here). */
+export function getChipnetTxExplorerUrl(txid: string): string {
+    const v = txid.trim().replace(/^0x/i, '');
+    if (!CHIPNET_TXID_HEX_RE.test(v)) return CHIPNET_EXPLORER_BASE;
+    return `${CHIPNET_EXPLORER_BASE}/tx/${encodeURIComponent(v.toLowerCase())}`;
+}
+
+/** Contract or wallet CashAddr on Chipnet (never pass a raw tx id here). */
+export function getChipnetAddressExplorerUrl(address: string): string {
+    const addr = address.trim();
+    if (!addr || addr === 'Unknown') return CHIPNET_EXPLORER_BASE;
+    return `${CHIPNET_EXPLORER_BASE}/address/${encodeURIComponent(addr)}`;
+}
 
 // --- Pure Utilities ---
 
@@ -580,14 +608,16 @@ export async function subscribeToAddress(address: string, onUpdate: (utxos: UTXO
 }
 
 /**
- * Wrapper for the Explorer Link
- * Handles both Transactions and Addresses based on prefix.
+ * Chipnet explorer URL — prefers CashAddr → `/address/`, 64-char hex → `/tx/`.
+ * For UI where both contract and funding tx matter, use {@link getChipnetAddressExplorerUrl} and {@link getChipnetTxExplorerUrl} explicitly.
  */
 export function getExplorerLink(value: string): string {
-    if (value.startsWith('bchtest:') || value.startsWith('bitcoincash:')) {
-        return `${CHIPNET_EXPLORER_BASE}/address/${encodeURIComponent(value)}`;
-    }
-    return `${CHIPNET_EXPLORER_BASE}/tx/${encodeURIComponent(value.trim())}`;
+    const raw = value.trim();
+    if (!raw || raw === 'Unknown') return CHIPNET_EXPLORER_BASE;
+    if (looksLikeCashAddress(raw)) return getChipnetAddressExplorerUrl(raw);
+    if (raw.includes(':')) return getChipnetAddressExplorerUrl(raw);
+    if (isChipnetTxid(raw)) return getChipnetTxExplorerUrl(raw);
+    return getChipnetTxExplorerUrl(raw);
 }
 
 /**

@@ -9,9 +9,15 @@ import type { ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../
 import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
 import { deriveContractAddress, coerceConstructorArgs, explainDerivationError } from '../../services/addressService';
-import { pollForFunding, checkFundingNow, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
+import {
+    pollForFunding,
+    checkFundingNow,
+    getChipnetAddressExplorerUrl,
+    getChipnetTxExplorerUrl,
+    ELECTRUM_FALLBACK_SERVERS,
+    type FundingStatus
+} from '../../services/blockchainService';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
-import { ELECTRUM_FALLBACK_SERVERS } from '../../services/blockchainService';
 import { useWallet } from '../../contexts/WalletContext';
 import type { ValidationResult } from '../../services/validationService';
 import { addWizardDeploy } from '../../lib/wizardDeployStore';
@@ -668,14 +674,16 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                 <p className="text-xs font-mono text-emerald-200 break-all">{addressDerivation.derivedAddress}</p>
                 <div className="flex flex-wrap gap-2">
                   {txHash ? (
-                    <Button variant="glass" size="sm" onClick={() => window.open(getExplorerLink(txHash), '_blank')}>
+                    <Button variant="glass" size="sm" onClick={() => window.open(getChipnetTxExplorerUrl(txHash), '_blank')}>
                       View funding tx
                     </Button>
                   ) : null}
                   <Button
                     variant="glass"
                     size="sm"
-                    onClick={() => window.open(getExplorerLink(addressDerivation.derivedAddress), '_blank')}
+                    onClick={() =>
+                      window.open(getChipnetAddressExplorerUrl(addressDerivation.derivedAddress), '_blank')
+                    }
                   >
                     View address on explorer
                   </Button>
@@ -690,7 +698,8 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   ) : null}
                 </div>
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Opens Chipnet on <span className="text-slate-400">chipnet.bchexplorer.info</span> — same tx id string Paytaca shows.
+                  Opens Chipnet on{' '}
+                  <span className="text-slate-400">bchexplorer.cash/chipnet</span> — funding tx uses /tx/, contract uses /address/.
                 </p>
                 {kindId === 'htlc' ? (
                   <div className="rounded border border-amber-500/30 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-100/90 leading-relaxed">

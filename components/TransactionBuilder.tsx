@@ -10,7 +10,7 @@ import {
     RotateCcw
 } from 'lucide-react';
 import {
-    getExplorerLink,
+    getChipnetTxExplorerUrl,
     fetchUTXOsWithTimeout,
     subscribeToAddress,
     requestFaucetFunds,
@@ -1587,7 +1587,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                             variant="ghost"
                             onClick={() =>
                                 executionResult.txid &&
-                                window.open(getExplorerLink(executionResult.txid), '_blank')
+                                window.open(getChipnetTxExplorerUrl(executionResult.txid), '_blank')
                             }
                             disabled={!executionResult.txid}
                         >
@@ -1787,7 +1787,7 @@ export const TransactionHistory: React.FC<{
                                 ))}
                             </div>
                             <button
-                                onClick={() => window.open(getExplorerLink(record.txid), '_blank')}
+                                onClick={() => window.open(getChipnetTxExplorerUrl(record.txid), '_blank')}
                                 className="p-1.5 bg-white/5 hover:bg-nexus-cyan/10 text-slate-500 hover:text-nexus-cyan rounded-lg border border-white/5 hover:border-nexus-cyan/20 transition-all flex items-center space-x-1 shrink-0"
                             >
                                 <span className="text-[9px] font-black tracking-widest uppercase ml-1">View</span>

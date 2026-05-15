@@ -31,6 +31,26 @@ import { consumePendingRegistryContract } from './lib/pendingRegistryLoad';
 import { ensureContractCodeAsCashFile } from './lib/projectNormalize';
 import { walletConnectService } from './services/walletConnectService';
 
+/** When Supabase row is newer but omits nested deploy fields, keep local deploy metadata if address matches */
+function mergeRemoteProject(remote: Project, local: Project | undefined): Project {
+  const normalizedRemote = ensureContractCodeAsCashFile(remote);
+  if (!local) return normalizedRemote;
+  if (normalizedRemote.lastModified <= local.lastModified) return local;
+
+  const rAddr = normalizedRemote.deployedAddress?.trim();
+  const lAddr = local.deployedAddress?.trim();
+  const sameDeployed = !!rAddr && !!lAddr && rAddr === lAddr;
+
+  if (!sameDeployed) return normalizedRemote;
+
+  return {
+    ...normalizedRemote,
+    deploymentRecord: normalizedRemote.deploymentRecord ?? local.deploymentRecord,
+    deployedArtifact: normalizedRemote.deployedArtifact ?? local.deployedArtifact,
+    constructorArgs: normalizedRemote.constructorArgs ?? local.constructorArgs,
+  };
+}
+
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
 
@@ -225,7 +245,8 @@ const WorkspaceSync: React.FC<{
         setPhase('denied');
         return;
       }
-      pushGranted(project);
+      const localSibling = workspaceProjectsRef.current.find((p) => p.id === projectId);
+      pushGranted(mergeRemoteProject(project, localSibling));
     });
 
     return () => ac.abort();
@@ -380,7 +401,9 @@ const App: React.FC = () => {
             const localMap = new Map(prev.map((p) => [p.id, p]));
             mappedProjects.forEach((remote) => {
               const local = localMap.get(remote.id);
-              if (!local || remote.lastModified > local.lastModified) localMap.set(remote.id, remote);
+              if (!local || remote.lastModified > local.lastModified) {
+                localMap.set(remote.id, mergeRemoteProject(remote, local));
+              }
             });
             return Array.from(localMap.values()).sort((a, b) => b.lastModified - a.lastModified);
           });

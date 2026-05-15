@@ -12,6 +12,7 @@ function mapRowToProject(row: Record<string, unknown>): Project {
     versions: (row.versions as Project['versions']) || [],
     auditReport: row.audit_report as Project['auditReport'] | undefined,
     deployedAddress: row.deployed_address as string | undefined,
+    deploymentRecord: row.deployment_record as Project['deploymentRecord'] | undefined,
     lastModified:
       typeof row.last_modified === 'string'
         ? new Date(row.last_modified as string).getTime()
@@ -60,6 +61,7 @@ export async function upsertProjectRow(project: Project, userId: string): Promis
       versions: project.versions,
       audit_report: project.auditReport,
       deployed_address: project.deployedAddress,
+      deployment_record: project.deploymentRecord ?? null,
       last_modified: project.lastModified,
     });
     if (error) return { error: new Error(error.message) };

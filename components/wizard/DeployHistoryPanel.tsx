@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Copy, ExternalLink } from 'lucide-react';
 import type { WizardDeployRecord } from '../../types';
 import { KINDS_BY_ID } from '../../services/wizard/kinds';
 import { collectFieldDefs } from '../../services/wizard/schema';
-import { getExplorerLink } from '../../services/blockchainService';
+import { getChipnetTxExplorerUrl } from '../../services/blockchainService';
 import toast from 'react-hot-toast';
 import { Modal, Button } from '../UI';
 import { formatKindDisplayLabel } from '../../services/wizard/kindDisplay';
@@ -97,7 +97,7 @@ function DeploymentDetailBody({ rec }: { rec: WizardDeployRecord }) {
           <button
             type="button"
             className="inline-flex items-center gap-2 text-emerald-400 hover:text-emerald-300 text-left"
-            onClick={() => window.open(getExplorerLink(rec.fundingTxid), '_blank')}
+            onClick={() => window.open(getChipnetTxExplorerUrl(rec.fundingTxid), '_blank')}
           >
             <span className="font-mono text-[13px] break-all">{rec.fundingTxid}</span>
             <ExternalLink className="w-4 h-4 shrink-0" />
