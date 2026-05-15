@@ -5,13 +5,14 @@ import { KINDS_BY_ID } from '../../services/wizard/kinds';
 import { collectFieldDefs } from '../../services/wizard/schema';
 import { getExplorerLink } from '../../services/blockchainService';
 import toast from 'react-hot-toast';
-import { Modal } from '../UI';
+import { Modal, Button } from '../UI';
 import { formatKindDisplayLabel } from '../../services/wizard/kindDisplay';
 
 const INVARIANT_LABELS: Record<string, string> = {
   OUTPUT_COUNT_CLAMP: 'Max outputs capped',
   OUTPUT_COUNT_GUARD: 'Min outputs enforced',
   VALUE_PRESERVING_COVENANT: 'Value preserved',
+  INPUT_OUTPUT_VALUE_MATCH: 'Output value matches spent input',
   BOUND_RECIPIENT: 'Locked recipient',
   TOKEN_CATEGORY_CONTINUITY: 'Token category locked',
   DISTINCT_PUBKEYS: 'Distinct keys enforced',
@@ -134,9 +135,11 @@ function DeploymentDetailBody({ rec }: { rec: WizardDeployRecord }) {
 interface DeployHistoryPanelProps {
   kindId: string;
   records: WizardDeployRecord[];
+  /** Open chipnet spend / Transaction Builder for a saved deployment. */
+  onRequestSpend?: (rec: WizardDeployRecord) => void;
 }
 
-export const DeployHistoryPanel: React.FC<DeployHistoryPanelProps> = ({ kindId, records }) => {
+export const DeployHistoryPanel: React.FC<DeployHistoryPanelProps> = ({ kindId, records, onRequestSpend }) => {
   const [detailRecord, setDetailRecord] = useState<WizardDeployRecord | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -178,7 +181,29 @@ export const DeployHistoryPanel: React.FC<DeployHistoryPanelProps> = ({ kindId, 
         title="Deployment details"
         className="max-w-lg border-emerald-500/15"
       >
-        {detailRecord ? <DeploymentDetailBody rec={detailRecord} /> : null}
+        {detailRecord ? (
+          <>
+            <DeploymentDetailBody rec={detailRecord} />
+            {onRequestSpend ? (
+              <div className="mt-5 pt-4 border-t border-white/10 space-y-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    onRequestSpend(detailRecord);
+                    setDetailRecord(null);
+                  }}
+                >
+                  Call function
+                </Button>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Spend paths use the same signing setup as deploy — NexOps test identity or WalletConnect when keys live in
+                  Paytaca.
+                </p>
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </Modal>
     </div>
   );

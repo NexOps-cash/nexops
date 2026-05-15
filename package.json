@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "wizard:compile-matrix": "npx --yes tsx scripts/wizard-compile-matrix.ts"
+    "wizard:compile-matrix": "npx --yes tsx scripts/wizard-compile-matrix.ts",
+    "chipnet:live-test": "npx --yes tsx scripts/chipnet-live-contract-test.ts",
+    "chipnet:live-test-htlc": "npx --yes tsx scripts/chipnet-live-htlc-two-paths.ts",
+    "chipnet:live-test-htlc-claim": "npx --yes tsx scripts/chipnet-live-htlc-claim.ts",
+    "chipnet:live-test-htlc-refund": "npx --yes tsx scripts/chipnet-live-htlc-refund.ts",
+    "chipnet:live-test-escrow-paths": "npx --yes tsx scripts/chipnet-live-escrow-spend-paths.ts",
+    "chipnet:live-test-vesting-paths": "npx --yes tsx scripts/chipnet-live-vesting-spend-paths.ts"
   },
   "dependencies": {
     "@bitauth/libauth": "^3.1.0-next.8",

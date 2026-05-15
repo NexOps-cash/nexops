@@ -13,6 +13,7 @@
 
 export type InvariantId =
   | 'VALUE_PRESERVING_COVENANT'
+  | 'INPUT_OUTPUT_VALUE_MATCH'
   | 'OUTPUT_COUNT_GUARD'
   | 'OUTPUT_COUNT_CLAMP'
   | 'DISTINCT_PUBKEYS'
@@ -61,6 +62,7 @@ const EMISSION_ORDER: InvariantId[] = [
   'OUTPUT_COUNT_GUARD',
   'OUTPUT_COUNT_CLAMP',
   'VALUE_PRESERVING_COVENANT',
+  'INPUT_OUTPUT_VALUE_MATCH',
   'BOUND_RECIPIENT',
   'TOKEN_CATEGORY_CONTINUITY',
   'DISTINCT_PUBKEYS',
@@ -87,6 +89,18 @@ export function valuePreservingCovenant(): InvariantInstance {
     lines: [
       'require(tx.outputs.length == 1);',
       'require(tx.outputs[0].lockingBytecode == tx.inputs[this.activeInputIndex].lockingBytecode);',
+      'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
+    ],
+  };
+}
+
+/** Multisig-style spend: single output whose value equals the active input (zero implicit fee). */
+export function inputOutputValueMatch(): InvariantInstance {
+  return {
+    id: 'INPUT_OUTPUT_VALUE_MATCH',
+    params: {},
+    lines: [
+      'require(tx.outputs.length == 1);',
       'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
     ],
   };
@@ -161,6 +175,8 @@ function materialize(
   switch (id) {
     case 'VALUE_PRESERVING_COVENANT':
       return valuePreservingCovenant();
+    case 'INPUT_OUTPUT_VALUE_MATCH':
+      return inputOutputValueMatch();
     case 'OUTPUT_COUNT_GUARD':
       return outputCountGuard(p.outputCountGuard ?? 1);
     case 'OUTPUT_COUNT_CLAMP':
@@ -269,6 +285,9 @@ export function composeFunctionInvariants(ctx: ComposeContext): ComposeResult {
         mergeInto(bucket, valuePreservingCovenant());
         mergeInto(bucket, outputCountGuard(1));
         break;
+      case 'INPUT_OUTPUT_VALUE_MATCH':
+        mergeInto(bucket, inputOutputValueMatch());
+        break;
       case 'BOUND_RECIPIENT':
         mergeInto(bucket, materialize('BOUND_RECIPIENT', ctx, clampFallback));
         mergeInto(bucket, outputCountGuard(1));
@@ -296,6 +315,15 @@ export function composeFunctionInvariants(ctx: ComposeContext): ComposeResult {
   // those so we don't emit a redundant `length >= 1` / `length <= 1` line.
   const hasVpc = merged.some((i) => i.id === 'VALUE_PRESERVING_COVENANT');
   if (hasVpc) {
+    merged = merged.filter((i) => {
+      if (i.id === 'OUTPUT_COUNT_GUARD' && Number(i.params.min) <= 1) return false;
+      if (i.id === 'OUTPUT_COUNT_CLAMP' && Number(i.params.max) >= 1) return false;
+      return true;
+    });
+  }
+
+  const hasIovm = merged.some((i) => i.id === 'INPUT_OUTPUT_VALUE_MATCH');
+  if (hasIovm) {
     merged = merged.filter((i) => {
       if (i.id === 'OUTPUT_COUNT_GUARD' && Number(i.params.min) <= 1) return false;
       if (i.id === 'OUTPUT_COUNT_CLAMP' && Number(i.params.max) >= 1) return false;

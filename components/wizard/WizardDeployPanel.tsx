@@ -8,7 +8,7 @@ import { ConstructorForm } from '../ConstructorForm';
 import type { ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../../types';
 import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
-import { deriveContractAddress, coerceConstructorArgs } from '../../services/addressService';
+import { deriveContractAddress, coerceConstructorArgs, explainDerivationError } from '../../services/addressService';
 import { pollForFunding, checkFundingNow, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
 import { ELECTRUM_FALLBACK_SERVERS } from '../../services/blockchainService';
@@ -20,6 +20,7 @@ const INVARIANT_LABELS: Record<string, string> = {
   OUTPUT_COUNT_CLAMP: 'Max outputs capped',
   OUTPUT_COUNT_GUARD: 'Min outputs enforced',
   VALUE_PRESERVING_COVENANT: 'Value preserved',
+  INPUT_OUTPUT_VALUE_MATCH: 'Output value matches spent input',
   BOUND_RECIPIENT: 'Locked recipient',
   TOKEN_CATEGORY_CONTINUITY: 'Token category locked',
   DISTINCT_PUBKEYS: 'Distinct keys enforced',
@@ -69,6 +70,8 @@ export interface WizardDeployPanelProps {
   wizardFields: Record<string, string | number | boolean>;
   wizardEnabled: Record<string, boolean>;
   onRecordSaved: () => void;
+  /** Opens Transaction Builder for this funded deployment (same record written to history). */
+  onRequestSpend?: (record: WizardDeployRecord) => void;
 }
 
 export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
@@ -82,6 +85,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   wizardFields,
   wizardEnabled,
   onRecordSaved,
+  onRequestSpend,
 }) => {
   const { wallets, activeWallet } = useWallet();
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
@@ -99,6 +103,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   const [stepBanner, setStepBanner] = useState<string | null>(null);
   const [fundingCheckBusy, setFundingCheckBusy] = useState(false);
   const pollGenRef = useRef(0);
+  const [fundedRecordForSpend, setFundedRecordForSpend] = useState<WizardDeployRecord | null>(null);
 
   useEffect(() => {
     if (!wallets.length) {
@@ -126,6 +131,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       setStepBanner(null);
       setFundingCheckBusy(false);
       pollGenRef.current += 1;
+      setFundedRecordForSpend(null);
       return;
     }
 
@@ -197,6 +203,8 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         kindName,
         contractAddress: addr,
         tokenAddress,
+        deployIdentityWalletId: selectedWallet?.id,
+        deployIdentityWalletName: selectedWallet?.name,
         constructorArgs: [...constructorArgs],
         wizardFieldSnapshot: { ...wizardFields },
         wizardEnabled: { ...wizardEnabled },
@@ -208,6 +216,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         artifact,
       };
       addWizardDeploy(record);
+      setFundedRecordForSpend(record);
       onRecordSaved();
       toast.success('Contract funded on Chipnet.');
     },
@@ -221,6 +230,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       onRecordSaved,
       wizardEnabled,
       wizardFields,
+      selectedWallet,
     ]
   );
 
@@ -329,6 +339,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
 
   const handleResetDeploy = () => {
     pollGenRef.current += 1;
+    setFundedRecordForSpend(null);
     setDeployStep(0);
     setPaymentUri(null);
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
@@ -339,6 +350,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
 
   const handleDeployAnother = () => {
     pollGenRef.current += 1;
+    setFundedRecordForSpend(null);
     setDeployStep(0);
     setPaymentUri(null);
     setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
@@ -472,7 +484,9 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   {addressDerivation.incomplete ? (
                     <p className="text-xs text-slate-500">Address: — (fill all fields)</p>
                   ) : addressDerivation.derivationError ? (
-                    <p className="text-xs text-red-400">{addressDerivation.derivationError}</p>
+                    <p className="text-xs text-red-300 whitespace-pre-wrap leading-relaxed font-sans">
+                      {explainDerivationError(new Error(addressDerivation.derivationError), artifact.constructorInputs)}
+                    </p>
                   ) : (
                     <>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -665,10 +679,28 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   >
                     View address on explorer
                   </Button>
+                  {fundedRecordForSpend && onRequestSpend ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => onRequestSpend(fundedRecordForSpend)}
+                    >
+                      Call function
+                    </Button>
+                  ) : null}
                 </div>
                 <p className="text-[10px] text-slate-500 leading-relaxed">
                   Opens Chipnet on <span className="text-slate-400">chipnet.bchexplorer.info</span> — same tx id string Paytaca shows.
                 </p>
+                {kindId === 'htlc' ? (
+                  <div className="rounded border border-amber-500/30 bg-amber-950/25 px-3 py-2 text-[11px] text-amber-100/90 leading-relaxed">
+                    <span className="font-semibold text-amber-400">Refund note — </span>
+                    Interacting with <span className="font-mono text-amber-200/95">refund()</span> waits for confirmations
+                    plus the template&apos;s relative timeout in blocks, so it can take much longer than{' '}
+                    <span className="font-mono text-amber-200/95">claim()</span>. Leave the transaction flow open until the
+                    refund broadcasts.
+                  </div>
+                ) : null}
                 <div className="flex gap-2 pt-2">
                   <Button variant="primary" size="sm" onClick={handleDeployAnother}>
                     Deploy another

@@ -1,6 +1,8 @@
 import { BuildOutput, ContractKind, FunctionSpec } from '../schema';
 import { makeDistinctPubkeyValidator } from '../crossFieldValidators';
 
+const PARTY_KEYS = ['buyerPk', 'sellerPk', 'arbiterPk'] as const;
+
 export const escrowKind: ContractKind = {
   id: 'escrow',
   name: 'ArbitrationEscrow',
@@ -80,13 +82,13 @@ export const escrowKind: ContractKind = {
     const oracleEnabled = !!opts.enabled.oraclePath;
     const timeoutEnabled = !!opts.enabled.timeoutRefund;
 
-    const distinctChecks = strict
-      ? [
-          'require(buyerPk != sellerPk);',
-          'require(buyerPk != arbiterPk);',
-          'require(sellerPk != arbiterPk);',
-        ]
-      : [];
+    const strictPartyInvariant =
+      strict ?
+        {
+          extra: ['DISTINCT_PUBKEYS'] as const,
+          params: { distinctPubkeys: [...PARTY_KEYS] },
+        }
+      : { extra: [] as const, params: {} };
 
     const oracleBuyerBlock = [
       'if (oracleEnabled != 0) {',
@@ -110,10 +112,15 @@ export const escrowKind: ContractKind = {
       name: 'complete',
       role: 'quorum-spend',
       params: ['sig buyerSig', 'sig sellerSig'],
+      ...(strict ?
+        {
+          extraInvariants: [...strictPartyInvariant.extra],
+          invariantParams: strictPartyInvariant.params,
+        }
+      : {}),
       body: [
         'require(checkSig(buyerSig, buyerPk));',
         'require(checkSig(sellerSig, sellerPk));',
-        ...distinctChecks,
         '',
         'require(tx.outputs.length == 1);',
         'require(tx.outputs[0].lockingBytecode == sellerLockingBytecode);',
@@ -132,15 +139,15 @@ export const escrowKind: ContractKind = {
       params: oracleEnabled
         ? ['sig arbiterSig', 'sig buyerSig', 'datasig oracleSig']
         : ['sig arbiterSig', 'sig buyerSig'],
+      extraInvariants: ['INPUT_OUTPUT_VALUE_MATCH', 'BOUND_RECIPIENT', ...strictPartyInvariant.extra],
+      invariantParams: {
+        boundRecipient: { lockingBytecodeParam: 'buyerLockingBytecode' },
+        ...strictPartyInvariant.params,
+      },
       body: [
         'require(checkSig(arbiterSig, arbiterPk));',
         'require(checkSig(buyerSig, buyerPk));',
-        ...distinctChecks,
-        '',
-        'require(tx.outputs.length == 1);',
-        'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-        ...(oracleEnabled ? ['', ...oracleBuyerBlock, ''] : ['']),
-        'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
+        ...(oracleEnabled ? ['', ...oracleBuyerBlock] : []),
       ],
     };
 
@@ -150,10 +157,15 @@ export const escrowKind: ContractKind = {
       params: oracleEnabled
         ? ['sig arbiterSig', 'sig sellerSig', 'datasig oracleSig']
         : ['sig arbiterSig', 'sig sellerSig'],
+      ...(strict ?
+        {
+          extraInvariants: [...strictPartyInvariant.extra],
+          invariantParams: strictPartyInvariant.params,
+        }
+      : {}),
       body: [
         'require(checkSig(arbiterSig, arbiterPk));',
         'require(checkSig(sellerSig, sellerPk));',
-        ...distinctChecks,
         '',
         'require(tx.outputs.length == 1);',
         'if (releaseCapSats == 0) {',
@@ -161,7 +173,7 @@ export const escrowKind: ContractKind = {
         '} else {',
         '    require(tx.outputs[0].value <= releaseCapSats);',
         '}',
-        ...(oracleEnabled ? ['', ...oracleSellerBlock, ''] : ['']),
+        ...(oracleEnabled ? ['', ...oracleSellerBlock, ''] : []),
         'require(tx.outputs[0].lockingBytecode == sellerLockingBytecode);',
       ],
     };
@@ -173,15 +185,12 @@ export const escrowKind: ContractKind = {
         name: 'timeoutRefund',
         role: 'quorum-spend',
         params: ['sig buyerSig'],
-        body: [
-          'require(checkSig(buyerSig, buyerPk));',
-          ...distinctChecks,
-          'require(this.age >= timeoutHeight);',
-          '',
-          'require(tx.outputs.length == 1);',
-          'require(tx.outputs[0].lockingBytecode == buyerLockingBytecode);',
-          'require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);',
-        ],
+        extraInvariants: ['INPUT_OUTPUT_VALUE_MATCH', 'BOUND_RECIPIENT', ...strictPartyInvariant.extra],
+        invariantParams: {
+          boundRecipient: { lockingBytecodeParam: 'buyerLockingBytecode' },
+          ...strictPartyInvariant.params,
+        },
+        body: ['require(checkSig(buyerSig, buyerPk));', 'require(this.age >= timeoutHeight);'],
       });
     }
 
