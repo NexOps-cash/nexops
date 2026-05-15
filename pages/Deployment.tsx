@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge, Modal } from '../components/UI';
-import { Project, ChainType, BYOKSettings } from '../types';
-import { ContractArtifact } from '../types';
+import { LocalWallet, Project, ChainType, BYOKSettings, ContractArtifact, DeploymentRecord } from '../types';
 import { compileCashScript, verifyDeterminism } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
@@ -10,15 +9,19 @@ import { deriveContractAddress, explainDerivationError } from '../services/addre
 import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
-import { pollForFunding, getExplorerLink, FundingStatus, UTXO, fetchUTXOs } from '../services/blockchainService';
-import { useWallet } from '../contexts/WalletContext';
-import { DeploymentRecord } from '../types';
+import {
+    pollForFunding,
+    getChipnetAddressExplorerUrl,
+    getChipnetTxExplorerUrl,
+    isChipnetTxid,
+    FundingStatus,
+    UTXO,
+    fetchUTXOs
+} from '../services/blockchainService';
 import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface DeploymentProps {
     project: Project | null;
-    walletConnected: boolean;
-    onConnectWallet: () => void;
     onUpdateProject: (p: Project) => void;
     onNavigate?: (view: any) => void;
     onDeployed?: (address: string, artifact: ContractArtifact, args: string[], fundingUtxo?: UTXO) => void;
@@ -31,12 +34,14 @@ interface DeploymentProps {
     isGeneratingBurner?: boolean;
     useExternalGenerator?: boolean;
     byokSettings?: BYOKSettings;
+    /** Clear sidebar/workspace deployment snapshot before persisting a fresh deploy — avoids funding monitors firing for the old address */
+    onBeginFreshDeployment?: () => void;
+    /** NexOps identities (Wallet tab) — owner/funder guard; avoid useWallet here so Deployment works without WalletProvider */
+    localWallets?: LocalWallet[];
 }
 
 export const Deployment: React.FC<DeploymentProps> = ({
     project,
-    walletConnected,
-    onConnectWallet,
     onUpdateProject,
     onNavigate,
     onDeployed,
@@ -48,14 +53,14 @@ export const Deployment: React.FC<DeploymentProps> = ({
     onGenerateBurner,
     isGeneratingBurner = false,
     useExternalGenerator = false,
-    byokSettings
+    byokSettings,
+    onBeginFreshDeployment,
+    localWallets = []
 }) => {
     const [selectedChain, setSelectedChain] = useState<ChainType>(ChainType.BCH_TESTNET);
     const [isDeploying, setIsDeploying] = useState(false);
     const [deploymentStep, setDeploymentStep] = useState(0);
     const [txHash, setTxHash] = useState<string | null>(null);
-
-    const { wallets } = useWallet();
 
     // Artifact State
     const [artifact, setArtifact] = useState<ContractArtifact | null>(null);
@@ -86,12 +91,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
     }, []);
 
     useEffect(() => {
-        // If project already has a deployed address, set success state
         if (project?.deployedAddress && !fundingUtxo) {
             setDeploymentStep(4);
             setDerivedAddress(project.deployedAddress);
 
-            // Re-fetch UTXO metadata for exact height/value
             fetchUTXOs(project.deployedAddress).then(utxos => {
                 if (utxos.length > 0) {
                     setFundingUtxo(utxos[0]);
@@ -99,25 +102,20 @@ export const Deployment: React.FC<DeploymentProps> = ({
                 }
             });
         }
+    }, [project?.deployedAddress, fundingUtxo]);
 
-        // Sync local session state with service
+    useEffect(() => {
         const session = walletConnectService.getSession();
-        if (session) {
-            setWcSession(session);
-            // Notify parent app of connection state if needed
-            if (!walletConnected) onConnectWallet();
-        }
+        setWcSession(session ?? null);
 
         const onConnected = (s: any) => {
             setWcSession(s);
             setIsConnecting(false);
-            if (!walletConnected) onConnectWallet();
         };
 
         const onDisconnected = () => {
             setWcSession(null);
             setIsConnecting(false);
-            if (walletConnected) onConnectWallet(); // Toggle off
         };
 
         walletConnectService.on('session_connected', onConnected);
@@ -127,7 +125,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
             walletConnectService.off('session_connected', onConnected);
             walletConnectService.off('session_disconnected', onDisconnected);
         };
-    }, [walletConnected, onConnectWallet]);
+    }, []);
 
     if (!project) return <div className="p-8 text-center text-gray-500">No project selected.</div>;
 
@@ -216,6 +214,35 @@ export const Deployment: React.FC<DeploymentProps> = ({
         setIsDeploying(false);
     }, []);
 
+    /** Clear persisted + local deployment so user can run compile → constructor → fund again */
+    const handleDeployAgain = useCallback(() => {
+        if (!project) return;
+
+        // Must run before onUpdateProject: clears workspace `deployedAddress` while GlobalMonitor
+        // still sees the previous funded chain — would satisfy total>0 && !project.deployedAddress.
+        onBeginFreshDeployment?.();
+
+        onUpdateProject({
+            ...project,
+            deployedAddress: undefined,
+            deployedArtifact: undefined,
+            constructorArgs: undefined,
+            deploymentRecord: undefined,
+            lastModified: Date.now()
+        });
+
+        resetDeploymentFunding();
+        setFundingUtxo(null);
+        setDerivedAddress('');
+        setDerivationError(null);
+        setConstructorArgs([]);
+        setConstructorValidations({});
+
+        if (artifact) {
+            setShowConstructorModal(true);
+        }
+    }, [project, onUpdateProject, artifact, resetDeploymentFunding, onBeginFreshDeployment]);
+
     const handleDeploy = async () => {
         if (!isAuditPassed) {
             toast.error(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
@@ -254,13 +281,13 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
             if (ownerInput) {
                 const ownerVal = constructorArgs[artifact!.constructorInputs.indexOf(ownerInput)];
-                const w = wallets.find(wall => wall.pubkey === ownerVal || wall.address === ownerVal);
+                const w = localWallets.find(wall => wall.pubkey === ownerVal || wall.address === ownerVal);
                 if (w) ownerWalletId = w.id;
             }
 
             if (funderInput) {
                 const funderVal = constructorArgs[artifact!.constructorInputs.indexOf(funderInput)];
-                const w = wallets.find(wall => wall.pubkey === funderVal || wall.address === funderVal);
+                const w = localWallets.find(wall => wall.pubkey === funderVal || wall.address === funderVal);
                 if (w) funderWalletId = w.id;
             }
 
@@ -479,10 +506,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                 <Copy className="w-4 h-4" />
                             </Button>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="primary"
-                                className="flex-1 text-[10px] font-bold uppercase shadow-[0_0_15px_rgba(0,229,255,0.2)]"
+                                className="flex-1 min-w-[100px] text-[10px] font-bold uppercase shadow-[0_0_15px_rgba(0,229,255,0.2)]"
                                 onClick={() => onNavigate?.('INTERACT')}
                                 icon={<Play className="w-3 h-3" />}
                             >
@@ -490,23 +517,35 @@ export const Deployment: React.FC<DeploymentProps> = ({
                             </Button>
                             <Button
                                 variant="secondary"
-                                className="flex-1 text-[10px] font-bold uppercase"
-                                onClick={() => window.open(getExplorerLink(txHash || project?.deployedAddress || ''), '_blank')}
+                                className="flex-1 min-w-[100px] text-[10px] font-bold uppercase"
+                                onClick={() =>
+                                    window.open(
+                                        getChipnetAddressExplorerUrl(derivedAddress || project?.deployedAddress || ''),
+                                        '_blank'
+                                    )
+                                }
                                 icon={<ExternalLink className="w-3 h-3" />}
                             >
-                                Explorer
+                                Contract
                             </Button>
+                            {txHash && isChipnetTxid(txHash) ? (
+                                <Button
+                                    variant="glass"
+                                    className="flex-1 min-w-[100px] text-[10px] font-bold uppercase border-white/10"
+                                    onClick={() => window.open(getChipnetTxExplorerUrl(txHash), '_blank')}
+                                    icon={<ExternalLink className="w-3 h-3" />}
+                                >
+                                    Funding tx
+                                </Button>
+                            ) : null}
                         </div>
                         <Button
                             variant="glass"
                             className="w-full mt-2 text-[10px] border-nexus-cyan/20 opacity-40 hover:opacity-100"
-                            onClick={() => {
-                                setDeploymentStep(0);
-                                setFundingUtxo(null);
-                                setTxHash(null);
-                            }}
+                            onClick={handleDeployAgain}
+                            icon={<Repeat className="w-3 h-3" />}
                         >
-                            Redeploy
+                            Deploy again
                         </Button>
                     </Card>
                 )}

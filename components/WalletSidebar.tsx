@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import {
     Plus, Wallet, Trash2, Zap, CheckCircle2,
-    Copy, ExternalLink, RefreshCw, ChevronRight,
-    User, Target, ShieldCheck
+    Copy, RefreshCw,
+    User, ShieldCheck
 } from 'lucide-react';
 import { Button } from './UI';
 import { toast } from 'react-hot-toast';
-import { getExplorerLink } from '../services/blockchainService';
 
 export const WalletSidebar: React.FC = () => {
     const {

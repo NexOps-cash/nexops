@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
-    getExplorerLink,
+    getChipnetAddressExplorerUrl,
     fetchUTXOsWithTimeout,
     subscribeToAddress,
     requestFaucetFunds,
@@ -45,6 +45,11 @@ import { PublishModal } from '../components/PublishModal';
 import { supabase } from '../lib/supabase';
 import { ensureContractCodeAsCashFile } from '../lib/projectNormalize';
 import { FundFromWalletConnectPanel } from '../components/FundFromWalletConnectPanel';
+import {
+    clearFundingConfirmedHint,
+    readFundingConfirmedHint,
+    setFundingConfirmedHint,
+} from '../lib/fundingPersistHint';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -85,6 +90,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     onPublish,
     byokSettings
 }) => {
+    const { wallets: nexOpsLocalWallets } = useWallet();
+
     // -- State --
     const [activeFileName, setActiveFileName] = useState<string>(project.files[0]?.name || '');
     const activeFileNameRef = useRef(activeFileName);
@@ -205,24 +212,35 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         }, []);
     }, [project.files]);
 
-    // Derived 3-step progressive state
+    // Derived 3-step progressive state (Spend sidebar). Never show FUND after confirmed deploy when RPC balance is still 0 / stale.
     const appStep = useMemo(() => {
-        // Step 2: Fund (Contract exists but balance is 0)
-        // If we have an address but no balance, they need to fund.
-        // We allow QR code funding, so connection is NOT strictly required to reach Step 2.
-        if (deployedAddress && contractBalance === 0) return 'FUND';
+        const addr = deployedAddress.trim();
+        const persistedFundingDone =
+            !!project.deploymentRecord &&
+            !!addr &&
+            project.deployedAddress === addr &&
+            project.deploymentRecord.contractAddress === addr;
+        const fundedReloadHint = readFundingConfirmedHint(project.id, addr);
 
-        // Step 3: Interact (Contract has balance)
-        if (deployedAddress && contractBalance > 0) return 'INTERACT';
+        if (addr && contractBalance > 0) return 'INTERACT';
+        if (addr && (persistedFundingDone || fundedReloadHint)) return 'INTERACT';
 
-        // Step 1: Connect (No WalletConnect AND no Burner Wallet AND no address yet)
+        if (addr && contractBalance === 0) return 'FUND';
+
         const hasBurner = !!burnerWif;
         const hasWC = !!wcSession;
-        if (!hasBurner && !hasWC) return 'CONNECT';
+        if (!hasBurner && !hasWC && !addr) return 'CONNECT';
 
-        // Fallback to FUND if connected but no specific state match
         return 'FUND';
-    }, [burnerWif, wcSession, deployedAddress, contractBalance]);
+    }, [
+        burnerWif,
+        wcSession,
+        deployedAddress,
+        contractBalance,
+        project.id,
+        project.deploymentRecord,
+        project.deployedAddress,
+    ]);
 
     const openFiles = useMemo(() => {
         return allUniqueFiles.filter(f => openFileNames.includes(f.name));
@@ -278,11 +296,21 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     setContractBalance(balance);
                     if (utxos.length > 0) {
                         setFundingUtxo(utxos[0]);
+                        if (balance > 0 && project.deployedAddress) {
+                            setFundingConfirmedHint(project.id, project.deployedAddress);
+                        }
                     }
                 })
                 .catch((e) => console.warn('[Rehydration] UTXO fetch failed:', e));
+        } else {
+            // Deploy again / no persisted deployment — drop stale workspace snapshot (also fixes project switch)
+            setDeployedAddress('');
+            setDeployedArtifact(null);
+            setConstructorArgs(project.constructorArgs ?? []);
+            setFundingUtxo(null);
+            setContractBalance(0);
         }
-    }, [project.deployedAddress]);
+    }, [project.id, project.deployedAddress]);
 
     useEffect(() => {
         setFundStepBalanceHint(null);
@@ -306,6 +334,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 setContractBalance(prev => {
                     if (prev === 0 && balance > 0) {
                         console.log(`[Subscription] Funding detected! 0 -> ${balance}`);
+                        if (deployedAddress && project.deployedAddress === deployedAddress) {
+                            setFundingConfirmedHint(project.id, deployedAddress);
+                        }
                         setShowLiveModal(true);
                         setActiveView('INTERACT');
                         toast.success("Contract Funded!", { id: 'funded_toast' });
@@ -327,7 +358,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 unsubscribe();
             }
         };
-    }, [deployedAddress]); // Removed contractBalance to prevent loop
+    }, [deployedAddress, project.id, project.deployedAddress]);
 
     // Global funding monitor: Detect funding regardless of active view
     useEffect(() => {
@@ -365,6 +396,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         monitor();
         return () => { if (unsub) unsub(); };
     }, [deployedAddress, !!project.deployedAddress, project.id]);
+
+    /** Sync snapshot reset before clearing persisted deployment — prevents GlobalMonitor/subscribers matching old funded addr + empty project.deployedAddress */
+    const beginFreshDeploymentSync = () => {
+        setShowLiveModal(false);
+        clearFundingConfirmedHint(project.id);
+        setDeployedAddress('');
+        setDeployedArtifact(null);
+        setConstructorArgs([]);
+        setFundingUtxo(null);
+        setContractBalance(0);
+    };
 
     const addLog = (channel: TerminalChannel, message: string | string[]) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -1762,7 +1804,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         <Button
                             variant="glass"
                             className="w-full py-6 bg-white/5 border-white/10 hover:bg-white/10"
-                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
+                            onClick={() => window.open(getChipnetAddressExplorerUrl(deployedAddress), '_blank')}
                             icon={<ExternalLink className="w-4 h-4" />}
                         >
                             Explorer
@@ -1843,11 +1885,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         <Deployment
             project={project}
             onUpdateProject={onUpdateProject}
-            walletConnected={walletConnected}
-            onConnectWallet={onConnectWallet}
+            localWallets={nexOpsLocalWallets}
             compact={true}
             useExternalGenerator={isWsConnected}
             byokSettings={byokSettings}
+            onBeginFreshDeployment={beginFreshDeploymentSync}
             onArtifactsGenerated={(addr, artifact, args) => {
                 setDeployedAddress(addr);
                 setDeployedArtifact(artifact);
@@ -1870,6 +1912,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 });
 
                 setShowLiveModal(true);
+                setFundingConfirmedHint(project.id, addr);
                 setActiveView('INTERACT'); // Ensure we switch to Builder
             }}
             onNavigate={(view) => setActiveView(view)}
@@ -2417,7 +2460,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         <Button
                             variant="secondary"
                             className="w-full h-10 text-xs font-bold uppercase tracking-widest opacity-80 hover:opacity-100"
-                            onClick={() => window.open(getExplorerLink(deployedAddress), '_blank')}
+                            onClick={() => window.open(getChipnetAddressExplorerUrl(deployedAddress), '_blank')}
                             icon={<ExternalLink className="w-3 h-3" />}
                         >
                             View on Explorer
