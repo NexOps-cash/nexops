@@ -461,7 +461,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 if (bConfirmedValue + bUnconfirmedValue > 0) setIsAwaitingPropagation(false);
             }
             if (manual) {
-                toast.success('Balance updated', { id: 'refresh_load' });
+                const total = confirmedValue + unconfirmedValue;
+                if (total > 0) {
+                    toast.success(`Balance · ${total.toLocaleString()} sats`, { id: 'refresh_load' });
+                } else {
+                    toast(
+                        'No balance detected yet. Funding may still be confirming or Chipnet Electrum is slow — try Refresh again.',
+                        { id: 'refresh_load', duration: 5500 },
+                    );
+                }
                 refreshToastSettled = true;
             }
         } catch (e) {
