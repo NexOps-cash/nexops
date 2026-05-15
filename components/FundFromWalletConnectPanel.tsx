@@ -5,6 +5,9 @@ import { walletConnectService, ConnectionStatus } from '../services/walletConnec
 import { fundContractFromWalletConnect } from '../services/wcFundFromWalletConnect';
 import { Button } from './UI';
 
+/** Turn back on when Chipnet WC funding path is ready for all target wallets. */
+export const SHOW_FUND_FROM_WALLET_CONNECT = false;
+
 export interface FundFromWalletConnectPanelProps {
     contractAddress: string;
     /** Disable when no deployment address etc. */
@@ -13,7 +16,14 @@ export interface FundFromWalletConnectPanelProps {
     onFunded?: () => void | Promise<void>;
 }
 
-export const FundFromWalletConnectPanel: React.FC<FundFromWalletConnectPanelProps> = ({
+export const FundFromWalletConnectPanel: React.FC<FundFromWalletConnectPanelProps> = (props) => {
+    if (!SHOW_FUND_FROM_WALLET_CONNECT) {
+        return null;
+    }
+    return <FundFromWalletConnectPanelInner {...props} />;
+};
+
+const FundFromWalletConnectPanelInner: React.FC<FundFromWalletConnectPanelProps> = ({
     contractAddress,
     disabled,
     onFunded,
