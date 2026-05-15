@@ -57,7 +57,7 @@ async function burnerChipnetCashAddress(wif: string): Promise<string> {
     const pubkeyBytes = secp.derivePublicKeyCompressed(decoded.privateKey);
     if (typeof pubkeyBytes === 'string') throw new Error(pubkeyBytes);
     const pkh = ripemd160.hash(sha256.hash(pubkeyBytes));
-    const p2pkh = new Contract(getP2pkhBridgeArtifact() as never, [pkh], { provider });
+    const p2pkh = new Contract(getP2pkhBridgeArtifact() as any, [pkh], { provider });
     return (p2pkh as { tokenAddress?: string }).tokenAddress ?? p2pkh.address;
 }
 

@@ -88,7 +88,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
     // Initialize WalletConnect on mount
     useEffect(() => {
-        walletConnectService.init();
+        void walletConnectService.ensureInit();
     }, []);
 
     // Listen for WalletConnect session changes
@@ -1451,10 +1451,18 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                         onClick={onConnectWallet}
                         icon={<Zap className="w-4 h-4" />}
                     >
-                        WalletConnect (Beta)
+                        WalletConnect
                     </Button>
                     <p className="text-[10px] text-slate-600 text-center -mt-1">
-                        ⚠️ Beta — use the <button onClick={() => setActiveView('WALLET')} className="text-nexus-cyan underline underline-offset-2 hover:text-white transition-colors">Wallet</button> section instead
+                        BCH WalletConnect (wc2-bch-bcr): Paytaca, Cashonize, Zapit, and other compatible wallets sign spends here. Use{' '}
+                        <button
+                            type="button"
+                            onClick={() => setActiveView('WALLET')}
+                            className="text-nexus-cyan underline underline-offset-2 hover:text-white transition-colors"
+                        >
+                            Wallet
+                        </button>{' '}
+                        for NexOps test identities (WIF) only — not required for WalletConnect.
                     </p>
                     <div className="relative flex items-center py-2">
                         <div className="flex-grow border-t border-white/5"></div>

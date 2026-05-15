@@ -82,6 +82,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
     const [isConnecting, setIsConnecting] = useState(false);
 
     useEffect(() => {
+        void walletConnectService.ensureInit();
+    }, []);
+
+    useEffect(() => {
         // If project already has a deployed address, set success state
         if (project?.deployedAddress && !fundingUtxo) {
             setDeploymentStep(4);
@@ -733,15 +737,17 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                         </div>
                                         <Button
                                             variant="glass"
-                                            className="w-full py-2 text-xs border-nexus-cyan/30 bg-black/40 text-gray-500 cursor-not-allowed group relative overflow-hidden"
-                                            disabled={true}
-                                            icon={<Lock className="w-4 h-4 text-gray-500 group-hover:text-nexus-purple transition-colors" />}
+                                            className="w-full py-2.5 text-xs border-nexus-cyan/30 bg-black/40 text-nexus-cyan hover:border-nexus-cyan/50 hover:text-white"
+                                            disabled={isConnecting}
+                                            isLoading={isConnecting}
+                                            onClick={() => void handleConnectWC()}
+                                            icon={<Wallet className="w-4 h-4" />}
                                         >
-                                            <span className="opacity-60">Connect Web3 Wallet</span>
-                                            <span className="absolute inset-0 flex items-center justify-center bg-black/80 text-nexus-purple font-black tracking-[0.2em] transform translate-y-full group-hover:translate-y-0 transition-transform duration-200">
-                                                COMING SOON
-                                            </span>
+                                            Connect WalletConnect (Chipnet)
                                         </Button>
+                                        <p className="text-[10px] text-slate-500 text-center leading-relaxed px-1">
+                                            BCH WalletConnect (wc2-bch-bcr): Paytaca, Cashonize, Zapit. Optional — deploy funding still uses the QR / address flow.
+                                        </p>
                                     </div>
                                 ) : (
                                     <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center backdrop-blur-md">

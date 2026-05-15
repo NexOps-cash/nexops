@@ -8,8 +8,9 @@ import {
     binToHex,
     secp256k1,
     sha256,
-    hexToBin
+    hexToBin,
 } from '@bitauth/libauth';
+import type { WcTransactionObject } from 'cashscript';
 
 // Polyfill Buffer for the browser environment if needed (Vite often needs this)
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -105,6 +106,13 @@ class WalletConnectService extends EventEmitter {
     }
 
     /**
+     * Idempotent init — safe before connect(), signing, or opening wizard spend flows.
+     */
+    public async ensureInit(): Promise<void> {
+        await this.init();
+    }
+
+    /**
      * Initialize the WalletConnect SignClient.
      * Should be called on app mount.
      */
@@ -167,7 +175,7 @@ class WalletConnectService extends EventEmitter {
      * Starts the connection flow. Returns the URI for the QR code.
      */
     public async connect(validChainId: ChainId): Promise<string | undefined> {
-        if (!this.client) await this.init();
+        await this.ensureInit();
         if (!this.client) throw new Error('WalletConnect Client not initialized');
 
         // Map internal network name to CAIP-2
@@ -220,14 +228,11 @@ class WalletConnectService extends EventEmitter {
     }
 
     /**
-     * Request a signature from the connected wallet.
-     * Uses 'bch_signTransaction' with TransactionCommon and sourceOutputs.
+     * Request transaction signing via BCH WalletConnect (wc2-bch-bcr).
+     * Pass the object from CashScript `TransactionBuilder.generateWcTransactionObject()`.
      */
-    public async requestSignature(
-        transaction: any,
-        sourceOutputs: any[],
-        requestedChainId: string
-    ): Promise<string> {
+    public async requestSignature(wcTransactionObject: WcTransactionObject): Promise<string> {
+        await this.ensureInit();
         if (!this.client || !this.session) {
             throw new Error('No WalletConnect session');
         }
@@ -240,23 +245,14 @@ class WalletConnectService extends EventEmitter {
         const approvedChainId = bchNamespace.chains[0];
         const topic = this.session.topic;
 
-        console.log("WC DEBUG: Using chainId:", approvedChainId);
-        console.log("WC DEBUG: Sending transaction template:", transaction);
-        console.log("WC DEBUG: Sending sourceOutputs:", sourceOutputs);
-
         try {
             const result = await this.client.request({
                 topic,
                 chainId: approvedChainId,
                 request: {
                     method: 'bch_signTransaction',
-                    params: {
-                        transaction,
-                        sourceOutputs,
-                        broadcast: false,
-                        userPrompt: "Sign NexOps Smart Contract Transaction"
-                    }
-                }
+                    params: wcTransactionObject as unknown as Record<string, unknown>,
+                },
             }) as any;
 
             console.log("WC DEBUG: Wallet response:", result);
@@ -335,18 +331,13 @@ class WalletConnectService extends EventEmitter {
         if (!fullAccount) return '';
 
         const parts = fullAccount.split(':');
-        // If format is like bch:bchtest:bchtest:qqxxxxx
-        // slice(-1)[0] extracts: qqxxxxx
-        // To get bchtest:qqxxxxx, we would need parts.slice(-2).join(':')
-
-        // However, the user specifically requested slice(-1)[0] logic in their prompt snippet, 
-        // while also saying it extracts "bchtest:qqxxxxx". This is a contradiction if split by ':'.
-        // We will implement a robust extraction that handles both.
-
+        // CAIP-10 variants: bch:bchtest:<cashaddr>, bch:bchtest:bchtest:<cashaddr> (duplicate network), etc.
         if (parts.length >= 4) {
-            return parts.slice(-2).join(':'); // Extracts "prefix:payload"
+            return parts.slice(-2).join(':');
         }
-
+        if (parts.length === 3 && parts[0] === 'bch') {
+            return `${parts[1]}:${parts[2]}`;
+        }
         return parts[parts.length - 1];
     }
 
@@ -392,6 +383,7 @@ class WalletConnectService extends EventEmitter {
      * Works even if the wallet doesn't provide the pubkey in session metadata.
      */
     public async derivePublicKeyFromWallet(): Promise<string> {
+        await this.ensureInit();
         if (!this.client || !this.session) {
             throw new Error('No WalletConnect session');
         }
