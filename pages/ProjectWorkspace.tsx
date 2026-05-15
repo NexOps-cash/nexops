@@ -14,7 +14,13 @@ import {
     FileCode, Zap, Cpu, Loader2, ExternalLink, Wallet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getExplorerLink, fetchUTXOs, subscribeToAddress, requestFaucetFunds, getBlockHeight } from '../services/blockchainService';
+import {
+    getExplorerLink,
+    fetchUTXOsWithTimeout,
+    subscribeToAddress,
+    requestFaucetFunds,
+    getBlockHeight,
+} from '../services/blockchainService';
 import { auditSmartContract, fixSmartContract, editSmartContract, chatWithAssistant, explainSmartContract } from '../services/groqService';
 import { websocketService } from '../services/websocketService';
 import { compileCashScript } from '../services/compilerService';
@@ -38,6 +44,7 @@ import { extractFlow } from '../components/flow/FlowExtractor';
 import { PublishModal } from '../components/PublishModal';
 import { supabase } from '../lib/supabase';
 import { ensureContractCodeAsCashFile } from '../lib/projectNormalize';
+import { FundFromWalletConnectPanel } from '../components/FundFromWalletConnectPanel';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -88,7 +95,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
     // Initialize WalletConnect on mount
     useEffect(() => {
-        walletConnectService.init();
+        void walletConnectService.ensureInit();
     }, []);
 
     // Listen for WalletConnect session changes
@@ -153,6 +160,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const [burnerPubkey, setBurnerPubkey] = useState<string>('');
     const [isGeneratingBurner, setIsGeneratingBurner] = useState(false);
     const [isFetchingBalance, setIsFetchingBalance] = useState(false);
+    /** Shown under Fund-step Refresh when RPC succeeds with 0 sats or request fails */
+    const [fundStepBalanceHint, setFundStepBalanceHint] = useState<string | null>(null);
     const [contractBalance, setContractBalance] = useState<number>(0);
     const [blockHeight, setBlockHeight] = useState<number | null>(null);
     const [showBuilder, setShowBuilder] = useState(false);
@@ -262,16 +271,22 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 }
             }
 
-            // 2. Refresh UTXO state for the interaction sidebar
-            fetchUTXOs(project.deployedAddress).then(utxos => {
-                const balance = utxos.reduce((sum, u) => sum + u.value, 0);
-                setContractBalance(balance);
-                if (utxos.length > 0) {
-                    setFundingUtxo(utxos[0]);
-                }
-            });
+            // 2. Refresh UTXO state for the interaction sidebar (bounded timeout — avoids hung RPC freezing UI)
+            void fetchUTXOsWithTimeout(project.deployedAddress)
+                .then((utxos) => {
+                    const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                    setContractBalance(balance);
+                    if (utxos.length > 0) {
+                        setFundingUtxo(utxos[0]);
+                    }
+                })
+                .catch((e) => console.warn('[Rehydration] UTXO fetch failed:', e));
         }
     }, [project.deployedAddress]);
+
+    useEffect(() => {
+        setFundStepBalanceHint(null);
+    }, [deployedAddress]);
 
     // Live subscription for contract balance
     useEffect(() => {
@@ -1425,54 +1440,105 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     const renderSidebarInteract = () => {
         const history = project.executionHistory || [];
 
-        const renderStep1_Connect = () => (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in zoom-in duration-500">
-                {!deployedAddress && (
-                    <div className="w-full p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-left flex items-start gap-3">
-                        <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
-                        <p className="text-[10px] text-slate-400 leading-normal">
-                            Go to <span className="text-white font-bold">Deployment</span> tab and deploy contract first and then click <span className="text-white font-bold">Interact</span> button.
+        const renderStep1_Connect = () =>
+            !deployedAddress ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 animate-in fade-in zoom-in duration-500">
+                    <div className="w-full max-w-[380px] rounded-2xl border border-amber-500/25 bg-gradient-to-b from-amber-950/40 to-nexus-900/80 p-6 space-y-5 text-left shadow-[0_0_40px_rgba(245,158,11,0.06)]">
+                        <div className="flex items-start gap-3">
+                            <div className="shrink-0 w-11 h-11 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                                <Rocket className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div className="min-w-0 space-y-1">
+                                <h3 className="text-base font-black text-white tracking-tight leading-snug">
+                                    Deploy your contract first
+                                </h3>
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                    This <span className="text-slate-200 font-semibold">Connect wallet</span> step is only
+                                    meaningful once you have a <span className="text-slate-200 font-semibold">deployed contract address</span>{' '}
+                                    on Chipnet. NexOps opens Interact from the deploy flow so wallet signing targets that contract.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl bg-black/35 border border-white/10 p-4 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Recommended path</p>
+                            <ol className="text-[11px] text-slate-300 space-y-2.5 list-decimal pl-4 marker:text-nexus-cyan leading-relaxed">
+                                <li>
+                                    Open the <span className="text-white font-bold">Deployment</span> tab (compile, set constructor
+                                    args, obtain your contract CashAddr).
+                                </li>
+                                <li>
+                                    Finish deployment / funding so the project stores your{' '}
+                                    <span className="text-white font-bold">deployed address</span>.
+                                </li>
+                                <li>
+                                    Return here via <span className="text-white font-bold">Interact</span> — then WalletConnect or a test wallet signs spends against that contract.
+                                </li>
+                            </ol>
+                        </div>
+
+                        <Button
+                            variant="primary"
+                            className="w-full py-3.5 uppercase font-black tracking-widest text-[11px] shadow-[0_0_24px_rgba(245,158,11,0.15)]"
+                            onClick={() => setActiveView('DEPLOY')}
+                            icon={<Rocket className="w-4 h-4" />}
+                        >
+                            Go to Deployment
+                        </Button>
+
+                        <p className="text-[10px] text-slate-600 text-center leading-relaxed">
+                            Landing here directly usually means the sidebar jumped to Interact before a deployment existed — use Deployment first, then Interact.
                         </p>
                     </div>
-                )}
-                <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
-                    <Wallet className="w-10 h-10 text-nexus-cyan" />
                 </div>
-                <div className="space-y-2">
-                    <h3 className="text-xl font-black text-white uppercase tracking-tighter">Connect Wallet</h3>
-                    <p className="text-slate-400 text-sm max-w-[280px]">
-                        Connect a Bitcoin Cash wallet or generate a temporary test wallet to interact with this contract.
-                    </p>
-                </div>
-                <div className="w-full space-y-3">
-                    <Button
-                        variant="primary"
-                        className="w-full py-4 uppercase font-black tracking-widest text-xs shadow-[0_0_20px_rgba(0,229,255,0.2)]"
-                        onClick={onConnectWallet}
-                        icon={<Zap className="w-4 h-4" />}
-                    >
-                        WalletConnect (Beta)
-                    </Button>
-                    <p className="text-[10px] text-slate-600 text-center -mt-1">
-                        ⚠️ Beta — use the <button onClick={() => setActiveView('WALLET')} className="text-nexus-cyan underline underline-offset-2 hover:text-white transition-colors">Wallet</button> section instead
-                    </p>
-                    <div className="relative flex items-center py-2">
-                        <div className="flex-grow border-t border-white/5"></div>
-                        <span className="flex-shrink mx-4 text-[9px] font-black text-slate-600 uppercase tracking-widest">or</span>
-                        <div className="flex-grow border-t border-white/5"></div>
+            ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in zoom-in duration-500">
+                    <div className="w-20 h-20 bg-nexus-cyan/10 rounded-full flex items-center justify-center border border-nexus-cyan/20">
+                        <Wallet className="w-10 h-10 text-nexus-cyan" />
                     </div>
-                    <Button
-                        variant="glass"
-                        className="w-full border-white/10 hover:border-white/20 text-slate-400 hover:text-white"
-                        onClick={handleGenerateBurner}
-                        isLoading={isGeneratingBurner}
-                        icon={<Cpu className="w-4 h-4" />}
-                    >
-                        Generate Test Wallet
-                    </Button>
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tighter">Connect Wallet</h3>
+                        <p className="text-slate-400 text-sm max-w-[280px] mx-auto">
+                            Connect a Bitcoin Cash wallet or generate a temporary test wallet to interact with this contract.
+                        </p>
+                    </div>
+                    <div className="w-full space-y-3 max-w-[320px] mx-auto">
+                        <Button
+                            variant="primary"
+                            className="w-full py-4 uppercase font-black tracking-widest text-xs shadow-[0_0_20px_rgba(0,229,255,0.2)]"
+                            onClick={onConnectWallet}
+                            icon={<Zap className="w-4 h-4" />}
+                        >
+                            WalletConnect
+                        </Button>
+                        <p className="text-[10px] text-slate-600 text-center -mt-1">
+                            BCH WalletConnect (wc2-bch-bcr): Paytaca, Cashonize, Zapit, and other compatible wallets sign spends here. Use{' '}
+                            <button
+                                type="button"
+                                onClick={() => setActiveView('WALLET')}
+                                className="text-nexus-cyan underline underline-offset-2 hover:text-white transition-colors"
+                            >
+                                Wallet
+                            </button>{' '}
+                            for NexOps test identities (WIF) only — not required for WalletConnect.
+                        </p>
+                        <div className="relative flex items-center py-2">
+                            <div className="flex-grow border-t border-white/5"></div>
+                            <span className="flex-shrink mx-4 text-[9px] font-black text-slate-600 uppercase tracking-widest">or</span>
+                            <div className="flex-grow border-t border-white/5"></div>
+                        </div>
+                        <Button
+                            variant="glass"
+                            className="w-full border-white/10 hover:border-white/20 text-slate-400 hover:text-white"
+                            onClick={handleGenerateBurner}
+                            isLoading={isGeneratingBurner}
+                            icon={<Cpu className="w-4 h-4" />}
+                        >
+                            Generate Test Wallet
+                        </Button>
+                    </div>
                 </div>
-            </div>
-        );
+            );
 
         const renderStep2_Fund = () => (
             <div className="flex-1 flex flex-col p-4 space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
@@ -1520,6 +1586,37 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                                     {deployedAddress}
                                 </p>
                             </div>
+                            <FundFromWalletConnectPanel
+                                contractAddress={deployedAddress}
+                                disabled={!deployedAddress}
+                                onFunded={async () => {
+                                    setFundStepBalanceHint(null);
+                                    setIsFetchingBalance(true);
+                                    try {
+                                        const utxos = await fetchUTXOsWithTimeout(deployedAddress);
+                                        const balance = utxos.reduce((sum, u) => sum + u.value, 0);
+                                        setContractBalance(balance);
+                                        if (balance > 0) {
+                                            setFundStepBalanceHint(null);
+                                            toast.success(`Balance detected: ${balance} sats`);
+                                            setShowBuilder(false);
+                                            setActiveView('INTERACT');
+                                        } else {
+                                            const hint =
+                                                'No balance detected yet. If you already paid, wait for confirmations or try Refresh — Chipnet Electrum can lag.';
+                                            setFundStepBalanceHint(hint);
+                                            toast(hint, { duration: 5500 });
+                                        }
+                                    } catch (e) {
+                                        const msg = e instanceof Error ? e.message : String(e);
+                                        const hint = `Indexer unreachable or timed out (${msg}). Usually temporary — press Refresh again.`;
+                                        setFundStepBalanceHint(hint);
+                                        toast.error(hint, { duration: 6500 });
+                                    } finally {
+                                        setIsFetchingBalance(false);
+                                    }
+                                }}
+                            />
                         </div>
                     )}
 
@@ -1529,20 +1626,31 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                             variant="glass"
                             className="w-full border-white/5 bg-white/5 hover:bg-white/10 mt-2"
                             isLoading={isFetchingBalance}
+                            disabled={!deployedAddress}
                             onClick={async () => {
                                 if (!deployedAddress) return;
+                                setFundStepBalanceHint(null);
                                 setIsFetchingBalance(true);
                                 try {
-                                    const utxos = await fetchUTXOs(deployedAddress);
+                                    const utxos = await fetchUTXOsWithTimeout(deployedAddress);
                                     const balance = utxos.reduce((sum, u) => sum + u.value, 0);
                                     setContractBalance(balance);
                                     if (balance > 0) {
+                                        setFundStepBalanceHint(null);
                                         toast.success(`Balance detected: ${balance} sats`);
-                                        setShowBuilder(false); // Ensure summary is shown first
+                                        setShowBuilder(false);
                                         setActiveView('INTERACT');
                                     } else {
-                                        toast.error("No balance detected yet.");
+                                        const hint =
+                                            'No balance detected yet. If you already funded this contract, wait for confirmations or try again — Chipnet RPC/indexers can be slow.';
+                                        setFundStepBalanceHint(hint);
+                                        toast(hint, { duration: 5500 });
                                     }
+                                } catch (e) {
+                                    const msg = e instanceof Error ? e.message : String(e);
+                                    const hint = `Could not refresh (${msg}). Often a temporary Electrum/RPC issue — press Refresh again in a few seconds.`;
+                                    setFundStepBalanceHint(hint);
+                                    toast.error(hint, { duration: 6500 });
                                 } finally {
                                     setIsFetchingBalance(false);
                                 }
@@ -1551,6 +1659,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                             <RotateCcw className="w-3 h-3 mr-2" />
                             Refresh Balance
                         </Button>
+                        {fundStepBalanceHint && (
+                            <p className="text-[10px] text-amber-200/85 leading-relaxed text-center px-1">
+                                {fundStepBalanceHint}
+                            </p>
+                        )}
                     </div>
                 </div>
 

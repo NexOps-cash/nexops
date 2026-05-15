@@ -50,7 +50,7 @@ function tryTokenAddress(artifact: ContractArtifact, args: string[]): string | u
   for (const hostname of ELECTRUM_FALLBACK_SERVERS) {
     try {
       const provider = new ElectrumNetworkProvider(Network.CHIPNET, { hostname });
-      const c = new Contract(artifact as never, typedArgs, { provider });
+      const c = new Contract(artifact as any, typedArgs, { provider });
       return (c as { tokenAddress?: string }).tokenAddress || undefined;
     } catch {
       /* try next host */

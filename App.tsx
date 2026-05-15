@@ -29,6 +29,7 @@ import { loadProjectByIdForUser, loadProjectsForUser, upsertProjectRow } from '.
 import { registryRowToProject } from './lib/registryContract';
 import { consumePendingRegistryContract } from './lib/pendingRegistryLoad';
 import { ensureContractCodeAsCashFile } from './lib/projectNormalize';
+import { walletConnectService } from './services/walletConnectService';
 
 const STORAGE_KEY = 'nexops_protocol_v2';
 const BYOK_STORAGE_KEY = 'nexops_byok_settings';
@@ -304,6 +305,39 @@ const App: React.FC = () => {
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [walletConnected, setWalletConnected] = useState(false);
+
+  useEffect(() => {
+    void walletConnectService.ensureInit();
+  }, []);
+
+  useEffect(() => {
+    const syncWalletFlag = () => setWalletConnected(walletConnectService.isConnected());
+    walletConnectService.on('connection_status_changed', syncWalletFlag);
+    walletConnectService.on('session_connected', syncWalletFlag);
+    walletConnectService.on('session_disconnected', syncWalletFlag);
+    syncWalletFlag();
+    return () => {
+      walletConnectService.off('connection_status_changed', syncWalletFlag);
+      walletConnectService.off('session_connected', syncWalletFlag);
+      walletConnectService.off('session_disconnected', syncWalletFlag);
+    };
+  }, []);
+
+  const handleWorkspaceWalletConnect = useCallback(async () => {
+    try {
+      await walletConnectService.ensureInit();
+      if (walletConnectService.isConnected()) {
+        await walletConnectService.disconnect();
+      } else {
+        await walletConnectService.connect('bch:testnet');
+      }
+      setWalletConnected(walletConnectService.isConnected());
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Wallet connection failed');
+      setWalletConnected(walletConnectService.isConnected());
+    }
+  }, []);
   const {
     user,
     isLoading: authLoading,
@@ -637,7 +671,7 @@ const App: React.FC = () => {
                         onUpdateProject={updateWorkspaceProject}
                         onPersistToDb={(p) => void enqueuePersistRemote(p)}
                         walletConnected={walletConnected}
-                        onConnectWallet={() => setWalletConnected(!walletConnected)}
+                        onConnectWallet={handleWorkspaceWalletConnect}
                         onNavigateHome={() => handleNavigate('home')}
                         byokSettings={byokSettings}
                       />

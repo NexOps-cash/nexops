@@ -3,6 +3,7 @@ import { ChevronDown, Github, User as UserIcon, Maximize, Minimize } from 'lucid
 import { Project } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { SystemHealthControl } from './SystemHealthControl';
+import { GlobalWalletConnectControl } from './GlobalWalletConnectControl';
 
 interface TopMenuBarProps {
     activeProject: Project | null;
@@ -131,6 +132,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({ activeProject, onAction,
                 <div className="text-xs text-slate-500 font-mono hidden md:block">
                     {activeProject ? activeProject.name : 'No Project'}
                 </div>
+
+                <GlobalWalletConnectControl />
 
                 <SystemHealthControl variant="topBar" />
 

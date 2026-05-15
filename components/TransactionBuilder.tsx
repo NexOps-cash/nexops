@@ -36,6 +36,7 @@ import {
     type OutputStrategy,
 } from '../services/wizard/txPlanning';
 import { attachBurnerP2pkhSponsorIfNeeded } from '../services/chipnetLiveTest/exactInputValueMatchSponsor';
+import { FundFromWalletConnectPanel } from './FundFromWalletConnectPanel';
 
 /** Legacy vs token-aware Chipnet CashAddr encodings share the same locking bytecode — string compare false positive. */
 function covenantCashAddrsEquivalent(a: string, b: string): boolean {
@@ -460,7 +461,15 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 if (bConfirmedValue + bUnconfirmedValue > 0) setIsAwaitingPropagation(false);
             }
             if (manual) {
-                toast.success('Balance updated', { id: 'refresh_load' });
+                const total = confirmedValue + unconfirmedValue;
+                if (total > 0) {
+                    toast.success(`Balance · ${total.toLocaleString()} sats`, { id: 'refresh_load' });
+                } else {
+                    toast(
+                        'No balance detected yet. Funding may still be confirming or Chipnet Electrum is slow — try Refresh again.',
+                        { id: 'refresh_load', duration: 5500 },
+                    );
+                }
                 refreshToastSettled = true;
             }
         } catch (e) {
@@ -756,6 +765,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 HashType,
                 SignatureAlgorithm,
                 Network: CashScriptNetwork,
+                TransactionBuilder: CashScriptTransactionBuilder,
+                placeholderSignature,
             } = await import('cashscript');
 
             const deploymentArgs = project.deploymentRecord?.constructorArgs;
@@ -817,25 +828,7 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
             const func = functions.find(f => f.name === selectedFunction);
             if (!func) throw new Error("Function not found");
 
-            const abiSigCount = func.inputs.filter((inp: { type: string }) => inp.type === 'sig').length;
-
             const createSigTemplate = (sigAbiName: string) => {
-                if (signingMethod === 'walletconnect') {
-                    if (abiSigCount > 1) {
-                        throw new Error(
-                            'This call needs multiple ECDSA signatures (e.g. buyer + seller). Switch to Burner and add a NexOps test identity per party whose pubkey matches the constructor — WalletConnect here signs only one key per execution.'
-                        );
-                    }
-                    const dummyKey = new Uint8Array(32).fill(1);
-                    const wcTemplate = new SignatureTemplate(
-                        dummyKey,
-                        HashType.SIGHASH_ALL,
-                        SignatureAlgorithm.ECDSA
-                    );
-                    wcTemplate.generateSignature = (_payload: any, _bchForkId: any) => new Uint8Array(65).fill(0);
-                    return wcTemplate;
-                }
-
                 const roleMatch = sigAbiName.match(/^(buyer|seller|arbiter)Sig$/i);
                 let wifToUse: string | undefined;
                 if (roleMatch) {
@@ -869,6 +862,9 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
                 // Handle Signature Placeholders
                 if (def.type === 'sig') {
+                    if (signingMethod === 'walletconnect') {
+                        return placeholderSignature();
+                    }
                     return createSigTemplate(def.name);
                 }
 
@@ -916,7 +912,6 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
 
             console.log(`Using ${selectedUtxos.length} selected UTXOs for transaction.`);
 
-            const { TransactionBuilder: CashScriptTransactionBuilder } = await import('cashscript');
             const txBuilder = new CashScriptTransactionBuilder({ provider });
 
             const unlocker = contract.unlock[selectedFunction](...typedArgs);
@@ -1002,37 +997,13 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 signedHex = typeof tx === 'string' ? tx : (tx as any).hex;
                 console.log("Signed Hex (Local):", signedHex);
             } else {
-                const unsignedHex = await txBuilder.build();
-                console.log("Unsigned Hex (Pre-Sign):", unsignedHex);
-
-                // NEW: Use libauth to decode hex to TransactionCommon for Paytaca/Standard wallets
-                const { decodeTransaction, hexToBin, cashAddressToLockingBytecode } = await import('@bitauth/libauth');
-
-                const transaction = decodeTransaction(hexToBin(unsignedHex as string));
-                if (typeof transaction === 'string') throw new Error(transaction);
-
-                // Prepare sourceOutputs for the wallet to verify the transaction
-                const lockResult = cashAddressToLockingBytecode(deployedAddress);
-                if (typeof lockResult === 'string') throw new Error(lockResult);
-
-                const sourceOutputs = selectedUtxos.map(u => ({
-                    lockingBytecode: lockResult.bytecode,
-                    valueSatoshis: BigInt(u.value)
-                }));
-
-                // 7. Request Signature from Wallet
-                console.log("Requesting signature via WalletConnect (Structured)...");
-                // Note: The service now uses the approved chain from the session, but we pass the correct mapping here as well
-                const wcChainId = (network === 'mainnet' || network === 'main') ? 'bch:bitcoincash' : 'bch:bchtest';
-
-                console.log("WC PAYLOAD:", {
-                    transaction,
-                    sourceOutputs,
-                    chainId: wcChainId
+                console.log('Generating WalletConnect transaction object (CashScript wc2-bch-bcr)...');
+                const wcObj = txBuilder.generateWcTransactionObject({
+                    broadcast: false,
+                    userPrompt: 'Sign NexOps smart contract transaction',
                 });
-
-                signedHex = await walletConnectService.requestSignature(transaction, sourceOutputs, wcChainId);
-                console.log("Signed Hex (Post-Sign):", signedHex);
+                signedHex = await walletConnectService.requestSignature(wcObj);
+                console.log('Signed Hex (Post-Sign):', signedHex);
             }
 
             // 8. Broadcast
@@ -1281,8 +1252,8 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                 <div className="flex items-start gap-2.5 px-4 py-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
                     <AlertCircle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-yellow-300/80 leading-relaxed">
-                        <span className="font-black uppercase tracking-wider text-yellow-400">Beta — </span>
-                        The spend/execute call is experimental and may not work correctly for all contract types. Complex covenant patterns with custom signing logic may require manual transaction crafting.
+                        <span className="font-black uppercase tracking-wider text-yellow-400">Execution note — </span>
+                        WalletConnect uses BCH WalletConnect (wc2-bch-bcr); Paytaca, Cashonize, Zapit, and similar wallets show a readable contract screen before signing. Novel covenant paths may still fail until tested — multi-party escrow with separate keys is often smoother with Burner identities and test wallets.
                     </p>
                 </div>
                 {isHtlcRefundSlowPath && (
@@ -1349,6 +1320,12 @@ export const TransactionBuilder: React.FC<TransactionBuilderProps> = ({
                                 </button>
                             </div>
                         </div>
+
+                        <FundFromWalletConnectPanel
+                            contractAddress={deployedAddress || ''}
+                            disabled={!deployedAddress}
+                            onFunded={() => void loadUtxos(false)}
+                        />
 
                         {/* Auto-Fund button removed at user request */}
                     </div>

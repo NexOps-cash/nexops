@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import type { WizardDeployRecord } from '../../types';
 import { TransactionBuilder } from '../TransactionBuilder';
 import { Modal } from '../UI';
@@ -17,6 +17,12 @@ export interface WizardSpendModalProps {
  */
 export const WizardSpendModal: React.FC<WizardSpendModalProps> = ({ isOpen, onClose, record }) => {
     const { getWalletById, activeWallet } = useWallet();
+
+    useEffect(() => {
+        if (isOpen) {
+            void walletConnectService.ensureInit();
+        }
+    }, [isOpen]);
 
     const project = useMemo(() => (record ? buildProjectFromWizardDeployRecord(record) : null), [record]);
 
