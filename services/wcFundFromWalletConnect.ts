@@ -15,8 +15,8 @@ function normalizeAddr(addr: string): string {
 }
 
 /**
- * Build a P2PKH → contract payment via CashScript placeholders and request WalletConnect signing.
- * Wallet receives `broadcast: true` so compatible wallets broadcast after signing.
+ * Build a P2PKH → contract payment via CashScript placeholders and WalletConnect signing.
+ * Uses {@link stringify}-compatible WC params and NexOps broadcast after signing (same as Transaction Builder spends).
  */
 export async function fundContractFromWalletConnect(params: {
     fromCashAddress: string;
@@ -57,10 +57,12 @@ export async function fundContractFromWalletConnect(params: {
                 feeRate: FEE_RATE_SATS_PER_BYTE,
             });
             const wcObj = tb.generateWcTransactionObject({
-                broadcast: true,
+                broadcast: false,
                 userPrompt: `Send ${params.amountSats.toString()} satoshis to the contract`,
             });
-            return await walletConnectService.requestSignature(wcObj);
+            const signedHex = await walletConnectService.requestSignature(wcObj);
+            const txid = await provider.sendRawTransaction(signedHex);
+            return txid;
         } catch (e) {
             lastErr = e;
         }

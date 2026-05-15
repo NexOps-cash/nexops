@@ -9,6 +9,7 @@ import {
     secp256k1,
     sha256,
     hexToBin,
+    stringify,
 } from '@bitauth/libauth';
 import type { WcTransactionObject } from 'cashscript';
 
@@ -252,13 +253,16 @@ class WalletConnectService extends EventEmitter {
         const approvedChainId = bchNamespace.chains[0];
         const topic = this.session.topic;
 
+        /** Uint8Array / BigInt are not JSON-safe — wallets expect libauth-stringified payloads per wc2-bch-bcr. */
+        const params = JSON.parse(stringify(wcTransactionObject)) as Record<string, unknown>;
+
         try {
             const result = await this.client.request({
                 topic,
                 chainId: approvedChainId,
                 request: {
                     method: 'bch_signTransaction',
-                    params: wcTransactionObject as unknown as Record<string, unknown>,
+                    params,
                 },
             }) as any;
 
@@ -283,7 +287,16 @@ class WalletConnectService extends EventEmitter {
             throw new Error('Unable to extract signed transaction from wallet response');
         } catch (e) {
             console.error('Signing failed', e);
-            throw e;
+            const nested =
+                typeof e === 'object' &&
+                e !== null &&
+                'cause' in e &&
+                (e as { cause?: { message?: string } }).cause?.message
+                    ? String((e as { cause?: { message?: string } }).cause!.message)
+                    : '';
+            const msg =
+                e instanceof Error ? e.message : nested ? `${nested}` : typeof e === 'string' ? e : JSON.stringify(e);
+            throw new Error(msg || 'WalletConnect signing failed');
         }
     }
 

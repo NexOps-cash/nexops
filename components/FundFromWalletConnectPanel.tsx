@@ -55,12 +55,15 @@ export const FundFromWalletConnectPanel: React.FC<FundFromWalletConnectPanelProp
         const toastId = toast.loading('Opening wallet to sign funding transaction…');
         try {
             await walletConnectService.ensureInit();
-            await fundContractFromWalletConnect({
+            const txid = await fundContractFromWalletConnect({
                 fromCashAddress: from,
                 contractCashAddress: contractAddress.trim(),
                 amountSats: n,
             });
-            toast.success('Funding transaction signed. Balance may take a few seconds to appear.', { id: toastId });
+            toast.success(
+                `Funding broadcast · tx ${typeof txid === 'string' && txid.length > 14 ? `${txid.slice(0, 10)}…${txid.slice(-6)}` : txid}. Balance may take a few seconds.`,
+                { id: toastId, duration: 6000 },
+            );
             await onFunded?.();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
