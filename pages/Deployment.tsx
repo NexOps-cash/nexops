@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Card, Button, Badge, Modal } from '../components/UI';
 import { Project, ChainType, BYOKSettings } from '../types';
@@ -6,7 +6,7 @@ import { ContractArtifact } from '../types';
 import { compileCashScript, verifyDeterminism } from '../services/compilerService';
 import { fixSmartContract } from '../services/groqService';
 import { walletConnectService, ConnectionStatus } from '../services/walletConnectService';
-import { deriveContractAddress } from '../services/addressService';
+import { deriveContractAddress, explainDerivationError } from '../services/addressService';
 import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
@@ -204,19 +204,35 @@ export const Deployment: React.FC<DeploymentProps> = ({
         await walletConnectService.disconnect();
     };
 
+    const resetDeploymentFunding = useCallback(() => {
+        setDeploymentStep(0);
+        setPaymentRequestUri(null);
+        setFundingStatus({ status: 'idle', utxos: [], totalValue: 0 });
+        setTxHash(null);
+        setIsDeploying(false);
+    }, []);
+
     const handleDeploy = async () => {
         if (!isAuditPassed) {
             toast.error(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
             return;
         }
 
-        let finalAddress = derivedAddress;
-        if (!finalAddress) {
+        if (!artifact) {
+            toast.error('Compile the contract before deploying.');
+            return;
+        }
+
+        let addressToFund = derivedAddress.trim();
+        if (!addressToFund) {
             try {
-                finalAddress = deriveContractAddress(artifact!, constructorArgs);
-                setDerivedAddress(finalAddress);
-            } catch (e: any) {
-                toast.error(`Address derivation failed: ${e.message}`);
+                addressToFund = deriveContractAddress(artifact, constructorArgs);
+                setDerivedAddress(addressToFund);
+            } catch (e: unknown) {
+                const msg = explainDerivationError(e, artifact.constructorInputs);
+                toast.error('Address derivation failed — see the message below.');
+                setDerivationError(msg);
+                setDerivedAddress('');
                 return;
             }
         }
@@ -246,25 +262,25 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
             if (ownerWalletId && funderWalletId && ownerWalletId === funderWalletId) {
                 if (!confirm("IDENTITY GUARD WARNING: You are using the SAME wallet for both Owner and Funder. This is often an anti-pattern in smart contracts (Self-Funding). Proceed anyway?")) {
-                    setIsDeploying(false);
+                    resetDeploymentFunding();
                     return;
                 }
             }
 
             // Construct Payment Request URI (BIP-21)
             const amountBch = fundingAmount / 100_000_000;
-            const uri = `${derivedAddress}?amount=${amountBch}&label=NexOps%20Deployment`;
+            const uri = `${addressToFund}?amount=${amountBch.toFixed(8)}&label=NexOps%20Deployment`;
 
             setPaymentRequestUri(uri);
             setDeploymentStep(2); // Waiting for Payment
             setFundingStatus({ status: 'monitoring', utxos: [], totalValue: 0 });
 
-            console.log("Payment URI:", uri);
-            console.log("Starting blockchain monitoring for:", derivedAddress);
+            console.log('Payment URI:', uri);
+            console.log('Starting blockchain monitoring for:', addressToFund);
 
             // Start real-time UTXO monitoring
             pollForFunding(
-                derivedAddress,
+                addressToFund,
                 fundingAmount,
                 (status) => {
                     console.log('[Deployment] Funding status update:', status);
@@ -279,7 +295,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
                         // Update Project with Deployment Record
                         const record: DeploymentRecord = {
-                            contractAddress: derivedAddress!,
+                            contractAddress: addressToFund,
                             ownerWalletId,
                             funderWalletId,
                             constructorArgs: [...constructorArgs], // Deep copy to ensure persistence
@@ -288,7 +304,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
                         onUpdateProject({
                             ...project,
-                            deployedAddress: derivedAddress!,
+                            deployedAddress: addressToFund,
                             deployedArtifact: artifact!,
                             constructorArgs,
                             deploymentRecord: record,
@@ -296,7 +312,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         });
 
                         if (onDeployed && artifact) {
-                            onDeployed(derivedAddress!, artifact, constructorArgs, utxo);
+                            onDeployed(addressToFund, artifact, constructorArgs, utxo);
                         }
                     }
                 },
@@ -312,9 +328,14 @@ export const Deployment: React.FC<DeploymentProps> = ({
             });
 
         } catch (e) {
-            console.error("Deployment failed", e);
+            console.error('Deployment failed', e);
             setDeploymentStep(0);
-            setFundingStatus({ status: 'error', utxos: [], totalValue: 0, error: (e as Error).message });
+            setFundingStatus({
+                status: 'error',
+                utxos: [],
+                totalValue: 0,
+                error: explainDerivationError(e, artifact!.constructorInputs),
+            });
         } finally {
             setIsDeploying(false);
         }
@@ -340,12 +361,14 @@ export const Deployment: React.FC<DeploymentProps> = ({
             } else {
                 setDerivedAddress('');
             }
-        } catch (e: any) {
-            console.error("❌ [Deployment] Derivation failed:", e);
-            setDerivationError(e.message || "Invalid arguments");
+        } catch (e: unknown) {
+            console.error('❌ [Deployment] Derivation failed:', e);
+            resetDeploymentFunding();
+            const msg = explainDerivationError(e, artifact.constructorInputs);
+            setDerivationError(msg);
             setDerivedAddress('');
         }
-    }, [artifact, constructorArgs]);
+    }, [artifact, constructorArgs, resetDeploymentFunding]);
 
     const formatAddressPreview = (sh: string) => `bchtest:p${sh.substring(0, 36)}...`;
     // Safer wallet address extraction
@@ -400,7 +423,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                     onArtifactsGenerated?.(derivedAddress, artifact, constructorArgs);
                                 }
                             }}
-                            disabled={!derivedAddress || hasCriticalValidationErrors()}
+                            disabled={!derivedAddress || hasCriticalValidationErrors() || !!derivationError}
                         >
                             Confirm Address
                         </Button>
@@ -577,12 +600,35 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                     <label className="text-xs text-gray-400 uppercase font-bold mb-1 flex items-center">
                                         <Lock className="w-3 h-3 mr-1" /> Locking Address (Derived)
                                     </label>
-                                    <div className="font-mono text-xs bg-nexus-900 p-2 rounded text-nexus-cyan truncate border border-nexus-700">
-                                        {derivedAddress || (artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : "Thinking...")}
-                                    </div>
-                                    <div className="mt-1 flex items-center text-[10px] text-yellow-500 font-bold bg-yellow-900/10 p-1 rounded">
-                                        <AlertCircle className="w-3 h-3 mr-1" /> WARNING: Contract is NOT live until funded.
-                                    </div>
+                                    {derivationError ? (
+                                        <div className="space-y-2">
+                                            <div className="text-xs bg-red-950/50 p-3 rounded border border-red-500/40 text-red-200 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto custom-scrollbar font-sans">
+                                                {derivationError}
+                                            </div>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                className="w-full"
+                                                icon={<RefreshCw className="w-3 h-3" />}
+                                                onClick={resetDeploymentFunding}
+                                            >
+                                                Reset deployment &amp; fix parameters
+                                            </Button>
+                                            <p className="text-[10px] text-amber-400/90">
+                                                Fix empty or invalid bytes20 / hash fields, then the address and QR will refresh automatically.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="font-mono text-xs bg-nexus-900 p-2 rounded text-nexus-cyan truncate border border-nexus-700">
+                                                {derivedAddress ||
+                                                    (artifact.scriptHash ? formatAddressPreview(artifact.scriptHash) : 'Deriving address…')}
+                                            </div>
+                                            <div className="mt-1 flex items-center text-[10px] text-yellow-500 font-bold bg-yellow-900/10 p-1 rounded">
+                                                <AlertCircle className="w-3 h-3 mr-1" /> WARNING: Contract is NOT live until funded.
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
                                 <div>
@@ -648,6 +694,33 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                 </div>
                             )}
 
+                            {artifact && derivationError && (
+                                <div className="rounded-xl border border-red-500/45 bg-red-950/40 p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-red-200 font-bold text-xs uppercase tracking-wider">
+                                                Address derivation failed
+                                            </p>
+                                            <p className="text-[11px] text-red-100/90 whitespace-pre-wrap mt-2 leading-relaxed max-h-[220px] overflow-y-auto custom-scrollbar">
+                                                {derivationError}
+                                            </p>
+                                            <p className="text-[10px] text-red-300/80 mt-2">
+                                                Correct the constructor inputs above (this error is also shown in Contract Safety). Nothing is sent on-chain until funding succeeds.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="secondary"
+                                        className="w-full text-xs"
+                                        icon={<RefreshCw className="w-3.5 h-3.5" />}
+                                        onClick={resetDeploymentFunding}
+                                    >
+                                        Reset funding step &amp; try again
+                                    </Button>
+                                </div>
+                            )}
+
                             {/* Optional Wallet Connection Bar */}
                             <div className="space-y-4">
                                 {!wcSession ? (
@@ -708,7 +781,31 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                     <>
                                         {/* Deployment Phase Check */}
                                         {/* IF artifact is configured AND derivedAddress exists, Show Funding Step right away  */}
-                                        {((deploymentStep === 2 || deploymentStep === 1) && derivedAddress) ? (
+                                        {derivationError &&
+                                        artifact &&
+                                        (deploymentStep === 1 || deploymentStep === 2 || paymentRequestUri) ? (
+                                            <div className="bg-red-950/40 border border-red-500/40 p-6 rounded-2xl space-y-3 mt-4">
+                                                <div className="flex items-start gap-2">
+                                                    <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-red-200 font-black text-xs uppercase tracking-widest">
+                                                            Deployment halted — derivation error
+                                                        </p>
+                                                        <p className="text-xs text-red-100/95 whitespace-pre-wrap mt-2 max-h-[200px] overflow-y-auto leading-relaxed">
+                                                            {derivationError}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    variant="secondary"
+                                                    className="w-full"
+                                                    icon={<RefreshCw className="w-4 h-4" />}
+                                                    onClick={resetDeploymentFunding}
+                                                >
+                                                    Start over — fix constructor &amp; redeploy
+                                                </Button>
+                                            </div>
+                                        ) : ((deploymentStep === 2 || deploymentStep === 1) && derivedAddress && !derivationError) ? (
                                             <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center animate-in zoom-in duration-500 backdrop-blur-xl mt-4">
                                                 {!paymentRequestUri ? (
                                                     // State BEFORE user clicks "Fund / Deploy"
@@ -720,12 +817,12 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                                             className="w-full py-3 h-auto uppercase tracking-widest text-sm font-black"
                                                             onClick={handleDeploy}
                                                             isLoading={isDeploying}
+                                                            disabled={hasCriticalValidationErrors() || !derivedAddress || !!derivationError}
                                                         >
                                                             Initiate Deployment
                                                         </Button>
                                                     </div>
                                                 ) : (
-                                                    // State AFTER user clicks Deploy (Active monitor)
                                                     <>
                                                         <div className="p-4 bg-white rounded-3xl shadow-2xl shadow-nexus-cyan/20 mb-6">
                                                             <QRCodeSVG value={paymentRequestUri} size={180} />
@@ -776,8 +873,18 @@ export const Deployment: React.FC<DeploymentProps> = ({
                                                                 </div>
                                                             )}
                                                             {fundingStatus.status === 'error' && (
-                                                                <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-[10px] font-bold text-center">
-                                                                    {fundingStatus.error || 'Connection Timeout'}
+                                                                <div className="space-y-3">
+                                                                    <div className="p-3 bg-red-950/50 border border-red-500/30 rounded-lg text-red-300 text-[10px] font-bold text-center whitespace-pre-wrap">
+                                                                        {fundingStatus.error || 'Connection Timeout'}
+                                                                    </div>
+                                                                    <Button
+                                                                        variant="secondary"
+                                                                        className="w-full text-[10px] font-bold uppercase tracking-wider"
+                                                                        icon={<RefreshCw className="w-3.5 h-3.5" />}
+                                                                        onClick={resetDeploymentFunding}
+                                                                    >
+                                                                        Reset &amp; redeploy
+                                                                    </Button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -804,7 +911,13 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
                                                 <Button
                                                     onClick={handleDeploy}
-                                                    disabled={isDeploying || !isAuditPassed || hasCriticalValidationErrors()}
+                                                    disabled={
+                                                        isDeploying ||
+                                                        !isAuditPassed ||
+                                                        hasCriticalValidationErrors() ||
+                                                        !derivedAddress ||
+                                                        !!derivationError
+                                                    }
                                                     isLoading={isDeploying}
                                                     className="w-full py-5 bg-nexus-cyan hover:bg-cyan-400 text-slate-950 font-black uppercase tracking-[0.2em] text-xs shadow-[0_0_30px_rgba(34,211,238,0.3)] disabled:opacity-20 translate-y-0 active:translate-y-0.5 transition-all"
                                                     icon={<Rocket className="w-5 h-5" />}

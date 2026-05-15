@@ -29,10 +29,25 @@ export function coerceConstructorArgs(
         const bytesNMatch = inp.type.match(/^bytes(\d+)$/);
         if (bytesNMatch) {
             const size = parseInt(bytesNMatch[1], 10);
-            if (val && /^[0-9a-fA-F]+$/.test(val)) {
-                const paddedHex = val.padStart(size * 2, '0');
-                return new Uint8Array(paddedHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+            const expectedHexChars = size * 2;
+            const hexRaw = String(val ?? '').trim().replace(/^0x/i, '');
+            if (!hexRaw) {
+                throw new Error(
+                    `Constructor "${inp.name}" (${inp.type}) is empty. Use the wallet picker for PKH/bytes20 fields or paste ${expectedHexChars} hex characters.`,
+                );
             }
+            if (!/^[0-9a-fA-F]+$/.test(hexRaw)) {
+                throw new Error(
+                    `Constructor "${inp.name}" (${inp.type}) must contain only hexadecimal characters.`,
+                );
+            }
+            if (hexRaw.length > expectedHexChars) {
+                throw new Error(
+                    `Constructor "${inp.name}" (${inp.type}) has ${hexRaw.length} hex digits; maximum is ${expectedHexChars}.`,
+                );
+            }
+            const paddedHex = hexRaw.padStart(expectedHexChars, '0');
+            return new Uint8Array(paddedHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
         }
         return val;
     });
@@ -149,4 +164,32 @@ export function deriveContractAddress(
         console.error('❌ [addressService] Error stack:', (e as Error).stack);
         throw e;
     }
+}
+
+/**
+ * Turn low-level ABI / Electrum failures into actionable copy for the deployment UI.
+ */
+export function explainDerivationError(error: unknown, inputs: { name: string; type: string }[]): string {
+    const raw = error instanceof Error ? error.message : String(error);
+
+    const bytesInputs = inputs.filter((i) => /^bytes\d+$/.test(i.type));
+    if (/bytes0.*bytes20|type 'bytes0'|found type 'bytes0'/i.test(raw)) {
+        const hint =
+            bytesInputs.length > 0
+                ? bytesInputs.map((i) => `"${i.name}" (${i.type})`).join(', ')
+                : 'every bytes20 / bytes32 / … constructor field';
+        return (
+            `Address derivation failed: ${hint} must be filled with valid hex (empty values become bytes0 instead of fixed-width hex). PKH/hash fields usually need exactly 40 hex characters for bytes20.` +
+                `\n\nTechnical detail: ${raw}`
+        );
+    }
+
+    const electrumBroken = raw.includes('All Chipnet Electrum hosts failed') || /ENOTFOUND|EAI_|ECONN|timeout/i.test(raw);
+    if (electrumBroken) {
+        return (
+            `${raw}\n\nIf your constructor args look correct, the Chipnet indexer may be unavailable — retry in a minute or refresh the page.`
+        );
+    }
+
+    return raw;
 }

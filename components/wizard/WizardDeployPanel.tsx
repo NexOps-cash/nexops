@@ -8,7 +8,7 @@ import { ConstructorForm } from '../ConstructorForm';
 import type { ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../../types';
 import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
-import { deriveContractAddress, coerceConstructorArgs } from '../../services/addressService';
+import { deriveContractAddress, coerceConstructorArgs, explainDerivationError } from '../../services/addressService';
 import { pollForFunding, checkFundingNow, getExplorerLink, type FundingStatus } from '../../services/blockchainService';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
 import { ELECTRUM_FALLBACK_SERVERS } from '../../services/blockchainService';
@@ -484,7 +484,9 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   {addressDerivation.incomplete ? (
                     <p className="text-xs text-slate-500">Address: — (fill all fields)</p>
                   ) : addressDerivation.derivationError ? (
-                    <p className="text-xs text-red-400">{addressDerivation.derivationError}</p>
+                    <p className="text-xs text-red-300 whitespace-pre-wrap leading-relaxed font-sans">
+                      {explainDerivationError(new Error(addressDerivation.derivationError), artifact.constructorInputs)}
+                    </p>
                   ) : (
                     <>
                       <div className="flex items-center gap-2 flex-wrap">
