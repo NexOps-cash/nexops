@@ -18,6 +18,7 @@ import {
     UTXO,
     fetchUTXOs
 } from '../services/blockchainService';
+import { canDeploy } from '../lib/registryGate';
 import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface DeploymentProps {
@@ -129,8 +130,9 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
     if (!project) return <div className="p-8 text-center text-gray-500">No project selected.</div>;
 
-    const auditScore = project.auditReport?.score || 0;
-    const isAuditPassed = auditScore >= 80;
+    const deployGate = canDeploy(project.auditReport);
+    const auditScore = deployGate.score;
+    const isAuditPassed = deployGate.allowed;
 
     const handlePrepare = async () => {
         setIsCompiling(true);
@@ -245,7 +247,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
 
     const handleDeploy = async () => {
         if (!isAuditPassed) {
-            toast.error(`Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
+            toast.error(deployGate.reasons[0] ?? `Security Audit Gate: Score must be 80+ to deploy. Current: ${auditScore}`);
             return;
         }
 

@@ -10,6 +10,14 @@ export const MAX_RETURN_URL_LENGTH = 2000;
 /** App production origin for OAuth redirectTo when not on localhost. */
 export const APP_AUTH_ORIGIN = 'https://app.nexops.cash';
 
+/** Skip login on local Vite dev only — production bundles always enforce auth. */
+export function isLocalDevAuthBypass(): boolean {
+  if (!import.meta.env.DEV) return false;
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1';
+}
+
 export function oauthRedirectBase(): string {
   if (typeof window === 'undefined') return APP_AUTH_ORIGIN;
   const h = window.location.hostname;

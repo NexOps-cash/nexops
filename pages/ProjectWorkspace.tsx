@@ -5,7 +5,7 @@ import { Button, Tabs, getFileIcon, Badge, Modal } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
-import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings } from '../types';
+import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings, ChainType } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
@@ -50,6 +50,14 @@ import {
     readFundingConfirmedHint,
     setFundingConfirmedHint,
 } from '../lib/fundingPersistHint';
+import {
+    computeSourceHash,
+    evaluatePublishEligibility,
+    getContractSourceFromProject,
+    REGISTRY_COMPILER_VERSION,
+    resolveAuditReportForPublish,
+    type PublishEligibilityResult,
+} from '../lib/registryGate';
 
 interface ChatMessage {
     role: 'user' | 'model';
@@ -175,6 +183,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
     const [publishModalOpen, setPublishModalOpen] = useState(false);
     const [isPublishingRegistry, setIsPublishingRegistry] = useState(false);
+    const [publishEligibility, setPublishEligibility] = useState<PublishEligibilityResult | null>(null);
+    const [publishArtifact, setPublishArtifact] = useState<ContractArtifact | null>(null);
 
     // Legacy projects / DB rows: contract lives on `contractCode` only — editor expects `*.cash` in `files`.
     useEffect(() => {
@@ -269,6 +279,46 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         window.addEventListener('nexops-open-publish-registry', openRegistryPublish);
         return () => window.removeEventListener('nexops-open-publish-registry', openRegistryPublish);
     }, []);
+
+    useEffect(() => {
+        if (!publishModalOpen) {
+            setPublishEligibility(null);
+            setPublishArtifact(null);
+            return;
+        }
+        const preparePublish = async () => {
+            const source = getContractSourceFromProject(project);
+            const compilerVersion = REGISTRY_COMPILER_VERSION;
+            let artifact: ContractArtifact | null = null;
+            if (source) {
+                const compiled = compileCashScript(source);
+                if (compiled.success && compiled.artifact) {
+                    artifact = compiled.artifact;
+                    setPublishArtifact(compiled.artifact);
+                } else {
+                    setPublishArtifact(null);
+                }
+            }
+            const auditForPublish = await resolveAuditReportForPublish(
+                project.auditReport,
+                source,
+                project.lastModified,
+                compilerVersion
+            );
+            const sourceHash = source ? await computeSourceHash(source, compilerVersion) : undefined;
+            setPublishEligibility(
+                evaluatePublishEligibility({
+                    sourceCode: source,
+                    auditReport: auditForPublish,
+                    artifact,
+                    bytecode: artifact?.bytecode,
+                    sourceHash,
+                    compilerVersion,
+                })
+            );
+        };
+        void preparePublish();
+    }, [publishModalOpen, project.auditReport, project.contractCode, project.files, project.lastModified]);
 
     // Rehydration Logic: Restore deployment state when project changes or on mount
     useEffect(() => {
@@ -678,18 +728,45 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         setPublishModalOpen(true);
     };
 
-    const handleRegistryPublishSubmit = async (details: { title: string; description: string; tags: string[] }) => {
-        const cashSource =
-            mainContractFile?.content?.trim() ||
-            project.contractCode?.trim() ||
-            '';
-        if (!cashSource) {
-            toast.error('No .cash source to publish.');
+    function registryNetwork(): string {
+        return project.chain === ChainType.BCH_TESTNET ? 'chipnet' : 'mainnet';
+    }
+
+    const handleRegistryPublishSubmit = async (details: {
+        title: string;
+        description: string;
+        tags: string[];
+        intentDescription: string;
+    }) => {
+        const source = getContractSourceFromProject(project);
+        const compilerVersion = REGISTRY_COMPILER_VERSION;
+        if (!source) {
+            toast.error('Add a .cash contract before publishing to the registry.');
             return;
         }
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
         if (!supabaseUrl?.trim()) {
             toast.error('Publishing is not configured (missing VITE_SUPABASE_URL).');
+            return;
+        }
+
+        const auditForPublish = await resolveAuditReportForPublish(
+            project.auditReport,
+            source,
+            project.lastModified,
+            compilerVersion
+        );
+        const sourceHash = await computeSourceHash(source, compilerVersion);
+        const eligibility = evaluatePublishEligibility({
+            sourceCode: source,
+            auditReport: auditForPublish,
+            artifact: publishArtifact,
+            bytecode: publishArtifact?.bytecode,
+            sourceHash,
+            compilerVersion,
+        });
+        if (!eligibility.eligible) {
+            toast.error('Publish blocked — resolve audit gate requirements first.');
             return;
         }
 
@@ -699,12 +776,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             return;
         }
 
-        const network =
-            project.chain?.toLowerCase().includes('chip') ||
-            project.chain?.toLowerCase().includes('test')
-                ? 'chipnet'
-                : 'mainnet';
-
         setIsPublishingRegistry(true);
         try {
             const token = sessionData.session.access_token;
@@ -712,10 +783,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 body: {
                     title: details.title.trim(),
                     description: details.description.trim(),
-                    source_code: cashSource,
+                    intent_description: details.intentDescription.trim(),
+                    source_code: source,
                     tags: details.tags,
-                    network,
-                    compiler_version: '^0.13.0',
+                    network: registryNetwork(),
+                    compiler_version: compilerVersion,
+                    audit_report: auditForPublish,
+                    artifact: publishArtifact,
+                    bytecode: publishArtifact?.bytecode,
+                    project_id: project.id,
+                    family_id: project.registryFamilyId ?? null,
                 },
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -742,7 +819,16 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             if (data && typeof data === 'object' && 'error' in data && (data as { error: unknown }).error) {
                 throw new Error(String((data as { error: unknown }).error));
             }
-            toast.success('Published to registry');
+            const row = data as { id?: string; family_id?: string; validation_status?: string };
+            onUpdateProject({
+                ...project,
+                registryContractId: row.id ?? project.registryContractId,
+                registryFamilyId: row.family_id ?? project.registryFamilyId,
+                registryIntentDescription: details.intentDescription.trim() || project.registryIntentDescription,
+                lastModified: Date.now(),
+            });
+            const statusLabel = row.validation_status === 'unsafe' ? ' (marked unsafe)' : '';
+            toast.success(`Published to registry${statusLabel}.`);
             setPublishModalOpen(false);
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Publish failed');
@@ -2379,10 +2465,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
             <PublishModal
                 isOpen={publishModalOpen}
-                onClose={() => setPublishModalOpen(false)}
-                onPublish={handleRegistryPublishSubmit}
+                onClose={() => !isPublishingRegistry && setPublishModalOpen(false)}
+                onPublish={(d) => void handleRegistryPublishSubmit(d)}
                 initialTitle={project.name?.trim() || 'Untitled contract'}
+                initialIntent={lastGeneratedIntent || project.registryIntentDescription || ''}
                 isPublishing={isPublishingRegistry}
+                eligibility={publishEligibility}
+                auditReport={project.auditReport}
             />
 
             {/* MODAL: Contract is Live */}

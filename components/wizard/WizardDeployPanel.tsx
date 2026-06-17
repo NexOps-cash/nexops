@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react';
 import { Contract, ElectrumNetworkProvider, Network } from 'cashscript';
 import toast from 'react-hot-toast';
-import { ChevronDown, Copy, Loader2, RefreshCw, User } from 'lucide-react';
+import { ChevronDown, Copy, Loader2, RefreshCw, ShieldAlert, User } from 'lucide-react';
 import { Modal, Button } from '../UI';
 import { ConstructorForm } from '../ConstructorForm';
-import type { ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../../types';
+import type { AuditReport, ContractArtifact, WizardDeployRecord, WizardDeployStep } from '../../types';
+import { canDeploy } from '../../lib/registryGate';
 import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
 import { deriveContractAddress, coerceConstructorArgs, explainDerivationError } from '../../services/addressService';
@@ -78,6 +79,8 @@ export interface WizardDeployPanelProps {
   onRecordSaved: () => void;
   /** Opens Transaction Builder for this funded deployment (same record written to history). */
   onRequestSpend?: (record: WizardDeployRecord) => void;
+  /** When provided, deploy funding is gated by registryGate.canDeploy */
+  auditReport?: AuditReport;
 }
 
 export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
@@ -92,7 +95,9 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   wizardEnabled,
   onRecordSaved,
   onRequestSpend,
+  auditReport,
 }) => {
+  const deployGate = useMemo(() => canDeploy(auditReport), [auditReport]);
   const { wallets, activeWallet } = useWallet();
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   const [compileBusy, setCompileBusy] = useState(false);
@@ -271,6 +276,10 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   };
 
   const handleStartMonitoring = async () => {
+    if (!deployGate.allowed) {
+      toast.error(deployGate.reasons[0] ?? 'Security audit gate: deploy not allowed.');
+      return;
+    }
     const addr = addressDerivation.derivedAddress;
     if (!artifact || !addr) {
       toast.error('Cannot derive contract address.');
@@ -405,6 +414,23 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         {compileError && (
           <div className="rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300 whitespace-pre-wrap">
             {compileError}
+          </div>
+        )}
+        {!deployGate.allowed && (
+          <div className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-2">
+            <div className="flex items-center gap-2 font-black uppercase tracking-widest text-[10px] text-amber-300">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              Security audit gate — deploy blocked
+            </div>
+            <p className="text-amber-200/90">
+              Score: <span className="font-mono font-bold">{deployGate.score}</span>
+              {auditReport ? '' : ' (no audit report — run /audit in workspace or pass auditReport)'}
+            </p>
+            <ul className="list-disc pl-4 space-y-1 text-amber-200/80">
+              {deployGate.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
           </div>
         )}
         {determinismOk && artifact && (
@@ -579,7 +605,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
                   <Button variant="ghost" onClick={() => setDeployStep(0)}>
                     Back
                   </Button>
-                  <Button variant="primary" onClick={() => void handleStartMonitoring()}>
+                  <Button variant="primary" disabled={!deployGate.allowed} onClick={() => void handleStartMonitoring()}>
                     Start monitoring &amp; show QR
                   </Button>
                 </div>

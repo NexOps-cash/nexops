@@ -2,6 +2,7 @@ import Groq from "groq-sdk";
 import { GenerationResponse, AuditReport, ProjectFile, BYOKSettings } from "../types";
 import { ragEngine } from "./RagEngine";
 import { websocketService } from "./websocketService";
+import { stampAuditWithSourceHash } from "../lib/registryGate";
 
 // Initialize Groq SDK
 const getGroqClient = (byok?: BYOKSettings) => {
@@ -327,7 +328,8 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
             const data = await response.json();
             console.log("🛡️ External Audit Response:", data);
 
-            return {
+            return stampAuditWithSourceHash(
+                {
                 score: data.total_score ?? data.score ?? 0,
                 total_score: data.total_score,
                 deterministic_score: data.deterministic_score,
@@ -350,7 +352,9 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
                 total_high: data.total_high,
                 total_medium: data.total_medium,
                 total_low: data.total_low
-            };
+                },
+                code
+            );
         } catch (error) {
             console.error("External Audit Error:", error);
             throw error;
@@ -436,7 +440,8 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
         const data = JSON.parse(text);
 
         // Robust formatting with defaults
-        return {
+        return stampAuditWithSourceHash(
+            {
             score: data.score ?? 0,
             risk_level: data.risk_level || 'MEDIUM',
             summary: data.summary || "Security audit completed with generic summary.",
@@ -452,9 +457,10 @@ export const auditSmartContract = async (code: string, useExternal: boolean = fa
                 compile_success: true,
                 dsl_passed: true,
                 structural_score: 80,
-                contract_hash: "0x..."
             }
-        } as AuditReport;
+            } as AuditReport,
+            code
+        );
 
     } catch (error) {
         console.error("Groq Audit Error:", error);

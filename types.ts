@@ -69,6 +69,45 @@ export interface ProjectFile {
   readOnly?: boolean;
 }
 
+export type RegistryValidationStatus = 'validated' | 'unsafe';
+export type RegistryVisibility = 'community' | 'verified';
+
+export interface RegistryContract {
+  id: string;
+  family_id: string;
+  version: string;
+  version_number: number;
+  is_latest: boolean;
+  title: string;
+  description: string;
+  intent_description?: string | null;
+  source_code: string;
+  bytecode: string;
+  artifact: ContractArtifact | Record<string, unknown>;
+  compiler_version: string;
+  network: string;
+  tags: string[];
+  audit: AuditReport;
+  audit_score: number;
+  validation_status: RegistryValidationStatus;
+  visibility: RegistryVisibility;
+  author_id: string;
+  author_display_name?: string | null;
+  source_hash: string;
+  project_id?: string | null;
+  created_at: string;
+}
+
+export interface RegistryAuditLogEntry {
+  id: string;
+  contract_id: string | null;
+  family_id: string | null;
+  actor_id: string;
+  action: 'published' | 'version_published' | 'rejected';
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -85,6 +124,9 @@ export interface Project {
   constructorArgs?: string[];
   executionHistory?: ExecutionRecord[];
   deploymentRecord?: DeploymentRecord;
+  registryFamilyId?: string;
+  registryContractId?: string;
+  registryIntentDescription?: string;
 }
 
 export interface GenerationResponse {
