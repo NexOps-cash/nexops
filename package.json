@@ -13,7 +13,9 @@
     "chipnet:live-test-htlc-claim": "npx --yes tsx scripts/chipnet-live-htlc-claim.ts",
     "chipnet:live-test-htlc-refund": "npx --yes tsx scripts/chipnet-live-htlc-refund.ts",
     "chipnet:live-test-escrow-paths": "npx --yes tsx scripts/chipnet-live-escrow-spend-paths.ts",
-    "chipnet:live-test-vesting-paths": "npx --yes tsx scripts/chipnet-live-vesting-spend-paths.ts"
+    "chipnet:live-test-vesting-paths": "npx --yes tsx scripts/chipnet-live-vesting-spend-paths.ts",
+    "supabase:deploy-publish": "npx --yes supabase functions deploy publish-contract --project-ref hgsyykynzyntrqsiwenj",
+    "supabase:db-push": "npx --yes supabase db push --project-ref hgsyykynzyntrqsiwenj"
   },
   "dependencies": {
     "@bitauth/libauth": "^3.1.0-next.8",

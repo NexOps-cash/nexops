@@ -806,13 +806,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     try {
                         const body = await ctx.json();
                         if (body?.error) detail = String(body.error);
+                        else if (body?.message) detail = String(body.message);
                     } catch {
                         /* ignore */
                     }
+                    if (ctx.status === 404) {
+                        const ref = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] ?? '<project-ref>';
+                        detail =
+                            `publish-contract is not deployed on Supabase (404). Deploy it: npx supabase login && npx supabase functions deploy publish-contract --project-ref ${ref}`;
+                    }
                 }
-                if (/failed to send/i.test(detail)) {
+                if (/failed to send|not found/i.test(detail)) {
+                    const ref = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] ?? '<project-ref>';
                     detail =
-                        'Could not reach the publish API. Redeploy the publish-contract Edge Function (CORS must allow POST), verify VITE_SUPABASE_URL matches your project, and check the browser Network tab.';
+                        `Could not reach publish-contract. Deploy the Edge Function: npx supabase login && npx supabase functions deploy publish-contract --project-ref ${ref}. Also apply registry migrations in supabase/migrations/.`;
                 }
                 throw new Error(detail);
             }
