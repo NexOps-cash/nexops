@@ -1,5 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
+import {
+    evaluatePublishEligibility,
+    deriveValidationStatus,
+    deriveVisibility,
+    computeSourceHash,
+    normalizeAuditScore,
+    bumpSemverPatch,
+    formatRejectionReason,
+} from "../_shared/registryGate.ts"
+// Audit report shape from client (MVP — server validates structure, not re-runs audit)
+type AuditReportPayload = {
+    score?: number;
+    total_score?: number;
+    deployment_allowed?: boolean;
+    vulnerabilities?: { severity: string }[];
+    metadata?: { contract_hash?: string };
+    [key: string]: unknown;
+};
 
 // Pre-flight CORS for browser requests (Allow-Methods required or POST preflight fails → “Failed to send…”).
 const corsHeaders = {
@@ -8,17 +26,62 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+function authorDisplayName(user: { user_metadata?: Record<string, unknown>; email?: string }): string {
+    const meta = user.user_metadata ?? {};
+    const candidates = [
+        meta.user_name,
+        meta.preferred_username,
+        meta.full_name,
+        meta.name,
+        user.email,
+    ];
+    for (const c of candidates) {
+        if (typeof c === 'string' && c.trim()) return c.trim();
+    }
+    return 'Anonymous';
+}
+
+async function logRegistryAction(
+    supabaseServiceRole: ReturnType<typeof createClient>,
+    entry: {
+        contract_id?: string | null;
+        family_id?: string | null;
+        actor_id: string;
+        action: 'published' | 'version_published' | 'rejected';
+        details: Record<string, unknown>;
+    }
+) {
+    await supabaseServiceRole.from('registry_audit_log').insert({
+        contract_id: entry.contract_id ?? null,
+        family_id: entry.family_id ?? null,
+        actor_id: entry.actor_id,
+        action: entry.action,
+        details: entry.details,
+    });
+}
+
 serve(async (req) => {
-    // 1. Handle CORS Options
     if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     try {
-        // 2. Extract Data from Frontend
-        const { title, description, source_code, tags, network, compiler_version } = await req.json();
+        const body = await req.json();
+        const {
+            title,
+            description,
+            source_code,
+            tags,
+            network,
+            compiler_version,
+            audit_report,
+            artifact,
+            bytecode,
+            intent_description,
+            project_id,
+            family_id,
+        } = body;
 
-        // 3. Authenticate User (Ensure they are logged in)
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
             throw new Error("Missing Authorization header");
@@ -29,7 +92,6 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        // Use the auth token sent from the client to verify identity
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -41,75 +103,111 @@ serve(async (req) => {
             throw new Error("Unauthorized: " + (userError?.message || "User not found"));
         }
 
-        // 4. In a real backend, you would physically run `cashc` here.
-        // For the Hackcelerator MVP Edge Function, we are going to strictly evaluate the AST/Security Policy
-        // Since we can't easily run the Node.js `cashc` compiler inside the lightweight Deno Deno edge runtime natively 
-        // without a custom docker container, we enforce the security checks here.
+        const compilerVersion = String(compiler_version ?? '^0.13.0');
+        const sourceCode = String(source_code ?? '').trim();
+        const sourceHashHex = await computeSourceHash(sourceCode, compilerVersion);
+        const auditReport = audit_report as AuditReportPayload | undefined;
 
-        // 5. Evaluate TollGate Policies
-        // (Mock implementation of the TollGate Security Evaluation for the Edge context)
-        // A true production system would run a heavy separate Node server for `cashc`.
+        const eligibility = evaluatePublishEligibility({
+            sourceCode,
+            auditReport,
+            artifact,
+            bytecode: bytecode ?? artifact?.bytecode,
+            sourceHash: sourceHashHex,
+            compilerVersion,
+        });
 
-        // Let's assume the frontend pre-compiled it (for the MVP), but the backend verifies the properties
-        // For Hackcelerator demonstration, we will mandate the structural analysis passes the NexOps threshold
-
-        // TODO: In Phase 2, integrate the exact structural TollGate logic here.
-        // For now, we simulate the AuditGate Threshold Policy.
-
-        // MOCK AUDIT (To be replaced with real static analysis algorithm in Edge Function)
-        const mockAuditScore = 95;
-        const mockCriticalCount = 0;
-        const mockHighCount = 0;
-
-        // 6. Enforce NexOps Audit Gate Threshold
-        let determinedVisibility = 'community';
-
-        if (mockAuditScore >= 90 && mockCriticalCount === 0 && mockHighCount <= 1) {
-            determinedVisibility = 'verified';
-        }
-
-        // Generate Source Hash for tamper resistance
-        const sourceHashInput = source_code + compiler_version;
-
-        // WebCrypto SHA-256
-        const msgUint8 = new TextEncoder().encode(sourceHashInput);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const sourceHashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // 7. Insert into the Registry using the Service Role Key
-        // Only the backend has this key, preventing users from forging 'verified' status
-        const { data: insertedContract, error: insertError } = await supabaseServiceRole
-            .from('contracts_registry')
-            .insert({
-                title,
-                description,
-                source_code,
-                bytecode: "TODO_COMPILED_BYTECODE",
-                artifact: {}, // TODO_COMPILED_ARTIFACT
-                compiler_version,
-                network,
-                audit: {
-                    score: mockAuditScore,
-                    riskLevel: "SAFE",
-                    issuesCount: mockCriticalCount + mockHighCount,
-                    criticalCount: mockCriticalCount,
-                    highCount: mockHighCount,
-                    evaluatedAt: new Date().toISOString(),
-                    engineVersion: "NexOps TollGate v1.0.0"
+        if (!eligibility.eligible) {
+            const reasons = eligibility.rejectionReasons.map(formatRejectionReason);
+            await logRegistryAction(supabaseServiceRole, {
+                actor_id: user.id,
+                family_id: family_id ?? null,
+                action: 'rejected',
+                details: {
+                    reasons: eligibility.rejectionReasons,
+                    messages: reasons,
+                    audit_score: eligibility.auditScore,
+                    title: title ?? null,
                 },
-                tags: tags || [],
-                author_id: user.id,
-                version: "1.0.0",
-                source_hash: sourceHashHex,
-                visibility: determinedVisibility
-            })
-            .select()
-            .single();
-
-        if (insertError) {
-            throw new Error(`Registry Insert Failed: ${insertError.message}`);
+            });
+            return new Response(JSON.stringify({ error: reasons.join(' ') }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 400,
+            });
         }
+
+        const auditScore = normalizeAuditScore(auditReport);
+        const validationStatus = deriveValidationStatus(auditReport!);
+        const visibility = deriveVisibility(auditScore, auditReport!.vulnerabilities ?? []);
+
+        const isNewFamily = !family_id;
+        let versionNumber = 1;
+        let versionSemver = '1.0.0';
+
+        if (!isNewFamily) {
+            const { data: latestRows, error: latestErr } = await supabaseServiceRole
+                .from('contracts_registry')
+                .select('version_number, version')
+                .eq('family_id', family_id)
+                .order('version_number', { ascending: false })
+                .limit(1);
+
+            if (latestErr) {
+                throw new Error(`Version lookup failed: ${latestErr.message}`);
+            }
+
+            const prev = latestRows?.[0];
+            versionNumber = (prev?.version_number ?? 0) + 1;
+            versionSemver = bumpSemverPatch(String(prev?.version ?? '1.0.0'));
+        }
+
+        const { data: insertedContract, error: rpcError } = await supabaseServiceRole.rpc(
+            'publish_registry_contract',
+            {
+                p_family_id: family_id ?? null,
+                p_is_new_family: isNewFamily,
+                p_title: String(title ?? 'Untitled contract').trim(),
+                p_description: String(description ?? '').trim(),
+                p_intent_description: intent_description ? String(intent_description).trim() : null,
+                p_source_code: sourceCode,
+                p_bytecode: String(bytecode ?? artifact?.bytecode ?? ''),
+                p_artifact: artifact ?? {},
+                p_compiler_version: compilerVersion,
+                p_network: String(network ?? 'chipnet'),
+                p_tags: Array.isArray(tags) ? tags : [],
+                p_audit: auditReport,
+                p_audit_score: auditScore,
+                p_validation_status: validationStatus,
+                p_visibility: visibility,
+                p_author_id: user.id,
+                p_author_display_name: authorDisplayName(user),
+                p_source_hash: sourceHashHex,
+                p_project_id: project_id ?? null,
+                p_version: versionSemver,
+                p_version_number: versionNumber,
+            }
+        );
+
+        if (rpcError) {
+            throw new Error(`Registry publish failed: ${rpcError.message}`);
+        }
+
+        const row = insertedContract as Record<string, unknown>;
+        const logAction = isNewFamily ? 'published' : 'version_published';
+
+        await logRegistryAction(supabaseServiceRole, {
+            contract_id: String(row.id),
+            family_id: String(row.family_id),
+            actor_id: user.id,
+            action: logAction,
+            details: {
+                audit_score: auditScore,
+                validation_status: validationStatus,
+                visibility,
+                version: versionSemver,
+                version_number: versionNumber,
+            },
+        });
 
         return new Response(JSON.stringify(insertedContract), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -117,7 +215,8 @@ serve(async (req) => {
         });
 
     } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        const message = error instanceof Error ? error.message : String(error);
+        return new Response(JSON.stringify({ error: message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 400,
         });
