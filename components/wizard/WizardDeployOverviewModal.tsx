@@ -10,6 +10,8 @@ export interface WizardDeployOverviewModalProps {
   kindId: string;
   summary: string;
   invariantCount: number;
+  auditScore?: number;
+  auditBlocked?: boolean;
 }
 
 /**
@@ -23,6 +25,8 @@ export const WizardDeployOverviewModal: React.FC<WizardDeployOverviewModalProps>
   kindId,
   summary,
   invariantCount,
+  auditScore,
+  auditBlocked,
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Deploy on Chipnet" className="max-w-md">
@@ -34,6 +38,19 @@ export const WizardDeployOverviewModal: React.FC<WizardDeployOverviewModalProps>
         </div>
 
         <p className="text-sm text-slate-400 leading-relaxed">{summary}</p>
+
+        {typeof auditScore === 'number' && (
+          <div
+            className={`rounded-lg border px-3 py-2 text-xs ${
+              auditBlocked
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+            }`}
+          >
+            Security audit score: <span className="font-mono font-bold">{auditScore}</span>
+            {auditBlocked ? ' — deploy may be blocked until findings are resolved.' : ' — audit gate passed.'}
+          </div>
+        )}
 
         <ul className="space-y-3 text-[13px] leading-snug text-slate-400 border-y border-white/10 py-4">
           <li className="flex gap-3">

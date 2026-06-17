@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import toast from 'react-hot-toast';
-import { Project, ChainType, WizardDeployRecord } from '../types';
+import { Project, ChainType, WizardDeployRecord, AuditReport } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import {
   consumeWizardPendingAction,
@@ -26,6 +26,9 @@ import {
 } from '../services/wizard/schema';
 import { generate } from '../services/wizard/generator';
 import { compileCashScript } from '../services/compilerService';
+import { auditSmartContract } from '../services/groqService';
+import { websocketService } from '../services/websocketService';
+import { canDeploy } from '../lib/registryGate';
 import { useWallet } from '../contexts/WalletContext';
 import { KindTabs } from '../components/wizard/KindTabs';
 import { FeaturePanel } from '../components/wizard/FeaturePanel';
@@ -189,6 +192,8 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
   const [showTemplatePicker, setShowTemplatePicker] = useState(() => !shouldSkipTemplatePickerFromHash());
   const [compileOutput, setCompileOutput] = useState<string>('Compile output will appear here.');
   const [isCompiling, setIsCompiling] = useState(false);
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [wizardAuditReport, setWizardAuditReport] = useState<AuditReport | undefined>(undefined);
   const [deployOverviewOpen, setDeployOverviewOpen] = useState(false);
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [wizardDeployRecords, setWizardDeployRecords] = useState<WizardDeployRecord[]>(() => getWizardDeploys());
@@ -275,6 +280,11 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     [activeKind, wizardState.enabled, wizardState.fields]
   );
   const canAct = Object.keys(fieldErrors).length === 0 && generated.constraintErrors.length === 0;
+  const deployGate = useMemo(() => canDeploy(wizardAuditReport), [wizardAuditReport]);
+
+  useEffect(() => {
+    setWizardAuditReport(undefined);
+  }, [generated.hash]);
 
   const createProjectFromCode = useCallback(
     (code: string) => {
@@ -453,6 +463,25 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
     }
   };
 
+  const onDeploy = async () => {
+    if (!canAct || isAuditing) return;
+    setIsAuditing(true);
+    try {
+      const intent = activeKind.summary || activeKind.name;
+      const report = await auditSmartContract(
+        generated.source,
+        websocketService.isConnected(),
+        intent
+      );
+      setWizardAuditReport(report);
+      setDeployOverviewOpen(true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Security audit failed');
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
   const onOpenWorkspace = () => {
     if (!ensureLoggedInForExport('open_workspace')) return;
     createProjectFromCode(generated.source);
@@ -517,13 +546,13 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
                       <ActionsBar
                         copyDisabled={false}
                         compileDisabled={isCompiling}
-                        deployDisabled={!canAct}
+                        deployDisabled={!canAct || isAuditing}
                         downloadDisabled={!canAct}
                         openDisabled={!canAct}
                         onCopy={onCopy}
                         onDownload={onDownload}
                         onCompile={onCompile}
-                        onDeploy={() => setDeployOverviewOpen(true)}
+                        onDeploy={() => void onDeploy()}
                         onOpenWorkspace={onOpenWorkspace}
                       />
                     </div>
@@ -564,6 +593,8 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
         kindId={activeKind.id}
         summary={activeKind.summary}
         invariantCount={(generated.invariants ?? []).length}
+        auditScore={wizardAuditReport?.score}
+        auditBlocked={!deployGate.allowed}
       />
       <WizardDeployPanel
         isOpen={deployModalOpen}
@@ -580,6 +611,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
           setDeployModalOpen(false);
           openWizardSpend(rec);
         }}
+        auditReport={wizardAuditReport}
       />
       <WizardSpendModal
         isOpen={spendModalOpen}
