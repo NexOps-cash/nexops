@@ -5,7 +5,7 @@ import { Button, Tabs, getFileIcon, Badge, Modal } from '../components/UI';
 import { MonacoEditorWrapper } from '../components/MonacoEditorWrapper';
 import { WorkbenchLayout } from '../components/WorkbenchLayout';
 import { NamedTaskTerminal, TerminalChannel } from '../components/NamedTaskTerminal';
-import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings, ChainType } from '../types';
+import { Project, ProjectFile, CodeVersion, ExecutionRecord, BYOKSettings } from '../types';
 import {
     Folder, Save, Play, ShieldCheck, History, Rocket,
     Download, Settings, FilePlus, ChevronRight, ChevronDown,
@@ -56,6 +56,7 @@ import {
     getContractSourceFromProject,
     REGISTRY_COMPILER_VERSION,
     resolveAuditReportForPublish,
+    normalizeRegistryNetwork,
     type PublishEligibilityResult,
 } from '../lib/registryGate';
 
@@ -729,7 +730,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     };
 
     function registryNetwork(): string {
-        return project.chain === ChainType.BCH_TESTNET ? 'chipnet' : 'mainnet';
+        return normalizeRegistryNetwork(project.chain);
     }
 
     const handleRegistryPublishSubmit = async (details: {
@@ -770,15 +771,15 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             return;
         }
 
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session?.access_token) {
-            toast.error('Sign in with GitHub to publish.');
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        const session = refreshed.session ?? (await supabase.auth.getSession()).data.session;
+        if (refreshError || !session?.access_token) {
+            toast.error('Sign in with GitHub to publish (session expired — try logging in again).');
             return;
         }
 
         setIsPublishingRegistry(true);
         try {
-            const token = sessionData.session.access_token;
             const { data, error } = await supabase.functions.invoke('publish-contract', {
                 body: {
                     title: details.title.trim(),
@@ -793,9 +794,6 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                     bytecode: publishArtifact?.bytecode,
                     project_id: project.id,
                     family_id: project.registryFamilyId ?? null,
-                },
-                headers: {
-                    Authorization: `Bearer ${token}`,
                 },
             });
 
