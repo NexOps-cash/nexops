@@ -18,11 +18,16 @@ export function getWizardDeploys(): WizardDeployRecord[] {
   return safeParse(localStorage.getItem(STORAGE_KEY));
 }
 
-export function addWizardDeploy(record: WizardDeployRecord): void {
-  if (typeof localStorage === 'undefined') return;
-  const prev = getWizardDeploys();
-  const next = [record, ...prev].slice(0, 200);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+export function addWizardDeploy(record: WizardDeployRecord): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const prev = getWizardDeploys();
+    const next = [record, ...prev].slice(0, 200);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearWizardDeploys(): void {

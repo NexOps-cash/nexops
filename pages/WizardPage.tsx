@@ -595,6 +595,7 @@ export const WizardPage: React.FC<WizardPageProps> = ({ onCreateProject }) => {
         invariantCount={(generated.invariants ?? []).length}
         auditScore={wizardAuditReport?.score}
         auditBlocked={!deployGate.allowed}
+        auditBlockReasons={deployGate.reasons}
       />
       <WizardDeployPanel
         isOpen={deployModalOpen}

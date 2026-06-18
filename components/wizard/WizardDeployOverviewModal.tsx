@@ -12,6 +12,7 @@ export interface WizardDeployOverviewModalProps {
   invariantCount: number;
   auditScore?: number;
   auditBlocked?: boolean;
+  auditBlockReasons?: string[];
 }
 
 /**
@@ -27,6 +28,7 @@ export const WizardDeployOverviewModal: React.FC<WizardDeployOverviewModalProps>
   invariantCount,
   auditScore,
   auditBlocked,
+  auditBlockReasons = [],
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Deploy on Chipnet" className="max-w-md">
@@ -50,6 +52,14 @@ export const WizardDeployOverviewModal: React.FC<WizardDeployOverviewModalProps>
             Security audit score: <span className="font-mono font-bold">{auditScore}</span>
             {auditBlocked ? ' — deploy may be blocked until findings are resolved.' : ' — audit gate passed.'}
           </div>
+        )}
+
+        {auditBlocked && auditBlockReasons.length > 0 && (
+          <ul className="text-xs text-amber-200/90 list-disc pl-4 space-y-1">
+            {auditBlockReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
         )}
 
         <ul className="space-y-3 text-[13px] leading-snug text-slate-400 border-y border-white/10 py-4">
@@ -85,7 +95,13 @@ export const WizardDeployOverviewModal: React.FC<WizardDeployOverviewModalProps>
           <Button variant="ghost" size="sm" className="w-full sm:w-auto" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" className="w-full sm:w-auto" onClick={onContinue}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full sm:w-auto"
+            disabled={auditBlocked}
+            onClick={onContinue}
+          >
             Continue to deploy
           </Button>
         </div>

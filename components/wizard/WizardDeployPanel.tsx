@@ -153,29 +153,36 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     setDeterminismOk(false);
 
     void (async () => {
-      await new Promise((r) => setTimeout(r, 150));
-      if (cancelled) return;
-      const result = compileCashScript(source);
-      if (!result.success || !result.artifact) {
+      try {
+        await new Promise((r) => setTimeout(r, 150));
+        if (cancelled) return;
+        const result = compileCashScript(source);
+        if (!result.success || !result.artifact) {
+          if (!cancelled) {
+            setCompileError(result.errors?.join('\n') ?? 'Compilation failed.');
+            setCompileBusy(false);
+          }
+          return;
+        }
+        const ok = await verifyDeterminism(source, result.artifact.bytecode);
+        if (cancelled) return;
+        if (!ok) {
+          setCompileError('Determinism check failed. Bytecode is not reproducible.');
+          setCompileBusy(false);
+          return;
+        }
+        const prefilled = mapWizardFieldsToArgs(fieldDefs, result.artifact.constructorInputs, wizardFields);
+        setArtifact(result.artifact);
+        setConstructorArgs(prefilled);
+        setDeterminismOk(true);
+        setDeployStep(0);
+        setCompileBusy(false);
+      } catch (e: unknown) {
         if (!cancelled) {
-          setCompileError(result.errors?.join('\n') ?? 'Compilation failed.');
+          setCompileError(e instanceof Error ? e.message : 'Compilation failed unexpectedly.');
           setCompileBusy(false);
         }
-        return;
       }
-      const ok = await verifyDeterminism(source, result.artifact.bytecode);
-      if (cancelled) return;
-      if (!ok) {
-        setCompileError('Determinism check failed. Bytecode is not reproducible.');
-        setCompileBusy(false);
-        return;
-      }
-      const prefilled = mapWizardFieldsToArgs(fieldDefs, result.artifact.constructorInputs, wizardFields);
-      setArtifact(result.artifact);
-      setConstructorArgs(prefilled);
-      setDeterminismOk(true);
-      setDeployStep(0);
-      setCompileBusy(false);
     })();
 
     return () => {
@@ -226,7 +233,10 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
         network: 'chipnet',
         artifact,
       };
-      addWizardDeploy(record);
+      if (!addWizardDeploy(record)) {
+        toast.error('Could not save deploy record locally (storage full or blocked).');
+        return;
+      }
       setFundedRecordForSpend(record);
       onRecordSaved();
       toast.success('Contract funded on Chipnet.');
@@ -250,6 +260,7 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
   }, [constructorValidations]);
 
   const canProceedStep0 = useMemo(() => {
+    if (!deployGate.allowed) return false;
     if (!artifact || compileBusy || !!compileError) return false;
     if (constructorArgs.length !== artifact.constructorInputs.length) return false;
     if (constructorArgs.some((v) => String(v).trim() === '')) return false;
@@ -264,9 +275,14 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
     constructorArgs,
     hasCriticalValidationErrors,
     addressDerivation,
+    deployGate.allowed,
   ]);
 
   const handleConfirmStep0 = () => {
+    if (!deployGate.allowed) {
+      toast.error(deployGate.reasons[0] ?? 'Security audit gate: deploy not allowed.');
+      return;
+    }
     if (!canProceedStep0) {
       setStepBanner('Fill all required fields before continuing.');
       return;
