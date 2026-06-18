@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   return {
     test: {
       environment: 'node',
-      include: ['lib/**/*.test.ts', 'lib/**/*.parity.test.ts', 'services/wizard/__tests__/generator.test.ts'],
+      include: ['lib/**/*.test.ts', 'lib/**/*.parity.test.ts', 'services/wizard/__tests__/*.test.ts'],
       exclude: ['node_modules', 'dist', 'BCH_Knowledge_Base-main', 'wizblocks'],
     },
     server: {
