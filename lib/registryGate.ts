@@ -6,6 +6,14 @@ export const VERIFIED_SCORE = 90;
 /** Must match publish-contract edge function and ProjectWorkspace publish payload. */
 export const REGISTRY_COMPILER_VERSION = '^0.13.0';
 
+/** DB + API network slug — maps project chain labels to allowed registry values. */
+export function normalizeRegistryNetwork(chainOrNetwork?: string): 'chipnet' | 'mainnet' {
+  const n = String(chainOrNetwork ?? '').toLowerCase().trim();
+  if (n === 'mainnet' || n === 'main') return 'mainnet';
+  if (n === 'chipnet' || n === 'testnet' || n.includes('chip') || n.includes('test')) return 'chipnet';
+  return 'chipnet';
+}
+
 export type RegistryValidationStatus = 'validated' | 'unsafe';
 export type RegistryVisibility = 'community' | 'verified';
 

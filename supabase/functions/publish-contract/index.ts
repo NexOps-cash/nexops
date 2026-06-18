@@ -8,6 +8,7 @@ import {
     normalizeAuditScore,
     bumpSemverPatch,
     formatRejectionReason,
+    normalizeRegistryNetwork,
 } from "../_shared/registryGate.ts"
 // Audit report shape from client (MVP — server validates structure, not re-runs audit)
 type AuditReportPayload = {
@@ -86,6 +87,10 @@ serve(async (req) => {
         if (!authHeader) {
             throw new Error("Missing Authorization header");
         }
+        const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+        if (!jwt) {
+            throw new Error("Missing Authorization header");
+        }
 
         const supabaseServiceRole = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
@@ -95,10 +100,13 @@ serve(async (req) => {
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: authHeader } } }
+            {
+                global: { headers: { Authorization: authHeader } },
+                auth: { persistSession: false },
+            }
         );
 
-        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser(jwt);
         if (userError || !user) {
             throw new Error("Unauthorized: " + (userError?.message || "User not found"));
         }
@@ -173,7 +181,7 @@ serve(async (req) => {
                 p_bytecode: String(bytecode ?? artifact?.bytecode ?? ''),
                 p_artifact: artifact ?? {},
                 p_compiler_version: compilerVersion,
-                p_network: String(network ?? 'chipnet'),
+                p_network: normalizeRegistryNetwork(network),
                 p_tags: Array.isArray(tags) ? tags : [],
                 p_audit: auditReport,
                 p_audit_score: auditScore,
