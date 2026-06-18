@@ -63,7 +63,9 @@ interface PublishEligibilityResult {
   eligible: boolean;
   rejectionReasons: PublishRejectionReason[];
   auditScore: number;
-}export function normalizeAuditScore(auditReport?: AuditReport): number {
+}
+
+function normalizeAuditScore(auditReport?: AuditReport): number {
   if (!auditReport) return 0;
   const raw = auditReport.score ?? auditReport.total_score ?? 0;
   if (!Number.isFinite(raw)) return 0;
@@ -76,7 +78,9 @@ function isHighOrCriticalSeverity(severity: string): boolean {
 
 function hasHighOrCriticalFindings(vulnerabilities: Vulnerability[] = []): boolean {
   return vulnerabilities.some((v) => isHighOrCriticalSeverity(v.severity));
-}/** Explicit true required; legacy audits without the flag infer from score + findings. */
+}
+
+/** Explicit true required; legacy audits without the flag infer from score + findings. */
 function isDeploymentAllowed(auditReport: AuditReport): boolean {
   if (auditReport.deployment_allowed === false) return false;
   if (auditReport.deployment_allowed === true) return true;
@@ -109,10 +113,7 @@ function isUnboundContractHash(hash: string | undefined): boolean {
   return false;
 }
 
-/** Bind audit report to audited source for publish stale detection. *//**
- * Re-bind legacy audits (placeholder / external contract_hash) when the audit
- * still applies to the current source (no edits since audit timestamp).
- *//** Minimum publish floor — must pass to insert any registry row. */
+/** Minimum publish floor — must pass to insert any registry row. */
 function evaluatePublishEligibility(input: PublishEligibilityInput): PublishEligibilityResult {
   const rejectionReasons: PublishRejectionReason[] = [];
   const sourceCode = input.sourceCode?.trim() ?? '';
@@ -128,7 +129,8 @@ function evaluatePublishEligibility(input: PublishEligibilityInput): PublishElig
   if (!input.artifact) {
     rejectionReasons.push('missing_artifact');
   }
-  const bytecode = input.bytecode?.trim() || input.artifact?.bytecode?.trim() || '';
+
+const bytecode = input.bytecode?.trim() || input.artifact?.bytecode?.trim() || '';
   if (!bytecode) {
     rejectionReasons.push('missing_bytecode');
   }
@@ -139,7 +141,7 @@ function evaluatePublishEligibility(input: PublishEligibilityInput): PublishElig
     rejectionReasons.push('score_too_low');
   }
 
-  const contractHash = auditReport?.metadata?.contract_hash;
+const contractHash = auditReport?.metadata?.contract_hash;
   const sourceHash = input.sourceHash?.trim();
   if (
     contractHash &&
@@ -177,7 +179,7 @@ function deriveVisibility(
   return 'community';
 }
 
-/** Deploy gate — same bar as validated status. */export function formatRejectionReason(reason: PublishRejectionReason): string {
+function formatRejectionReason(reason: PublishRejectionReason): string {
   switch (reason) {
     case 'missing_source':
       return 'Contract source code is required.';

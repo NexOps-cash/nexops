@@ -87,11 +87,9 @@ function removeExportBlock(source: string, exportName: string): string {
     else if (source[i] === '}') {
       depth--;
       if (depth === 0) {
-        let trimStart = start;
-        while (trimStart > 0 && source[trimStart - 1] === '\n') trimStart--;
         let trimEnd = i + 1;
-        while (trimEnd < source.length && source[trimEnd] === '\n') trimEnd++;
-        return source.slice(0, trimStart) + source.slice(trimEnd);
+        if (source[trimEnd] === '\n') trimEnd++;
+        return source.slice(0, start) + source.slice(trimEnd);
       }
     }
   }
@@ -115,7 +113,22 @@ export function generateDenoRegistryGate(): string {
 
   src = src.replace(/\n\/\*\* Deploy gate — same bar as validated status\. \*\/\n/g, '\n');
 
-  return DENO_HEADER + src.trimStart() + '\n';
+  return polishGeneratedSource(DENO_HEADER + src.trimStart());
+}
+
+/** Ensure blank lines between top-level declarations after block removals. */
+function polishGeneratedSource(src: string): string {
+  return (
+    normalizeNewlines(src)
+      .replace(/}\s*(export |function |interface |type |const )/g, '}\n\n$1')
+      .replace(/}\s*\/\*\*/g, '}\n\n/**')
+      .replace(/\*\/\s*\/\*\*/g, '*/\n\n/**')
+      .replace(/\/\*\* Bind audit report to audited source for publish stale detection\. \*\/\n+/g, '')
+      .replace(/\/\*\*\n \* Re-bind legacy audits[\s\S]*?\*\/\n+/g, '')
+      .replace(/\/\*\* Deploy gate — same bar as validated status\. \*\/\n/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trimEnd() + '\n'
+  );
 }
 
 /** Dashboard paste-deploy: same logic as _shared, without export keywords. */
