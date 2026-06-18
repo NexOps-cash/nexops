@@ -902,7 +902,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
         if ((isGenerateCommand || isEditCommand || isAuditCommand || isRepairCommand) && !isWsConnected) {
             setChatHistory(prev => [...prev, {
                 role: 'model',
-                text: "❌ MCP is offline. Please ensure the external protocol service is running to use slash commands.",
+                text: "Connect your AI key in Settings (BYOK) to use slash commands like /audit and /fix.",
                 type: 'chat'
             }]);
             setIsChatting(false);
@@ -973,7 +973,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
             // Strengthen Blockade: Allow file updates ONLY if MCP is connected
             if (result.fileUpdates && result.fileUpdates.length > 0 && !websocketService.isConnected()) {
-                result.response = `❌ MCP is offline. Cannot apply file updates. Please ensure the external protocol service is running to use slash commands.\n\n${result.response}`;
+                result.response = `Connect your AI key in Settings (BYOK) to apply automated file edits.\n\n${result.response}`;
                 result.fileUpdates = undefined; // Clear file updates if MCP is offline
             }
 

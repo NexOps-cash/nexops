@@ -1,4 +1,5 @@
 import React, { useState, ReactNode } from 'react';
+import toast from 'react-hot-toast';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
     Files, ShieldCheck, BoxSelect, TerminalSquare,
@@ -93,7 +94,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                         />
                         <ActivityBarItem
                             icon={Play}
-                            label="Spend"
+                            label="Interact"
                             isActive={activeView === 'INTERACT'}
                             onClick={() => onViewChange('INTERACT')}
                         />
@@ -115,7 +116,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                             icon={Settings}
                             label="Settings"
                             isActive={false}
-                            onClick={() => { }}
+                            onClick={() => toast('Settings panel is coming soon — use BYOK keys in the workspace for now.', { icon: '⚙️' })}
                         />
                     </div>
                 </div>
@@ -132,7 +133,7 @@ export const WorkbenchLayout: React.FC<WorkbenchLayoutProps> = ({
                                     {activeView === 'AUDITOR' && 'AI Security Agent'}
                                     {activeView === 'DEBUG' && 'Contract Flow'}
                                     {activeView === 'DEPLOY' && 'Deploy Contract'}
-                                    {activeView === 'INTERACT' && 'Transaction Builder'}
+                                    {activeView === 'INTERACT' && 'Interact'}
                                     {activeView === 'FLOW' && 'Flow Palette'}
                                     {activeView === 'WALLET' && 'Global Identities'}
                                 </span>
