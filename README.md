@@ -68,7 +68,7 @@ The following technologies power the NexOps ecosystem:
    ```
 
 3. Configure Environment Variables:
-   Create a `.env.local` file based on the provided configuration:
+   Copy [`.env.example`](.env.example) to `.env.local` and fill in values:
    ```env
    GROQ_API_KEY=
    VITE_WALLETCONNECT_PROJECT_ID=
@@ -82,6 +82,15 @@ The following technologies power the NexOps ecosystem:
    ```bash
    npm run dev
    ```
+
+5. Optional — run the same checks as CI:
+
+   ```bash
+   npm test
+   npm run typecheck
+   ```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Vercel, Supabase migrations, and registry edge function deploy.
 
 ---
 
@@ -97,19 +106,13 @@ The following technologies power the NexOps ecosystem:
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Contributions are welcome. Fork the repo, create a feature branch, run `npm test` and `npm run typecheck`, then open a pull request.
 
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+MIT — see the repository license file when published.
 
 ---
 
