@@ -53,6 +53,7 @@ import {
 import {
     computeSourceHash,
     evaluatePublishEligibility,
+    formatRejectionReason,
     getContractSourceFromProject,
     REGISTRY_COMPILER_VERSION,
     resolveAuditReportForPublish,
@@ -767,7 +768,8 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             compilerVersion,
         });
         if (!eligibility.eligible) {
-            toast.error('Publish blocked — resolve audit gate requirements first.');
+            const detail = eligibility.rejectionReasons.map(formatRejectionReason).join(' ');
+            toast.error(detail || 'Publish blocked — resolve audit gate requirements first.');
             return;
         }
 

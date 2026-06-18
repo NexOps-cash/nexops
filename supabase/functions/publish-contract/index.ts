@@ -27,6 +27,13 @@ const corsHeaders = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+function jsonResponse(body: Record<string, unknown>, status: number): Response {
+    return new Response(JSON.stringify(body), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status,
+    });
+}
+
 function authorDisplayName(user: { user_metadata?: Record<string, unknown>; email?: string }): string {
     const meta = user.user_metadata ?? {};
     const candidates = [
@@ -51,14 +58,21 @@ async function logRegistryAction(
         action: 'published' | 'version_published' | 'rejected';
         details: Record<string, unknown>;
     }
-) {
-    await supabaseServiceRole.from('registry_audit_log').insert({
+): Promise<void> {
+    const { error } = await supabaseServiceRole.from('registry_audit_log').insert({
         contract_id: entry.contract_id ?? null,
         family_id: entry.family_id ?? null,
         actor_id: entry.actor_id,
         action: entry.action,
         details: entry.details,
     });
+    if (error) {
+        console.error('registry_audit_log insert failed:', error.message);
+    }
+}
+
+function isUnauthorizedMessage(message: string): boolean {
+    return /unauthorized|missing authorization|user not found|invalid jwt|jwt expired/i.test(message);
 }
 
 serve(async (req) => {
@@ -67,7 +81,20 @@ serve(async (req) => {
     }
 
     try {
-        const body = await req.json();
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+        if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+            return jsonResponse({ error: 'Publish service is not configured.' }, 500);
+        }
+
+        let body: Record<string, unknown>;
+        try {
+            body = await req.json();
+        } catch {
+            return jsonResponse({ error: 'Invalid JSON body.' }, 400);
+        }
+
         const {
             title,
             description,
@@ -85,21 +112,18 @@ serve(async (req) => {
 
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
-            throw new Error("Missing Authorization header");
+            return jsonResponse({ error: 'Missing Authorization header' }, 401);
         }
         const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
         if (!jwt) {
-            throw new Error("Missing Authorization header");
+            return jsonResponse({ error: 'Missing Authorization header' }, 401);
         }
 
-        const supabaseServiceRole = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
+        const supabaseServiceRole = createClient(supabaseUrl, serviceRoleKey);
 
         const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+            supabaseUrl,
+            anonKey,
             {
                 global: { headers: { Authorization: authHeader } },
                 auth: { persistSession: false },
@@ -108,7 +132,10 @@ serve(async (req) => {
 
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser(jwt);
         if (userError || !user) {
-            throw new Error("Unauthorized: " + (userError?.message || "User not found"));
+            return jsonResponse(
+                { error: 'Unauthorized: ' + (userError?.message || 'User not found') },
+                401
+            );
         }
 
         const compilerVersion = String(compiler_version ?? '^0.13.0');
@@ -138,10 +165,7 @@ serve(async (req) => {
                     title: title ?? null,
                 },
             });
-            return new Response(JSON.stringify({ error: reasons.join(' ') }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
-            });
+            return jsonResponse({ error: reasons.join(' ') }, 400);
         }
 
         const auditScore = normalizeAuditScore(auditReport);
@@ -217,16 +241,14 @@ serve(async (req) => {
             },
         });
 
-        return new Response(JSON.stringify(insertedContract), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-        });
+        return jsonResponse(insertedContract as Record<string, unknown>, 200);
 
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return new Response(JSON.stringify({ error: message }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400,
-        });
+        if (isUnauthorizedMessage(message)) {
+            return jsonResponse({ error: message }, 401);
+        }
+        const status = /failed|lookup|publish/i.test(message) ? 500 : 400;
+        return jsonResponse({ error: message }, status);
     }
 });
