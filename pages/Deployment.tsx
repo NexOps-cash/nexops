@@ -10,7 +10,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ConstructorForm } from '../components/ConstructorForm';
 import { ContractSafetyPanel } from '../components/ContractSafetyPanel';
 import {
-    pollForFunding,
     getChipnetAddressExplorerUrl,
     getChipnetTxExplorerUrl,
     isChipnetTxid,
@@ -18,6 +17,7 @@ import {
     UTXO,
     fetchUTXOs
 } from '../services/blockchainService';
+import { buildChipnetPaymentUri, pollChipnetContractFunding } from '../services/chipnetFundingFlow';
 import { canDeploy } from '../lib/registryGate';
 import { Rocket, Server, AlertCircle, CheckCircle, Copy, ShieldAlert, FileCode, Lock, Layout, Repeat, Wand2, Wallet, XCircle, RefreshCw, Box, Coins, Clock, ExternalLink, Play, Loader2, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
 
@@ -301,8 +301,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
             }
 
             // Construct Payment Request URI (BIP-21)
-            const amountBch = fundingAmount / 100_000_000;
-            const uri = `${addressToFund}?amount=${amountBch.toFixed(8)}&label=NexOps%20Deployment`;
+            const uri = buildChipnetPaymentUri(addressToFund, fundingAmount, 'NexOps Deployment');
 
             setPaymentRequestUri(uri);
             setDeploymentStep(2); // Waiting for Payment
@@ -312,10 +311,10 @@ export const Deployment: React.FC<DeploymentProps> = ({
             console.log('Starting blockchain monitoring for:', addressToFund);
 
             // Start real-time UTXO monitoring
-            pollForFunding(
-                addressToFund,
-                fundingAmount,
-                (status) => {
+            pollChipnetContractFunding({
+                address: addressToFund,
+                fundingAmountSats: fundingAmount,
+                onStatus: (status) => {
                     console.log('[Deployment] Funding status update:', status);
                     setFundingStatus(status);
 
@@ -349,8 +348,7 @@ export const Deployment: React.FC<DeploymentProps> = ({
                         }
                     }
                 },
-                300000 // 5 minute timeout
-            ).catch((error) => {
+            }).catch((error) => {
                 console.error('[Deployment] Funding monitoring error:', error);
                 setFundingStatus({
                     status: 'error',

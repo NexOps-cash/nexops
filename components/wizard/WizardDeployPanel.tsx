@@ -11,13 +11,16 @@ import type { FieldDef } from '../../services/wizard/schema';
 import { compileCashScript, verifyDeterminism } from '../../services/compilerService';
 import { deriveContractAddress, coerceConstructorArgs, explainDerivationError } from '../../services/addressService';
 import {
-    pollForFunding,
-    checkFundingNow,
     getChipnetAddressExplorerUrl,
     getChipnetTxExplorerUrl,
     ELECTRUM_FALLBACK_SERVERS,
     type FundingStatus
 } from '../../services/blockchainService';
+import {
+    buildChipnetPaymentUri,
+    checkFundingNow,
+    pollChipnetContractFunding,
+} from '../../services/chipnetFundingFlow';
 import { mapWizardFieldsToArgs } from '../../services/wizard/wizardFieldsToArgs';
 import { useWallet } from '../../contexts/WalletContext';
 import type { ValidationResult } from '../../services/validationService';
@@ -302,25 +305,24 @@ export const WizardDeployPanel: React.FC<WizardDeployPanelProps> = ({
       return;
     }
     const gen = ++pollGenRef.current;
-    const amountBch = fundingAmount / 100_000_000;
-    const uri = `${addr}?amount=${amountBch.toFixed(8)}&label=NexOps%20WizardDeploy`;
+    const uri = buildChipnetPaymentUri(addr, fundingAmount, 'NexOps WizardDeploy');
     setPaymentUri(uri);
     setDeployStep(2);
     setFundingStatus({ status: 'monitoring', utxos: [], totalValue: 0 });
 
     try {
-      await pollForFunding(
-        addr,
-        fundingAmount,
-        (status) => {
+      await pollChipnetContractFunding({
+        address: addr,
+        fundingAmountSats: fundingAmount,
+        isCancelled: () => gen !== pollGenRef.current,
+        onStatus: (status) => {
           if (gen !== pollGenRef.current) return;
           setFundingStatus(status);
           if (status.status === 'confirmed') {
             commitFundingRecord(status, addr);
           }
         },
-        300_000
-      );
+      });
     } catch (err: unknown) {
       if (gen !== pollGenRef.current) return;
       const fs = err as FundingStatus;
