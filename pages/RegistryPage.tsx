@@ -11,6 +11,7 @@ import {
     fetchContractVersions,
     fetchRegistryAuditLog,
 } from '../services/registryQueries';
+import { stashPendingRegistryContract } from '../lib/pendingRegistryLoad';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -19,6 +20,11 @@ interface RegistryPageProps {
 }
 
 type DetailTab = 'current' | 'versions' | 'log';
+
+function isHubRegistryHost(): boolean {
+    if (typeof window === 'undefined') return false;
+    return window.location.hostname === 'hub.nexops.cash';
+}
 
 function formatDate(iso: string | undefined): string {
     if (!iso) return '—';
@@ -150,6 +156,22 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
         setSelectedContract(contract);
         setViewingVersion(null);
         setDetailTab('current');
+    };
+
+    const handleLoadToWorkspace = (contract: RegistryContract) => {
+        if (user) {
+            onLoadContract?.(contract);
+            setSelectedContract(null);
+            return;
+        }
+        stashPendingRegistryContract(contract);
+        if (isHubRegistryHost()) {
+            toast('Opening workspace on app.nexops.cash…', { duration: 5000 });
+            window.location.href = 'https://app.nexops.cash/';
+            return;
+        }
+        toast('After GitHub sign-in, this contract will open in your workspace.', { duration: 5000 });
+        void signInWithGithub();
     };
 
     return (
@@ -373,15 +395,7 @@ export const RegistryPage: React.FC<RegistryPageProps> = ({ onLoadContract }) =>
                             <div className="flex flex-col gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        if (!user) {
-                                            toast('Sign in to load this contract into your workspace.', { duration: 4000 });
-                                            void signInWithGithub();
-                                            return;
-                                        }
-                                        onLoadContract?.(displayContract);
-                                        setSelectedContract(null);
-                                    }}
+                                    onClick={() => handleLoadToWorkspace(displayContract)}
                                     className="w-full bg-bch-green text-bch-dark font-black py-4 rounded-2xl flex items-center justify-center gap-3 hover:opacity-90"
                                 >
                                     <Layers size={18} />
