@@ -7,23 +7,64 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
 // --- registryGate (inlined for dashboard deploy) ---
-const MIN_PUBLISH_SCORE = 80;
-const MIN_DEPLOY_SCORE = 80;
-const VERIFIED_SCORE = 90;
-const REGISTRY_COMPILER_VERSION = '^0.13.0';
+interface Vulnerability {
+  severity: string;
+}
 
-type PublishRejectionReason =
-  | 'missing_source' | 'missing_audit' | 'missing_artifact' | 'missing_bytecode'
-  | 'score_too_low' | 'stale_audit' | 'invalid_audit_score';
-
-interface Vulnerability { severity: string }
 interface AuditReport {
   score?: number;
   total_score?: number;
   deployment_allowed?: boolean;
   vulnerabilities?: Vulnerability[];
   metadata?: { contract_hash?: string };
+  timestamp?: number;
 }
+
+interface ContractArtifact {
+  bytecode?: string;
+}
+
+const MIN_PUBLISH_SCORE = 80;
+const MIN_DEPLOY_SCORE = 80;
+const VERIFIED_SCORE = 90;
+/** Must match publish-contract edge function and ProjectWorkspace publish payload. */
+const REGISTRY_COMPILER_VERSION = '^0.13.0';
+
+/** DB + API network slug — maps project chain labels to allowed registry values. */
+function normalizeRegistryNetwork(chainOrNetwork?: string): 'chipnet' | 'mainnet' {
+  const n = String(chainOrNetwork ?? '').toLowerCase().trim();
+  if (n === 'mainnet' || n === 'main') return 'mainnet';
+  if (n === 'chipnet' || n === 'testnet' || n.includes('chip') || n.includes('test')) return 'chipnet';
+  return 'chipnet';
+}
+
+type RegistryValidationStatus = 'validated' | 'unsafe';
+type RegistryVisibility = 'community' | 'verified';
+
+type PublishRejectionReason =
+  | 'missing_source'
+  | 'missing_audit'
+  | 'missing_artifact'
+  | 'missing_bytecode'
+  | 'score_too_low'
+  | 'stale_audit'
+  | 'invalid_audit_score';
+
+interface PublishEligibilityInput {
+  sourceCode?: string;
+  auditReport?: AuditReport;
+  artifact?: ContractArtifact | null;
+  bytecode?: string;
+  sourceHash?: string;
+  compilerVersion?: string;
+}
+
+interface PublishEligibilityResult {
+  eligible: boolean;
+  rejectionReasons: PublishRejectionReason[];
+  auditScore: number;
+}
+
 
 function normalizeAuditScore(auditReport?: AuditReport): number {
   if (!auditReport) return 0;
@@ -32,14 +73,17 @@ function normalizeAuditScore(auditReport?: AuditReport): number {
   return Math.round(Math.max(0, Math.min(100, raw)));
 }
 
-function isHighOrCriticalSeverity(severity: string): boolean {
-  return severity === 'HIGH' || severity === 'CRITICAL';
+function isHighOrCriticalSeverity(severity: Vulnerability['severity']): boolean {
+  const s = severity as string;
+  return s === 'HIGH' || s === 'CRITICAL';
 }
 
 function hasHighOrCriticalFindings(vulnerabilities: Vulnerability[] = []): boolean {
   return vulnerabilities.some((v) => isHighOrCriticalSeverity(v.severity));
 }
+
 
+/** Explicit true required; legacy audits without the flag infer from score + findings. */
 function isDeploymentAllowed(auditReport: AuditReport): boolean {
   if (auditReport.deployment_allowed === false) return false;
   if (auditReport.deployment_allowed === true) return true;
@@ -47,7 +91,11 @@ function isDeploymentAllowed(auditReport: AuditReport): boolean {
   return score >= MIN_DEPLOY_SCORE && !hasHighOrCriticalFindings(auditReport.vulnerabilities ?? []);
 }
 
-async function computeSourceHash(sourceCode: string, compilerVersion: string = REGISTRY_COMPILER_VERSION): Promise<string> {
+/** SHA-256 hex of source + compiler version (browser + Deno Web Crypto). */
+async function computeSourceHash(
+  sourceCode: string,
+  compilerVersion: string = REGISTRY_COMPILER_VERSION
+): Promise<string> {
   const input = sourceCode + compilerVersion;
   const msgUint8 = new TextEncoder().encode(input);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
@@ -59,6 +107,7 @@ function normalizeHashForCompare(hash: string): string {
   return hash.trim().replace(/^0x/i, '').toLowerCase();
 }
 
+/** True when audit metadata has no trustworthy source binding (skip stale check). */
 function isUnboundContractHash(hash: string | undefined): boolean {
   if (!hash?.trim()) return true;
   const normalized = normalizeHashForCompare(hash);
@@ -67,56 +116,100 @@ function isUnboundContractHash(hash: string | undefined): boolean {
   return false;
 }
 
-function evaluatePublishEligibility(input: {
-  sourceCode?: string;
-  auditReport?: AuditReport;
-  artifact?: { bytecode?: string } | null;
-  bytecode?: string;
-  sourceHash?: string;
-}): { eligible: boolean; rejectionReasons: PublishRejectionReason[]; auditScore: number } {
+/** Bind audit report to audited source for publish stale detection. */
+
+
+/**
+ * Re-bind legacy audits (placeholder / external contract_hash) when the audit
+ * still applies to the current source (no edits since audit timestamp).
+ */
+
+/** Minimum publish floor — must pass to insert any registry row. */
+function evaluatePublishEligibility(input: PublishEligibilityInput): PublishEligibilityResult {
   const rejectionReasons: PublishRejectionReason[] = [];
   const sourceCode = input.sourceCode?.trim() ?? '';
   const auditReport = input.auditReport;
   const auditScore = normalizeAuditScore(auditReport);
-  if (!sourceCode) rejectionReasons.push('missing_source');
-  if (!auditReport) rejectionReasons.push('missing_audit');
-  if (!input.artifact) rejectionReasons.push('missing_artifact');
+
+  if (!sourceCode) {
+    rejectionReasons.push('missing_source');
+  }
+  if (!auditReport) {
+    rejectionReasons.push('missing_audit');
+  }
+  if (!input.artifact) {
+    rejectionReasons.push('missing_artifact');
+  }
   const bytecode = input.bytecode?.trim() || input.artifact?.bytecode?.trim() || '';
-  if (!bytecode) rejectionReasons.push('missing_bytecode');
-  if (auditReport && (auditScore < 0 || auditScore > 100)) rejectionReasons.push('invalid_audit_score');
-  if (auditReport && auditScore < MIN_PUBLISH_SCORE) rejectionReasons.push('score_too_low');
+  if (!bytecode) {
+    rejectionReasons.push('missing_bytecode');
+  }
+  if (auditReport && (auditScore < 0 || auditScore > 100)) {
+    rejectionReasons.push('invalid_audit_score');
+  }
+  if (auditReport && auditScore < MIN_PUBLISH_SCORE) {
+    rejectionReasons.push('score_too_low');
+  }
+
   const contractHash = auditReport?.metadata?.contract_hash;
   const sourceHash = input.sourceHash?.trim();
-  if (contractHash && sourceHash && !isUnboundContractHash(contractHash) &&
-      normalizeHashForCompare(contractHash) !== normalizeHashForCompare(sourceHash)) {
+  if (
+    contractHash &&
+    sourceHash &&
+    !isUnboundContractHash(contractHash) &&
+    normalizeHashForCompare(contractHash) !== normalizeHashForCompare(sourceHash)
+  ) {
     rejectionReasons.push('stale_audit');
   }
-  return { eligible: rejectionReasons.length === 0, rejectionReasons, auditScore };
+
+  return {
+    eligible: rejectionReasons.length === 0,
+    rejectionReasons,
+    auditScore,
+  };
 }
 
-function deriveValidationStatus(auditReport: AuditReport): 'validated' | 'unsafe' {
+/** After minimum floor — registry validation_status column value. */
+function deriveValidationStatus(auditReport: AuditReport): RegistryValidationStatus {
   const score = normalizeAuditScore(auditReport);
   const vulns = auditReport.vulnerabilities ?? [];
-  if (score >= MIN_PUBLISH_SCORE && isDeploymentAllowed(auditReport) && !hasHighOrCriticalFindings(vulns)) return 'validated';
+  if (score >= MIN_PUBLISH_SCORE && isDeploymentAllowed(auditReport) && !hasHighOrCriticalFindings(vulns)) {
+    return 'validated';
+  }
   return 'unsafe';
 }
 
-function deriveVisibility(auditScore: number, vulnerabilities: Vulnerability[] = []): 'community' | 'verified' {
-  if (auditScore >= VERIFIED_SCORE && !hasHighOrCriticalFindings(vulnerabilities)) return 'verified';
+function deriveVisibility(
+  auditScore: number,
+  vulnerabilities: Vulnerability[] = []
+): RegistryVisibility {
+  if (auditScore >= VERIFIED_SCORE && !hasHighOrCriticalFindings(vulnerabilities)) {
+    return 'verified';
+  }
   return 'community';
 }
 
+/** Deploy gate — same bar as validated status. */
+
 function formatRejectionReason(reason: PublishRejectionReason): string {
-  const map: Record<PublishRejectionReason, string> = {
-    missing_source: 'Contract source code is required.',
-    missing_audit: 'Run a security audit before publishing.',
-    missing_artifact: 'Compiled artifact is required.',
-    missing_bytecode: 'Bytecode is required.',
-    score_too_low: `Audit score must be ${MIN_PUBLISH_SCORE}+ to publish.`,
-    stale_audit: 'Audit is stale — re-run audit after code changes.',
-    invalid_audit_score: 'Audit score is out of range (0–100).',
-  };
-  return map[reason] ?? reason;
+  switch (reason) {
+    case 'missing_source':
+      return 'Contract source code is required.';
+    case 'missing_audit':
+      return 'Run a security audit before publishing.';
+    case 'missing_artifact':
+      return 'Compiled artifact is required.';
+    case 'missing_bytecode':
+      return 'Bytecode is required.';
+    case 'score_too_low':
+      return `Audit score must be ${MIN_PUBLISH_SCORE}+ to publish.`;
+    case 'stale_audit':
+      return 'Audit is stale — re-run audit after code changes.';
+    case 'invalid_audit_score':
+      return 'Audit score is out of range (0–100).';
+    default:
+      return reason;
+  }
 }
 
 function bumpSemverPatch(version: string): string {
@@ -126,13 +219,6 @@ function bumpSemverPatch(version: string): string {
     return parts.join('.');
   }
   return '1.0.0';
-}
-
-function normalizeRegistryNetwork(chainOrNetwork?: string): 'chipnet' | 'mainnet' {
-  const n = String(chainOrNetwork ?? '').toLowerCase().trim();
-  if (n === 'mainnet' || n === 'main') return 'mainnet';
-  if (n === 'chipnet' || n === 'testnet' || n.includes('chip') || n.includes('test')) return 'chipnet';
-  return 'chipnet';
 }
 // --- end registryGate ---
 
